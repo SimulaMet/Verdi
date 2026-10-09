@@ -21,3 +21,40 @@ This is a *verified* failure record, not a place to invent successes. Integrator
 - A constitution penalty without appeal or evidence can produce wrongful punishment.
 - Logs that record only allowed actions hide attempted violations.
 - Attempting a normal dev-to-main merge leaks internal agent instructions into public releases.
+
+## 2026-10-09 / dev `9798907` / P1 review-findings remediation (Tranche 3)
+- Observed symptom: independent Engineering review = FAIL, Science review = INCONCLUSIVE
+  (G3-blocking). Repro of the two blocking defects before the fix:
+  (a) `adapter.correlate(f"trace-gov-{i}")` for i in range(45) -> 45/45 audit records
+      had `event_ids == []` because real governance ledger ids have gaps
+      (28,29,30,... not 0..44);
+  (b) `ProbeBank.leak_check` existed but was never invoked by `PilotDriver.run`,
+      so the G3 information-access defense was dead code.
+- Expected vs actual: audit records should map 1:1 to real ledger events; a probe
+  dilemma in any agent-visible surface should abort the run. Neither held.
+- Root cause (confirmed): correlation id was a UI convenience index, not the sealed
+  event id; leak guard was written for the ProbeBank API but not wired into the
+  driver's per-tick loop. Secondary causes: span key mismatch (`span_name` vs `name`),
+  reducer never recorded enacted constitution versions, replay tape was action-only.
+- What was attempted / why it worked: correlate by `sealed.event_id` stored on the
+  governance event dict at append time; route `emit_governance` through
+  `reducer.apply` with a new deterministic `governance` action_kind so live and
+  replay states update identically; record the full 126-step tape and assert
+  byte-identical JSONL instead of force-copying bookkeeping fields in tests.
+- Minimal regression tests: `tests/pilot/test_leak_guard.py` (verbatim leak raises,
+  clean passes, full run passes guard); `tests/pilot/test_pilot.py::test_audit_records_
+  correlate_real_ledger_event_ids` (unique in-range ids + span_names populated);
+  `tests/pilot/test_pilot.py::test_replay_reproduces_full_ledger` (126/126 events,
+  byte-identical JSONL); `tests/agents/test_client.py::test_transport_error_*`.
+- Corrective action / rollback checkpoint: none needed; merged on first pass.
+  Rollback point if regression: dev `ef69f0f`.
+- Verification evidence: `.venv/bin/python -m pytest` -> 216 passed; `.venv/bin/ruff
+  check .` -> clean; manual replay_check byte-equality check passed.
+  Independent reviewer: pending re-review (Tranche 3).
+- Generalizable prevention rule: any id used to correlate an audit/judge record must
+  be the sealed ledger id captured at append time, never a positional index; any
+  safety check that exists as an API must have a caller in the run path plus a test
+  that the caller runs (wire + exercise, not just define).
+- Unresolved risk / follow-up: leak guard is verbatim containment only; paraphrased
+  leakage needs an embedding/semantic check (P2 candidate). Live G4 bridge still
+  blocked on SimpleAudit install + vLLM endpoint.
