@@ -1,0 +1,1466 @@
+{
+  "run_seed": 20261009,
+  "scenario_id": "pilot_v1",
+  "schema_version": 1,
+  "tape_hash": "37c18e7870aff031f66ae6bf80104cbea83ab81ebd7e1e7e780c8c32e3db2e7b",
+  "tape_id": "pilot_v1",
+  "ticks": [
+    {
+      "tasks": [],
+      "tick": 0
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "record",
+          "actor_id": "a-04",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 3,
+          "public_observations": [
+            "agent assigned record at tick 1"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t01-00",
+          "tick_created": 1
+        },
+        {
+          "action_type": "treat",
+          "actor_id": "a-05",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 3,
+          "public_observations": [
+            "agent assigned treat at tick 1"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t01-01",
+          "tick_created": 1
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-06",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-07"
+          ],
+          "deadline_tick": 3,
+          "public_observations": [
+            "agent assigned transport at tick 1"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t01-02",
+          "tick_created": 1
+        }
+      ],
+      "tick": 1
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "harvest",
+          "actor_id": "a-07",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 4,
+          "public_observations": [
+            "agent assigned harvest at tick 2"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t02-00",
+          "tick_created": 2
+        },
+        {
+          "action_type": "record",
+          "actor_id": "a-08",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 4,
+          "public_observations": [
+            "agent assigned record at tick 2"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t02-01",
+          "tick_created": 2
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-09",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-10"
+          ],
+          "deadline_tick": 4,
+          "public_observations": [
+            "agent assigned transport at tick 2"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t02-02",
+          "tick_created": 2
+        }
+      ],
+      "tick": 2
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "craft",
+          "actor_id": "a-10",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 5,
+          "public_observations": [
+            "agent assigned craft at tick 3"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t03-00",
+          "tick_created": 3
+        },
+        {
+          "action_type": "harvest",
+          "actor_id": "a-11",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 5,
+          "public_observations": [
+            "agent assigned harvest at tick 3"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t03-01",
+          "tick_created": 3
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-12",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-01"
+          ],
+          "deadline_tick": 5,
+          "public_observations": [
+            "agent assigned transport at tick 3"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t03-02",
+          "tick_created": 3
+        }
+      ],
+      "tick": 3
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "treat",
+          "actor_id": "a-01",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 6,
+          "public_observations": [
+            "agent assigned treat at tick 4"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t04-00",
+          "tick_created": 4
+        },
+        {
+          "action_type": "craft",
+          "actor_id": "a-02",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 6,
+          "public_observations": [
+            "agent assigned craft at tick 4"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t04-01",
+          "tick_created": 4
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-03",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-04"
+          ],
+          "deadline_tick": 6,
+          "public_observations": [
+            "agent assigned transport at tick 4"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t04-02",
+          "tick_created": 4
+        }
+      ],
+      "tick": 4
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "record",
+          "actor_id": "a-04",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 7,
+          "public_observations": [
+            "agent assigned record at tick 5"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t05-00",
+          "tick_created": 5
+        },
+        {
+          "action_type": "treat",
+          "actor_id": "a-05",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 7,
+          "public_observations": [
+            "agent assigned treat at tick 5"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t05-01",
+          "tick_created": 5
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-06",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-07"
+          ],
+          "deadline_tick": 7,
+          "public_observations": [
+            "agent assigned transport at tick 5"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t05-02",
+          "tick_created": 5
+        }
+      ],
+      "tick": 5
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "harvest",
+          "actor_id": "a-07",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 8,
+          "public_observations": [
+            "agent assigned harvest at tick 6"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t06-00",
+          "tick_created": 6
+        },
+        {
+          "action_type": "record",
+          "actor_id": "a-08",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 8,
+          "public_observations": [
+            "agent assigned record at tick 6"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t06-01",
+          "tick_created": 6
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-09",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-10"
+          ],
+          "deadline_tick": 8,
+          "public_observations": [
+            "agent assigned transport at tick 6"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t06-02",
+          "tick_created": 6
+        }
+      ],
+      "tick": 6
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "craft",
+          "actor_id": "a-10",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 9,
+          "public_observations": [
+            "agent assigned craft at tick 7"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t07-00",
+          "tick_created": 7
+        },
+        {
+          "action_type": "harvest",
+          "actor_id": "a-11",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 9,
+          "public_observations": [
+            "agent assigned harvest at tick 7"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t07-01",
+          "tick_created": 7
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-12",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-01"
+          ],
+          "deadline_tick": 9,
+          "public_observations": [
+            "agent assigned transport at tick 7"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t07-02",
+          "tick_created": 7
+        }
+      ],
+      "tick": 7
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "treat",
+          "actor_id": "a-01",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 10,
+          "public_observations": [
+            "agent assigned treat at tick 8"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t08-00",
+          "tick_created": 8
+        },
+        {
+          "action_type": "craft",
+          "actor_id": "a-02",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 10,
+          "public_observations": [
+            "agent assigned craft at tick 8"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t08-01",
+          "tick_created": 8
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-03",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-04"
+          ],
+          "deadline_tick": 10,
+          "public_observations": [
+            "agent assigned transport at tick 8"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t08-02",
+          "tick_created": 8
+        }
+      ],
+      "tick": 8
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "record",
+          "actor_id": "a-04",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 11,
+          "public_observations": [
+            "agent assigned record at tick 9"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t09-00",
+          "tick_created": 9
+        },
+        {
+          "action_type": "treat",
+          "actor_id": "a-05",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 11,
+          "public_observations": [
+            "agent assigned treat at tick 9"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t09-01",
+          "tick_created": 9
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-06",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-07"
+          ],
+          "deadline_tick": 11,
+          "public_observations": [
+            "agent assigned transport at tick 9"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t09-02",
+          "tick_created": 9
+        }
+      ],
+      "tick": 9
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "convene_assembly",
+          "actor_id": "a-04",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [
+            "a-01",
+            "a-02",
+            "a-03",
+            "a-04",
+            "a-05",
+            "a-06",
+            "a-07",
+            "a-08",
+            "a-09",
+            "a-10",
+            "a-11",
+            "a-12"
+          ],
+          "deadline_tick": 10,
+          "public_observations": [
+            "constitutional assembly convened at tick 10"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t10-assembly",
+          "tick_created": 10
+        }
+      ],
+      "tick": 10
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "craft",
+          "actor_id": "a-10",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 13,
+          "public_observations": [
+            "agent assigned craft at tick 11"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t11-00",
+          "tick_created": 11
+        },
+        {
+          "action_type": "harvest",
+          "actor_id": "a-11",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 13,
+          "public_observations": [
+            "agent assigned harvest at tick 11"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t11-01",
+          "tick_created": 11
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-12",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-01"
+          ],
+          "deadline_tick": 13,
+          "public_observations": [
+            "agent assigned transport at tick 11"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t11-02",
+          "tick_created": 11
+        }
+      ],
+      "tick": 11
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "treat",
+          "actor_id": "a-01",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 14,
+          "public_observations": [
+            "agent assigned treat at tick 12"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t12-00",
+          "tick_created": 12
+        },
+        {
+          "action_type": "craft",
+          "actor_id": "a-02",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 14,
+          "public_observations": [
+            "agent assigned craft at tick 12"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t12-01",
+          "tick_created": 12
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-03",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-04"
+          ],
+          "deadline_tick": 14,
+          "public_observations": [
+            "agent assigned transport at tick 12"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t12-02",
+          "tick_created": 12
+        }
+      ],
+      "tick": 12
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "record",
+          "actor_id": "a-04",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 15,
+          "public_observations": [
+            "agent assigned record at tick 13"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t13-00",
+          "tick_created": 13
+        },
+        {
+          "action_type": "treat",
+          "actor_id": "a-05",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 15,
+          "public_observations": [
+            "agent assigned treat at tick 13"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t13-01",
+          "tick_created": 13
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-06",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-07"
+          ],
+          "deadline_tick": 15,
+          "public_observations": [
+            "agent assigned transport at tick 13"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t13-02",
+          "tick_created": 13
+        }
+      ],
+      "tick": 13
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "harvest",
+          "actor_id": "a-07",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 16,
+          "public_observations": [
+            "agent assigned harvest at tick 14"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t14-00",
+          "tick_created": 14
+        },
+        {
+          "action_type": "record",
+          "actor_id": "a-08",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 16,
+          "public_observations": [
+            "agent assigned record at tick 14"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t14-01",
+          "tick_created": 14
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-09",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-10"
+          ],
+          "deadline_tick": 16,
+          "public_observations": [
+            "agent assigned transport at tick 14"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t14-02",
+          "tick_created": 14
+        }
+      ],
+      "tick": 14
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "craft",
+          "actor_id": "a-10",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 17,
+          "public_observations": [
+            "agent assigned craft at tick 15"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t15-00",
+          "tick_created": 15
+        },
+        {
+          "action_type": "harvest",
+          "actor_id": "a-11",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 17,
+          "public_observations": [
+            "agent assigned harvest at tick 15"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t15-01",
+          "tick_created": 15
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-12",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-01"
+          ],
+          "deadline_tick": 17,
+          "public_observations": [
+            "agent assigned transport at tick 15"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t15-02",
+          "tick_created": 15
+        }
+      ],
+      "tick": 15
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "treat",
+          "actor_id": "a-01",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 18,
+          "public_observations": [
+            "agent assigned treat at tick 16"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t16-00",
+          "tick_created": 16
+        },
+        {
+          "action_type": "craft",
+          "actor_id": "a-02",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 18,
+          "public_observations": [
+            "agent assigned craft at tick 16"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t16-01",
+          "tick_created": 16
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-03",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-04"
+          ],
+          "deadline_tick": 18,
+          "public_observations": [
+            "agent assigned transport at tick 16"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t16-02",
+          "tick_created": 16
+        }
+      ],
+      "tick": 16
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "convene_assembly",
+          "actor_id": "a-04",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [
+            "a-01",
+            "a-02",
+            "a-03",
+            "a-04",
+            "a-05",
+            "a-06",
+            "a-07",
+            "a-08",
+            "a-09",
+            "a-10",
+            "a-11",
+            "a-12"
+          ],
+          "deadline_tick": 17,
+          "public_observations": [
+            "constitutional assembly convened at tick 17"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t17-assembly",
+          "tick_created": 17
+        }
+      ],
+      "tick": 17
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "harvest",
+          "actor_id": "a-07",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 20,
+          "public_observations": [
+            "agent assigned harvest at tick 18"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t18-00",
+          "tick_created": 18
+        },
+        {
+          "action_type": "record",
+          "actor_id": "a-08",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 20,
+          "public_observations": [
+            "agent assigned record at tick 18"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t18-01",
+          "tick_created": 18
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-09",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-10"
+          ],
+          "deadline_tick": 20,
+          "public_observations": [
+            "agent assigned transport at tick 18"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t18-02",
+          "tick_created": 18
+        }
+      ],
+      "tick": 18
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "craft",
+          "actor_id": "a-10",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 21,
+          "public_observations": [
+            "agent assigned craft at tick 19"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t19-00",
+          "tick_created": 19
+        },
+        {
+          "action_type": "harvest",
+          "actor_id": "a-11",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 21,
+          "public_observations": [
+            "agent assigned harvest at tick 19"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t19-01",
+          "tick_created": 19
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-12",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-01"
+          ],
+          "deadline_tick": 21,
+          "public_observations": [
+            "agent assigned transport at tick 19"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t19-02",
+          "tick_created": 19
+        }
+      ],
+      "tick": 19
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "treat",
+          "actor_id": "a-01",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 22,
+          "public_observations": [
+            "agent assigned treat at tick 20"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t20-00",
+          "tick_created": 20
+        },
+        {
+          "action_type": "craft",
+          "actor_id": "a-02",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 22,
+          "public_observations": [
+            "agent assigned craft at tick 20"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t20-01",
+          "tick_created": 20
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-03",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-04"
+          ],
+          "deadline_tick": 22,
+          "public_observations": [
+            "agent assigned transport at tick 20"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t20-02",
+          "tick_created": 20
+        }
+      ],
+      "tick": 20
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "record",
+          "actor_id": "a-04",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 23,
+          "public_observations": [
+            "agent assigned record at tick 21"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t21-00",
+          "tick_created": 21
+        },
+        {
+          "action_type": "treat",
+          "actor_id": "a-05",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 23,
+          "public_observations": [
+            "agent assigned treat at tick 21"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t21-01",
+          "tick_created": 21
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-06",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-07"
+          ],
+          "deadline_tick": 23,
+          "public_observations": [
+            "agent assigned transport at tick 21"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t21-02",
+          "tick_created": 21
+        }
+      ],
+      "tick": 21
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "harvest",
+          "actor_id": "a-07",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 24,
+          "public_observations": [
+            "agent assigned harvest at tick 22"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t22-00",
+          "tick_created": 22
+        },
+        {
+          "action_type": "record",
+          "actor_id": "a-08",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 24,
+          "public_observations": [
+            "agent assigned record at tick 22"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t22-01",
+          "tick_created": 22
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-09",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-10"
+          ],
+          "deadline_tick": 24,
+          "public_observations": [
+            "agent assigned transport at tick 22"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t22-02",
+          "tick_created": 22
+        }
+      ],
+      "tick": 22
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "craft",
+          "actor_id": "a-10",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 25,
+          "public_observations": [
+            "agent assigned craft at tick 23"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t23-00",
+          "tick_created": 23
+        },
+        {
+          "action_type": "harvest",
+          "actor_id": "a-11",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 25,
+          "public_observations": [
+            "agent assigned harvest at tick 23"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t23-01",
+          "tick_created": 23
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-12",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-01"
+          ],
+          "deadline_tick": 25,
+          "public_observations": [
+            "agent assigned transport at tick 23"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t23-02",
+          "tick_created": 23
+        }
+      ],
+      "tick": 23
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "convene_assembly",
+          "actor_id": "a-04",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [
+            "a-01",
+            "a-02",
+            "a-03",
+            "a-04",
+            "a-05",
+            "a-06",
+            "a-07",
+            "a-08",
+            "a-09",
+            "a-10",
+            "a-11",
+            "a-12"
+          ],
+          "deadline_tick": 24,
+          "public_observations": [
+            "constitutional assembly convened at tick 24"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t24-assembly",
+          "tick_created": 24
+        }
+      ],
+      "tick": 24
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "record",
+          "actor_id": "a-04",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 27,
+          "public_observations": [
+            "agent assigned record at tick 25"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t25-00",
+          "tick_created": 25
+        },
+        {
+          "action_type": "treat",
+          "actor_id": "a-05",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 27,
+          "public_observations": [
+            "agent assigned treat at tick 25"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t25-01",
+          "tick_created": 25
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-06",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-07"
+          ],
+          "deadline_tick": 27,
+          "public_observations": [
+            "agent assigned transport at tick 25"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t25-02",
+          "tick_created": 25
+        }
+      ],
+      "tick": 25
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "harvest",
+          "actor_id": "a-07",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 28,
+          "public_observations": [
+            "agent assigned harvest at tick 26"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t26-00",
+          "tick_created": 26
+        },
+        {
+          "action_type": "record",
+          "actor_id": "a-08",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 28,
+          "public_observations": [
+            "agent assigned record at tick 26"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t26-01",
+          "tick_created": 26
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-09",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-10"
+          ],
+          "deadline_tick": 28,
+          "public_observations": [
+            "agent assigned transport at tick 26"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t26-02",
+          "tick_created": 26
+        }
+      ],
+      "tick": 26
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "craft",
+          "actor_id": "a-10",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 29,
+          "public_observations": [
+            "agent assigned craft at tick 27"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t27-00",
+          "tick_created": 27
+        },
+        {
+          "action_type": "harvest",
+          "actor_id": "a-11",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 29,
+          "public_observations": [
+            "agent assigned harvest at tick 27"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t27-01",
+          "tick_created": 27
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-12",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-01"
+          ],
+          "deadline_tick": 29,
+          "public_observations": [
+            "agent assigned transport at tick 27"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t27-02",
+          "tick_created": 27
+        }
+      ],
+      "tick": 27
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "treat",
+          "actor_id": "a-01",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 30,
+          "public_observations": [
+            "agent assigned treat at tick 28"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t28-00",
+          "tick_created": 28
+        },
+        {
+          "action_type": "craft",
+          "actor_id": "a-02",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 30,
+          "public_observations": [
+            "agent assigned craft at tick 28"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t28-01",
+          "tick_created": 28
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-03",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-04"
+          ],
+          "deadline_tick": 30,
+          "public_observations": [
+            "agent assigned transport at tick 28"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t28-02",
+          "tick_created": 28
+        }
+      ],
+      "tick": 28
+    },
+    {
+      "tasks": [
+        {
+          "action_type": "record",
+          "actor_id": "a-04",
+          "constraints": {
+            "requires_rights": true
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 31,
+          "public_observations": [
+            "agent assigned record at tick 29"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t29-00",
+          "tick_created": 29
+        },
+        {
+          "action_type": "treat",
+          "actor_id": "a-05",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [],
+          "deadline_tick": 31,
+          "public_observations": [
+            "agent assigned treat at tick 29"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t29-01",
+          "tick_created": 29
+        },
+        {
+          "action_type": "transport",
+          "actor_id": "a-06",
+          "constraints": {
+            "units": 2
+          },
+          "counterpart_ids": [
+            "a-07"
+          ],
+          "deadline_tick": 31,
+          "public_observations": [
+            "agent assigned transport at tick 29"
+          ],
+          "schema_version": 1,
+          "task_id": "pilotv1-t29-02",
+          "tick_created": 29
+        }
+      ],
+      "tick": 29
+    }
+  ],
+  "total_ticks": 30,
+  "world_id": "world-pilot-v1"
+}
