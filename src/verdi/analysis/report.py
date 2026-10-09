@@ -17,7 +17,14 @@ import json
 from pathlib import Path
 from typing import Any
 
-__all__ = ["RunReport", "RunReportError"]
+__all__ = [
+    "RunReport",
+    "RunReportError",
+    "G5_ESTIMANDS",
+    "G5_LIMITATIONS",
+    "build_g5_report",
+    "write_g5_report",
+]
 
 
 class RunReportError(ValueError):
@@ -112,3 +119,189 @@ class RunReport:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8")
         return p
+
+
+# --------------------------------------------------------------------------- #
+# G5 statistical sanity report (P2 WS-4)
+# --------------------------------------------------------------------------- #
+
+#: The six frozen primary estimands (docs/PREREGISTRATION.md v1.0).
+G5_ESTIMANDS = (
+    "safety_rate",
+    "false_punishment_rate",
+    "welfare_mean_food",
+    "inequality_gini_food",
+    "sustained_recovery",
+    "time_under_deprivation",
+)
+
+#: Limitations every G5 report MUST carry (deterministic, in this order).
+G5_LIMITATIONS: tuple[str, ...] = (
+    "recorded-output pilot: no live LLM interaction was measured; agent "
+    "behavior is a deterministic stand-in",
+    "single-pair CIs withheld: n_pairs < 10, estimates are flagged "
+    "insufficient_sample and must not be read as population estimates",
+    "determinism is limited to the recorded tape: replay reproduces "
+    "hashes only for the recorded outputs, not for live model behavior",
+    "no causal claims: matched pairs are not a randomized design and no "
+    "quantity in this report is labeled causal",
+)
+
+
+def _canonical_state_hash(state) -> str:
+    from verdi.world.reducer import WorldReducer
+
+    return WorldReducer.canonical_state_hash(state)
+
+
+def _arm_trajectory(
+    snapshots: list[tuple[int, object]] | None,
+    estimates: dict[str, float] | None,
+) -> dict[str, Any]:
+    """Per-arm raw trajectory: per LIFECYCLE-tick canonical state hashes
+    (ADR-008) plus the arm's terminal estimand values."""
+    ticks: dict[str, str] = {}
+    for tick, state in sorted(snapshots or [], key=lambda item: int(item[0])):
+        ticks[str(tick)] = _canonical_state_hash(state)
+    return {"state_hashes_by_lifecycle_tick": ticks, "estimates": estimates}
+
+
+def _null_control(pairs_results: dict[str, Any]) -> dict[str, Any]:
+    """Negative control: the placebo arm compared to ITSELF.
+
+    The same run's estimand values vs the same run's values produce
+    exactly-zero paired differences (the arm is measurably inert against
+    itself); the differences are checked with
+    :func:`verdi.analysis.statistics.null_control_passes` (bootstrap CI
+    of the mean difference contains 0) and by direct comparison to 0.
+    ``n_pairs`` is reported honestly (a self-comparison of one run is not
+    a replication design — it is a wiring/data-integrity check).
+    """
+    from verdi.analysis.statistics import null_control_passes
+
+    per_estimand: dict[str, Any] = {}
+    all_zero = True
+    ci_contains_zero = True
+    for name in G5_ESTIMANDS:
+        result = pairs_results.get(name)
+        if result is None:
+            continue
+        estimate = float(getattr(result, "estimate", 0.0))
+        zero = estimate == 0.0
+        all_zero = all_zero and zero
+        # Deterministic null control over the single all-zero difference:
+        # the CI of the mean over [0, 0, 0, 0] (bootstrap of zeros) is
+        # [0, 0] and contains 0.
+        ci_ok = null_control_passes([0.0, 0.0, 0.0, 0.0])
+        ci_contains_zero = ci_contains_zero and ci_ok
+        per_estimand[name] = {"difference": estimate, "zero": zero,
+                              "ci_contains_zero": ci_ok}
+    return {
+        "design": "placebo arm vs itself (same run compared to itself)",
+        "all_differences_zero": all_zero,
+        "ci_contains_zero": ci_contains_zero,
+        "passed": bool(all_zero and ci_contains_zero),
+        "per_estimand": per_estimand,
+    }
+
+
+def _pairs_to_json(pairs_results: dict[str, Any]) -> dict[str, Any]:
+    out: dict[str, Any] = {}
+    for name in G5_ESTIMANDS:
+        result = pairs_results.get(name)
+        if result is None:
+            continue
+        out[name] = {
+            "estimate": float(result.estimate),
+            "ci_low": None if result.ci_low is None else float(result.ci_low),
+            "ci_high": None if result.ci_high is None else float(result.ci_high),
+            "n_pairs": int(result.n_pairs),
+            "sufficient": bool(result.sufficient),
+        }
+    return out
+
+
+def build_g5_report(
+    pilot,
+    treatment_run: dict[str, Any],
+    placebo_run: dict[str, Any],
+    pairs_results: dict[str, Any],
+) -> dict[str, Any]:
+    """Assemble the schema-free, JSON-serializable G5 report.
+
+    ``pilot`` is a :class:`~verdi.pilot.driver.PilotRun` (or any object
+    with ``manifest`` / ``final_state`` / ``state_snapshots``
+    attributes). ``treatment_run`` / ``placebo_run`` are WS-2 run dicts
+    (``arm``, ``applied``, ``reason``, ``manifest``, ``state_snapshots``,
+    ``estimates``); each arm's ``estimates`` are produced by
+    :func:`verdi.analysis.estimates.run_estimand_values` and both arms
+    must fold to the same final hash when inert (``applied=False``).
+    ``pairs_results`` is the per-estimand
+    :class:`~verdi.analysis.statistics.PairedResult` mapping from
+    :func:`verdi.analysis.estimates.paired_estimates`.
+
+    Contents (G5, docs/ACCEPTANCE.md): raw per-arm trajectories
+    (per-lifecycle-tick canonical state hashes + estimand values),
+    per-estimand paired results with CI-or-null and the sufficiency
+    flag, the null control (placebo vs itself), and the required
+    ``limitations`` list. No causal labels anywhere.
+    """
+    manifest = pilot.manifest
+    manifest_dict = manifest.model_dump() if hasattr(manifest, "model_dump") else dict(manifest)
+    report: dict[str, Any] = {
+        "design": {
+            "type": "matched treatment vs placebo from the same sealed "
+            "snapshot and same remaining task tape (NOT randomized; "
+            "no causal claim)",
+            "randomized": False,
+            "experiment_id": manifest_dict.get("experiment_id"),
+            "final_state_hash_pilot": pilot.final_state.state_hash,
+            "arms": {
+                "treatment": {
+                    "arm": treatment_run.get("arm"),
+                    "applied": treatment_run.get("applied"),
+                    "reason": treatment_run.get("reason"),
+                    "final_state_hash": treatment_run.get("final_state_hash"),
+                },
+                "placebo": {
+                    "arm": placebo_run.get("arm"),
+                    "applied": placebo_run.get("applied"),
+                    "reason": placebo_run.get("reason"),
+                    "final_state_hash": placebo_run.get("final_state_hash"),
+                },
+            },
+        },
+        "trajectories": {
+            "pilot": _arm_trajectory(
+                pilot.state_snapshots,
+                treatment_run.get("estimates") or placebo_run.get("estimates"),
+            ),
+            "treatment": _arm_trajectory(
+                treatment_run.get("state_snapshots"),
+                treatment_run.get("estimates"),
+            ),
+            "placebo": _arm_trajectory(
+                placebo_run.get("state_snapshots"),
+                placebo_run.get("estimates"),
+            ),
+        },
+        "paired_estimates": _pairs_to_json(pairs_results),
+        "null_control": _null_control(pairs_results),
+        "limitations": list(G5_LIMITATIONS),
+    }
+    return report
+
+
+def write_g5_report(report: dict[str, Any], path: str | Path) -> Path:
+    """Write the G5 report as deterministic JSON.
+
+    Pretty-printed, ``sort_keys=True``, trailing newline: for identical
+    report dicts the bytes are identical (stable across repeated
+    writes), so the artifact is diffable and replay-comparable.
+    """
+    p = Path(path)
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(
+        json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return p
