@@ -20,8 +20,8 @@ from verdi.analysis.metrics import (
 from verdi.analysis.report import RunReport, RunReportError
 from verdi.analysis.scenario import (
     LoadedScenario,
-    ScenarioLoadError,
     ScenarioLoader,
+    ScenarioLoadError,
     ScenarioMeta,
     build_t0_state,
     canonical_tape_hash,
