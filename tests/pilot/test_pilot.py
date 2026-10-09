@@ -21,7 +21,6 @@ from verdi.pilot.driver import (
     PilotDriver,
     probe_response_for,
 )
-from verdi.world.replay import replay
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -43,28 +42,31 @@ def test_event_log_verifies(pilot) -> None:
     pilot.log.verify()  # raises LogIntegrityError on any break
 
 
-def test_replay_reproduces_substantive_state_hash(pilot) -> None:
-    """G3: folding the recorded action tape through a fresh reducer+log
-    reproduces the live run's substantive state hash (agents + world
-    resources). The tape covers the 81 action steps; governance
-    bookkeeping events are ledger-only and tracked separately by the
-    driver."""
-    from verdi.world.log import EventLog
-    from verdi.world.reducer import WorldReducer
-
-    final_state, _events = replay(EventLog(), pilot.loaded.t0_state, list(pilot.tape_steps))
-    live = pilot.final_state
-    assert WorldReducer.canonical_state_hash(final_state) == WorldReducer.canonical_state_hash(
-        live.model_copy(
-            update={
-                "tick": final_state.tick,
-                "event_cursor": final_state.event_cursor,
-                "constitution_version": live.constitution_version,
-            }
-        )
-    )
-    # and the full ledger of the live run still verifies end-to-end
+def test_replay_reproduces_full_ledger(pilot) -> None:
+    """G3: folding the FULL recorded ledger tape (all 126 action AND
+    governance steps, in ledger order) through a fresh reducer + log
+    reproduces the live run's final state hash AND a byte-identical
+    JSONL ledger. No bookkeeping force-copies are needed: the reducer
+    now tracks constitution_version from the recorded tape."""
+    final_state, events = PilotDriver(REPO_ROOT).replay_check(pilot)
+    assert final_state.state_hash == pilot.final_state.state_hash
+    assert len(events) == len(pilot.log.events)
+    # and the live ledger verifies end-to-end
     pilot.log.verify()
+    # full tape length equals ledger length; action-only tape is a subset
+    assert len(pilot.full_tape_steps) == len(pilot.log.events)
+    assert len(pilot.tape_steps) == 81  # action steps only
+
+
+def test_replay_constitution_version_tracked(pilot) -> None:
+    """Enacted amendments must advance WorldState.constitution_version, and
+    replay must reproduce it without any force-copy."""
+    assert pilot.final_state.constitution_version == "base-constitution-v4"
+    assert pilot.constitution_versions == {
+        10: "base-constitution-v2",
+        17: "base-constitution-v3",
+        24: "base-constitution-v4",
+    }
 
 
 def test_violation_attempted_and_logged(pilot) -> None:
@@ -118,6 +120,27 @@ def test_drift_keeps_channels_separate(pilot) -> None:
         # the pooled-over-channels key must always be null (explicit ban)
         assert agent["by_axis_pooled_over_channels"] is None
         assert set(agent["by_channel"]) == {"declared", "private", "public"}
+
+
+def test_audit_records_correlate_real_ledger_event_ids(pilot) -> None:
+    """Regression (review finding 1): each governance audit record must
+    correlate to the ACTUAL ledger event id of its governance event, not a
+    contiguous 0-based index. All ids must be unique, in range, and the
+    linked event's kind must match the trace's span name."""
+    assert len(pilot.audit_records) == len(pilot.governance_events)
+    ids = [ar.event_ids for ar in pilot.audit_records]
+    flat = [i for ev in ids for i in ev]
+    assert all(len(ev) == 1 for ev in ids), "one ledger event per governance trace"
+    assert len(set(flat)) == len(flat), "correlation ids must be unique"
+    assert all(0 <= i < len(pilot.log.events) for i in flat)
+    # cross-check against the ledger event recorded per governance event
+    for ar, gen_event in zip(pilot.audit_records, pilot.governance_events, strict=True):
+        ledger_id = gen_event["_ledger_event_id"]
+        assert ar.event_ids == [ledger_id]
+        ledger_event = pilot.log.events[ledger_id]
+        assert ledger_event.kind == gen_event["kind"]
+        # regression (review finding 2): span names must be populated
+        assert ar.details["span_names"] == [gen_event["kind"]]
 
 
 def test_report_is_complete(pilot) -> None:

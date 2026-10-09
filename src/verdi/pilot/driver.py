@@ -58,8 +58,8 @@ from verdi.schemas import (
     WorldState,
 )
 from verdi.world.log import EventLog
-from verdi.world.reducer import WorldReducer
-from verdi.world.replay import TapeStep, replay
+from verdi.world.reducer import GENESIS_HASH, WorldReducer
+from verdi.world.replay import TapeStep
 
 EXPERIMENT_ID = "exp-pilot-v1"
 BANK_VERSION = "bank-pilot-1"
@@ -83,6 +83,72 @@ _VIOLATION_CODE = "supply_misallocation"
 _APPEAL_TICK = 12
 
 
+def build_governance_event(
+    before: WorldState,
+    after: WorldState,
+    action: ProposedAction,
+    validation: ValidationResult,
+    gen_event: dict[str, Any],
+) -> WorldEvent:
+    """Unsealed governance ledger event, byte-identical to the action-path
+    construction except for ``kind``/``payload``.
+
+    Shared by the live run and the full-ledger replay so the two ledgers
+    hash identically (G3). ``event_id`` comes from ``before.event_cursor``
+    (same as the reducer); ``prev_hash`` is left to the caller to match the
+    log position and is passed in via ``model_copy`` before sealing.
+    """
+    event_id = before.event_cursor
+    accepted = validation.accepted
+    payload: dict[str, Any] = {
+        "task_id": action.task_id,
+        "action_kind": action.action_kind,
+        "arguments": action.arguments,
+    }
+    if not accepted:
+        payload.update(
+            {
+                "blocked_by": validation.blocked_by,
+                "attempted_violation_codes": validation.attempted_violation_codes,
+                "details": validation.details,
+            }
+        )
+    return WorldEvent(
+        event_id=event_id,
+        tick=after.tick,
+        cause_event_id=event_id - 1 if event_id > 0 else None,
+        actor_id=gen_event.get("actor"),
+        kind=gen_event["kind"],
+        payload={
+            k: v
+            for k, v in gen_event.items()
+            if k not in ("kind", "_ledger_event_id")
+        },
+        before_hash=WorldReducer.canonical_state_hash(before),
+        after_hash=(
+            WorldReducer.canonical_state_hash(after) if accepted else None
+        ),
+        decision="accepted" if accepted else "rejected",
+        prev_hash=GENESIS_HASH,
+        event_hash="",
+    )
+
+
+def event_payload_action(gen_event: dict[str, Any], event_id: int) -> ProposedAction:
+    """Canonical ProposedAction for a governance ledger event / tape step."""
+    arguments: dict[str, Any] = {}
+    if gen_event["kind"] == "amendment_enacted":
+        new_version = gen_event.get("constitution_version") or gen_event.get("new_version")
+        if new_version:
+            arguments["constitution_version"] = str(new_version)
+    return ProposedAction(
+        actor_id=str(gen_event.get("actor") or "governance"),
+        task_id=f"governance-{gen_event['kind']}-{event_id}",
+        action_kind="governance",
+        arguments=arguments,
+    )
+
+
 def _digest(*parts: object) -> str:
     return hashlib.sha256("|".join(str(p) for p in parts).encode("utf-8")).hexdigest()
 
@@ -102,12 +168,66 @@ def model_output_for(action_kind: str) -> str:
     )
 
 
+class ProbeLeakError(RuntimeError):
+    """G3 defense: a hidden probe dilemma leaked into an agent-visible surface."""
+
+
+def assert_no_probe_leak(
+    bank: ProbeBank, agent_visible_text: str, context: str
+) -> None:
+    """Fail the run if any bank dilemma text appears in agent-visible content.
+
+    Containment guard only (verbatim substring + rendered prompt hashes);
+    paraphrased leakage is out of scope for this first-line check.
+    """
+    leaks = bank.leak_check(agent_visible_text)
+    if leaks:
+        raise ProbeLeakError(
+            f"probe leak detected in {context}: {len(leaks)} dilemma text(s) "
+            "present in agent-visible content"
+        )
+
+
 def probe_response_for(agent_id: str, tick: int, channel: str) -> str:
     """Deterministic out-of-band probe response (stand-in for an LLM reply)."""
     index = int(
         hashlib.sha256(f"{agent_id}|{tick}|{channel}".encode()).hexdigest()[:4], 16
     )
     return "yes" if index < 160 else "no"
+
+
+def _assert_no_probe_leak_over_surfaces(
+    bank: ProbeBank, state: WorldState, tape: list[list], lifecycle_tick: int
+) -> None:
+    """G3 runtime defense: no hidden dilemma may appear in any agent-visible surface.
+
+    Scans persona summaries, public signals, task public observations and the
+    rendered policy prompts of the current tick.
+    """
+    visible_parts: list[str] = []
+    for agent in state.agents.values():
+        visible_parts.append(agent.persona_summary)
+        visible_parts.extend(agent.public_signals)
+    for task in tape[lifecycle_tick]:
+        visible_parts.extend(task.public_observations)
+        prompt = AgentPolicy(
+            _NullCaller(), task.actor_id
+        ).build_prompt(
+            task,
+            role=state.agents[task.actor_id].role,
+            persona_summary=state.agents[task.actor_id].persona_summary,
+            tick=lifecycle_tick,
+        )
+        visible_parts.append(prompt)
+    joined = "\n".join(visible_parts)
+    assert_no_probe_leak(bank, joined, f"agent-visible surfaces at tick {lifecycle_tick}")
+
+
+class _NullCaller:
+    """Policy prompt builder never needs a live caller."""
+
+    async def generate_structured(self, *args: Any, **kwargs: Any):
+        raise AssertionError("prompt-only caller must not be called")
 
 
 def _precompute_dispatch(
@@ -135,6 +255,7 @@ class PilotRun:
     final_state: WorldState
     log: EventLog
     tape_steps: list[TapeStep] = field(default_factory=list)
+    full_tape_steps: list[TapeStep] = field(default_factory=list)
     probe_results: list[ProbeResult] = field(default_factory=list)
     audit_records: list[AuditRecord] = field(default_factory=list)
     governance_events: list[dict[str, Any]] = field(default_factory=list)
@@ -238,6 +359,7 @@ class PilotDriver:
         assert violation_subject is not None, "tape must dispatch an agent at the sanction tick"
 
         steps: list[TapeStep] = []
+        full_steps: list[TapeStep] = []
         probe_results: list[ProbeResult] = []
         governance_events: list[dict[str, Any]] = []
         quarantined: list[tuple[str, str]] = []
@@ -250,39 +372,34 @@ class PilotDriver:
         def emit_governance(gen_event: dict[str, Any], gen_tick: int) -> WorldEvent:
             nonlocal state
             event_id = state.event_cursor
-            event = reducer.build_event(
-                state,
-                state,
-                ProposedAction(
-                    actor_id=str(gen_event.get("actor") or "governance"),
-                    task_id=f"governance-{gen_event['kind']}-{event_id}",
-                    action_kind=gen_event["kind"],
-                ),
-                ValidationResult(
-                    accepted=gen_event.get("decision") == "accepted",
-                    details=str(gen_event.get("reason", "")),
-                ),
-                prev_hash=log.last_hash(),
+            action = event_payload_action(gen_event, event_id)
+            validation = ValidationResult(
+                accepted=gen_event.get("decision") == "accepted",
+                details=str(gen_event.get("reason", "")),
             )
-            event = event.model_copy(
-                update={
-                    "event_id": event_id,
-                    "tick": gen_tick,
-                    "kind": gen_event["kind"],
-                    "actor_id": gen_event.get("actor"),
-                    "payload": {k: v for k, v in gen_event.items() if k != "kind"},
-                    "decision": gen_event.get("decision", "accepted"),
-                }
-            )
+            # Deterministic reducer path: when an amendment enacts, the world
+            # state's constitution_version is updated exactly as replay does.
+            after = reducer.apply(state, action, validation)
+            event = build_governance_event(state, after, action, validation, gen_event)
+            event = event.model_copy(update={"prev_hash": log.last_hash()})
             sealed = log.append(event)
-            state = state.model_copy(update={"event_cursor": event_id + 1})
+            state = after
+            gen_event["_ledger_event_id"] = sealed.event_id
+            full_steps.append(
+                TapeStep(
+                    action=action,
+                    validation=validation,
+                    kind="governance",
+                    governance=gen_event,
+                )
+            )
             governance_events.append(gen_event)
             trace_id = f"trace-gov-{event_id}"
             source.add_span(
                 {
                     "span_id": f"span-gov-{event_id}",
                     "trace_id": trace_id,
-                    "span_name": gen_event["kind"],
+                    "name": gen_event["kind"],
                 }
             )
             adapter.record_event(sealed, trace_id)
@@ -315,6 +432,8 @@ class PilotDriver:
         for lifecycle_tick, tasks in enumerate(loaded.tape):
             if lifecycle_tick in PRE_TICK_PROBES:
                 record_probes(lifecycle_tick)
+
+            _assert_no_probe_leak_over_surfaces(bank, state, loaded.tape, lifecycle_tick)
 
             schedule = scheduler.schedule(tasks, state)
             skipped.extend(s.task_id for s in schedule.skipped)
@@ -371,12 +490,13 @@ class PilotDriver:
                     {
                         "span_id": f"span-ev-{sealed.event_id}",
                         "trace_id": trace_id,
-                        "span_name": f"world:{sealed.kind}",
+                        "name": f"world:{sealed.kind}",
                     }
                 )
                 adapter.record_event(sealed, trace_id)
-                steps.append(TapeStep(action=action, validation=validation))
-
+                step = TapeStep(action=action, validation=validation)
+                steps.append(step)
+                full_steps.append(step)
             if lifecycle_tick in _ASSEMBLY_AMENDMENTS:
                 proposal_id, summary = _ASSEMBLY_AMENDMENTS[lifecycle_tick]
                 emit_governance(
@@ -401,10 +521,14 @@ class PilotDriver:
                         ),
                         lifecycle_tick,
                     )
-                emit_governance(
-                    governance.enact([], lifecycle_tick, proposal_id=proposal_id),
-                    lifecycle_tick,
+                enact_event = governance.enact(
+                    [], lifecycle_tick, proposal_id=proposal_id
                 )
+                if enact_event.get("decision") == "accepted":
+                    enact_event["constitution_version"] = (
+                        governance.constitution.current.version
+                    )
+                emit_governance(enact_event, lifecycle_tick)
 
             if lifecycle_tick == _SANCTION_TICK and violation_event_id is not None:
                 sanction = Sanction(
@@ -463,7 +587,8 @@ class PilotDriver:
             probe_results_by_agent[pr.agent_id].append(pr)
 
         audit_records = [
-            adapter.correlate(f"trace-gov-{i}") for i in range(len(governance_events))
+            adapter.correlate(f"trace-gov-{gen_event['_ledger_event_id']}")
+            for gen_event in governance_events
         ]
         adapter.stop()
 
@@ -520,6 +645,7 @@ class PilotDriver:
             final_state=final_state,
             log=log,
             tape_steps=steps,
+            full_tape_steps=full_steps,
             probe_results=probe_results,
             audit_records=audit_records,
             governance_events=governance_events,
@@ -534,15 +660,41 @@ class PilotDriver:
 
     # ------------------------------------------------------------------ #
     def replay_check(self, pilot: PilotRun) -> tuple[WorldState, list[WorldEvent]]:
-        """G3 replay: fold the recorded tape through a fresh reducer + log.
+        """G3 replay: fold the FULL recorded ledger tape (every action AND
+        governance step, in ledger order) through a fresh reducer + log.
 
-        Must reproduce the live run's substantive state hash (recorded
-        output replay with no model invocation).
+        Must reproduce the live run's final state hash and a byte-identical
+        JSONL ledger (recorded-output replay, no model invocation).
+        Raises AssertionError on any mismatch.
         """
         log = EventLog()
-        final_state, events = replay(log, pilot.loaded.t0_state, list(pilot.tape_steps))
+        reducer = WorldReducer()
+        state = pilot.loaded.t0_state
+        prev_hash = log.last_hash()
+        for step in pilot.full_tape_steps:
+            before = state
+            after = reducer.apply(state, step.action, step.validation)
+            if step.kind == "governance":
+                event = build_governance_event(
+                    before, after, step.action, step.validation, step.governance
+                )
+            else:
+                event = reducer.build_event(
+                    before, after, step.action, step.validation, prev_hash
+                )
+            event = event.model_copy(update={"prev_hash": prev_hash})
+            sealed = log.append(event)
+            state = after
+            prev_hash = sealed.event_hash
         log.verify()
-        return final_state, events
+        if state.state_hash != pilot.final_state.state_hash:
+            raise AssertionError(
+                "replay state hash mismatch: "
+                f"replay={state.state_hash} live={pilot.final_state.state_hash}"
+            )
+        if log.to_jsonl_bytes() != pilot.log.to_jsonl_bytes():
+            raise AssertionError("replay ledger JSONL differs from the live ledger")
+        return state, list(log.events)
 
 
 def run_pilot(repo_root: str | Path | None = None, out_dir: str | Path | None = None) -> PilotRun:

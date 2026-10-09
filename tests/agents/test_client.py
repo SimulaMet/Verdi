@@ -91,6 +91,55 @@ def test_non_retryable_400_raises_immediately():
     assert len(records) == 1  # no retry on 400
 
 
+def test_transport_error_retries_then_succeeds():
+    """Regression (review finding 5): connection-level transport errors are
+    transient and must be retried with the capped backoff, then succeed."""
+    import httpx
+
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise httpx.ConnectError("connection refused")
+        return httpx.Response(200, json=completion_body('{"action_kind": "speak", "arguments": {}}'))
+
+    client = ModelClient(make_config(max_retries=2, timeout_seconds=1.0), transport=httpx.MockTransport(handler))
+
+    async def run():
+        try:
+            return await client.generate_structured([{"role": "user", "content": "hi"}])
+        finally:
+            await client.aclose()
+
+    result = asyncio.run(run())
+    assert calls["n"] == 2  # one failure + one retry
+    assert result.content == '{"action_kind": "speak", "arguments": {}}'
+
+
+def test_transport_error_exhausts_retries():
+    """Transport errors raise ModelError after max_retries attempts."""
+    import httpx
+
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        raise httpx.ConnectError("connection refused")
+
+    client = ModelClient(make_config(max_retries=1, timeout_seconds=1.0), transport=httpx.MockTransport(handler))
+
+    async def run():
+        try:
+            await client.generate_structured([{"role": "user", "content": "hi"}])
+        finally:
+            await client.aclose()
+
+    with pytest.raises(ModelError):
+        asyncio.run(run())
+    assert calls["n"] == 2  # original + exactly one retry
+
+
 def test_malformed_200_body_raises_typed_error():
     transport = chat_transport([{"id": "x", "choices": []}], records=[])
     client = ModelClient(make_config(), transport=transport)
