@@ -1,0 +1,8 @@
+{
+  "regime": "G1",
+  "adversary_count": 1,
+  "scheduler_id": "seeded-scheduler/pilot-v1",
+  "reflection": false,
+  "memory": true,
+  "detection": false
+}
