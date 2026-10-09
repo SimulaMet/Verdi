@@ -58,3 +58,33 @@ This is a *verified* failure record, not a place to invent successes. Integrator
 - Unresolved risk / follow-up: leak guard is verbatim containment only; paraphrased
   leakage needs an embedding/semantic check (P2 candidate). Live G4 bridge still
   blocked on SimpleAudit install + vLLM endpoint.
+
+## Tranche 5 (P2): estimand construct validity caught only by an estimand-level re-review
+- Symptom: an independent G5 pre-review found 2 of 6 frozen primary estimands
+  computed by formulas that silently deviated from PREREGISTRATION.md
+  (sustained_recovery: agent-fraction/k-boolean vs the frozen per-tick
+  fraction; false_punishment_rate: missing a numerator leg the v1 schema
+  cannot express). Engineering review had passed the same code — its checks
+  (types, scope, determinism) cannot see construct validity.
+- Root cause: "reuse an existing metrics.py function" was treated as
+  equivalence with the preregistered definition. Reuse is NOT validation;
+  the frozen definition is the contract, and data-model limits (snapshot
+  cadence, Appeal.status = filed|upheld|dismissed, no reversed/restored
+  sanction state) can make the ideal definition unobservable.
+- Generalizable prevention rule: when wiring an estimand, (a) quote the
+  frozen definition, (b) map it to an implementation, (c) test a synthetic
+  case where a plausible WRONG formula disagrees with the right one, and
+  (d) if the data model cannot express the ideal, append a versioned
+  operational addendum (never edit the frozen text) and make code ==
+  addendum. A statistic that "passes tests" but measures the wrong
+  construct is worse than a missing statistic.
+- Related: a negative control must be computed over the actual comparison
+  values (CI over real differences), not constant zeros; and a statistical
+  report must fail loudly on missing run-dict keys — a silent `final_state_hash:
+  null` in a report is an integrity hole.
+- Also: worktrees share the main checkout's editable install; workers must
+  run pytest with PYTHONPATH=<worktree>/src or the tests silently exercise
+  the wrong tree.
+- Rollback point if regression: dev `d62565a` (pre-P2). Tranche 5 merged
+  clean: 291 tests, ruff clean, 5 independent reviews (4 PASS, 1 FAIL
+  remediated to PASS on re-review).
