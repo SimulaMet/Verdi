@@ -143,6 +143,20 @@ def test_audit_records_correlate_real_ledger_event_ids(pilot) -> None:
         assert ar.details["span_names"] == [gen_event["kind"]]
 
 
+def test_welfare_keyed_by_lifecycle_tick(pilot) -> None:
+    """Regression (re-review note A): welfare/inequality metrics must be keyed
+    by the LIFECYCLE tick of each snapshot (0 + SNAPSHOT_TICKS), NOT the
+    reducer's cumulative transition counter (which is 126 in this run)."""
+    from verdi.pilot.driver import SNAPSHOT_TICKS
+
+    expected = {str(0), *(str(t) for t in SNAPSHOT_TICKS)}
+    assert set(pilot.metrics["welfare_food"]["gini_by_tick"].keys()) == expected
+    # and the deprivation horizon must be the last lifecycle tick, not the
+    # transition counter (126 != 29)
+    assert pilot.final_state.tick == len(pilot.log.events)
+    assert pilot.final_state.tick != pilot.loaded.meta.total_ticks - 1
+
+
 def test_report_is_complete(pilot) -> None:
     report = pilot.report
     assert report is not None

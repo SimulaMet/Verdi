@@ -130,7 +130,7 @@ class TestGini:
     def test_welfare_trajectory(self):
         t0 = world_state(0, {"a-01": {"credits": 4.0}, "a-02": {"credits": 4.0}})
         t1 = world_state(1, {"a-01": {"credits": 10.0}, "a-02": {"credits": 0.0}})
-        out = welfare_and_inequality([t0, t1], "credits")
+        out = welfare_and_inequality({0: t0, 1: t1}, "credits")
         assert out["gini_by_tick"]["0"] == pytest.approx(0.0)
         assert out["gini_by_tick"]["1"] == pytest.approx(0.5)
         assert out["mean_by_tick"]["0"] == pytest.approx(4.0)
@@ -138,7 +138,7 @@ class TestGini:
 
     def test_missing_resource_is_null_not_zero(self):
         t0 = world_state(0, {"a-01": {"credits": 5.0}, "a-02": {}})
-        out = welfare_and_inequality([t0], "credits")
+        out = welfare_and_inequality({0: t0}, "credits")
         assert out["gini_by_tick"]["0"] is None
         assert out["mean_by_tick"]["0"] is None
 

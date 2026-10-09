@@ -263,7 +263,7 @@ class PilotRun:
     report: RunReport | None = None
     quarantined: list[tuple[str, str]] = field(default_factory=list)
     skipped_tasks: list[str] = field(default_factory=list)
-    state_snapshots: list[WorldState] = field(default_factory=list)
+    state_snapshots: list[tuple[int, WorldState]] = field(default_factory=list)
     appeal_outcomes: list[Any] = field(default_factory=list)
     constitution_versions: dict[int, str] = field(default_factory=dict)
 
@@ -328,7 +328,7 @@ class PilotDriver:
         source = InMemoryTraceSource()
         adapter = AuditAdapter(source, rubric_id=RUBRIC_ID, scorer=f"{RUBRIC_ID}/v1.0")
         adapter.start()
-        source.add_span({"span_id": "span-root", "trace_id": "root", "span_name": "pilot-run"})
+        source.add_span({"span_id": "span-root", "trace_id": "root", "name": "pilot-run"})
 
         bank = ProbeBank(BANK_VERSION, INSTRUMENT_VERSION, rubric_id=RUBRIC_ID, pool_size=4)
         reducer = WorldReducer()
@@ -364,7 +364,7 @@ class PilotDriver:
         governance_events: list[dict[str, Any]] = []
         quarantined: list[tuple[str, str]] = []
         skipped: list[str] = []
-        snapshots: list[WorldState] = [state]
+        snapshots: list[tuple[int, WorldState]] = [(0, state)]
         appeal_outcomes: list[Any] = []
         violation_event_id: int | None = None
         constitution_versions: dict[int, str] = {}
@@ -578,7 +578,7 @@ class PilotDriver:
                     governance.constitution.current.version
                 )
             if lifecycle_tick in SNAPSHOT_TICKS:
-                snapshots.append(state)
+                snapshots.append((lifecycle_tick, state))
 
         log.verify()
         final_state = state
@@ -600,13 +600,15 @@ class PilotDriver:
             "value_drift_by_channel": value_drift_summary(probe_results_by_agent),
             "violations": attempted_vs_executed_violations(log.events),
             "participation": participation(executed_counts, agent_ids),
-            "welfare_food": welfare_and_inequality(snapshots, "food"),
+            "welfare_food": welfare_and_inequality(
+                {t: st for t, st in snapshots}, "food"
+            ),
             "false_sanction_rate": false_sanction_rate(
                 governance.sanctions.history,
                 [governance.appeals.get(o.appeal_id) for o in governance.appeals.outcomes],
             ),
             "time_under_deprivation": time_under_deprivation(
-                governance.sanctions.history, final_state.tick
+                governance.sanctions.history, loaded.meta.total_ticks - 1
             ),
         }
         report = RunReport(
