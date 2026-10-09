@@ -16,7 +16,7 @@ the research spec explicitly forbids.
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from verdi.schemas import ProbeResult, Sanction, WorldEvent, WorldState
@@ -214,7 +214,7 @@ def gini(values: Sequence[float]) -> float | None:
 
 
 def welfare_and_inequality(
-    states_by_tick: Sequence[WorldState], resource_key: str
+    states_by_tick: Mapping[int, WorldState], resource_key: str
 ) -> dict[str, Any]:
     """Per-tick Gini and mean of an agent-held resource.
 
@@ -224,13 +224,16 @@ def welfare_and_inequality(
     key are reported as ``None`` for that tick (missing data is never
     imputed as zero).
 
+    ``states_by_tick`` maps the LIFECYCLE tick of each snapshot to the
+    world state (NOT the reducer's cumulative transition counter).
+
     Returns ``{"resource": key, "gini_by_tick": {tick: float|None},
     "mean_by_tick": {tick: float|None}}``.
     """
     gini_by_tick: dict[str, float | None] = {}
     mean_by_tick: dict[str, float | None] = {}
-    for state in states_by_tick:
-        key = str(state.tick)
+    for tick, state in states_by_tick.items():
+        key = str(tick)
         values = [a.resources[resource_key] for a in state.agents.values()
                   if resource_key in a.resources]
         missing = len(values) != len(state.agents)
