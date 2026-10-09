@@ -12,8 +12,11 @@ Guarantees (tested in ``tests/world/test_branch.py``):
 * B1: inputs (snapshot, prefix log) are never mutated;
 * B2: two branches from the same inputs yield the same
   ``branch_state_hash`` and byte-identical JSONL;
-* B3: a spec whose ``origin_state_hash`` / ``origin_event_count`` do not
-  match the snapshot / prefix ledger raises :class:`BranchOriginError`;
+* B3: the full origin contract — (a) ``origin_state_hash`` matches the
+  snapshot, (b) ``origin_event_count`` matches the prefix ledger length,
+  and (c) the snapshot equals the state the prefix ledger terminates in
+  (``canonical_state_hash(snapshot) == log.events[-1].after_hash`` for a
+  non-empty ledger) — any violation raises :class:`BranchOriginError`;
 * B4: the branch ledger re-verifies and its first folded event chains
   onto the prefix ledger's ``last_hash()``;
 * B5: :func:`manifest_for_branch` carries ``branch_id`` /
@@ -42,7 +45,11 @@ class BranchSpec:
 
     origin_state_hash: str          # canonical_state_hash of the snapshot
     origin_event_count: int         # ledger length at the branch point
-    origin_tick: int                # LIFECYCLE tick at the branch point
+    # Caller-supplied LIFECYCLE-tick metadata at the branch point. Per
+    # ADR-008 the reducer tick is a pure transition counter, not the
+    # pilot's lifecycle tick, so this is identity/provenance metadata
+    # only — branch_from_snapshot performs no cross-check on it.
+    origin_tick: int
     branch_id: str                  # e.g. "counterfactual-v2"
     treatment_seed: int = 0
 
@@ -71,9 +78,13 @@ def _governance_event(
     construction except for ``kind``/``payload``.
 
     Local copy of the pilot's ``build_governance_event`` so the world
-    engine has no dependency on ``verdi.pilot``. ``event_id`` comes from
-    ``before.event_cursor`` (same as the reducer); ``prev_hash`` is left
-    to the caller to match the log position.
+    engine has no dependency on ``verdi.pilot``. Keep in sync with its
+    counterpart in ``verdi.pilot.driver.build_governance_event``; the
+    pilot-branch byte-identity test
+    (``tests/world/test_branch.py::test_branch_replay_matches_live_ledger``)
+    guards against drift between the two builders. ``event_id`` comes
+    from ``before.event_cursor`` (same as the reducer); ``prev_hash`` is
+    left to the caller to match the log position.
     """
     event_id = before.event_cursor
     accepted = validation.accepted
@@ -138,6 +149,10 @@ def branch_from_snapshot(
         (``kind="action"`` or ``kind="governance"``).
     spec:
         Branch origin + treatment identity (see :class:`BranchSpec`).
+        ``spec.origin_tick`` is caller-supplied LIFECYCLE-tick metadata
+        only (per ADR-008 the reducer tick is a transition counter, so
+        no hard cross-check against the reducer tick is possible); it is
+        carried through to the result but never validated here.
 
     Returns
     -------
@@ -148,8 +163,12 @@ def branch_from_snapshot(
     Raises
     ------
     BranchOriginError
-        If ``spec.origin_state_hash`` != canonical hash of ``snapshot``
-        or ``spec.origin_event_count`` != ``len(log)`` (B3).
+        If the origin contract (B3) is violated:
+        (a) ``spec.origin_state_hash`` != canonical hash of ``snapshot``,
+        or (b) ``spec.origin_event_count`` != ``len(log)``, or
+        (c) the snapshot is not the terminal state of the prefix ledger
+        — for a non-empty ``log``, ``canonical_state_hash(snapshot)``
+        must equal ``log.events[-1].after_hash``.
     """
     # B3: the spec must name the exact origin we are forking from.
     actual_hash = WorldReducer.canonical_state_hash(snapshot)
@@ -162,6 +181,15 @@ def branch_from_snapshot(
         raise BranchOriginError(
             f"origin_event_count mismatch: spec={spec.origin_event_count} "
             f"ledger={len(log)}"
+        )
+    # B3 (c): the snapshot must be the state the prefix ledger
+    # terminates in. Without this, a spec can match a snapshot that is
+    # merely consistent with the ledger length but divergent from the
+    # ledger's terminal state (an inconsistent (snapshot, log) pair).
+    if log.events and actual_hash != log.events[-1].after_hash:
+        raise BranchOriginError(
+            "snapshot is not the terminal state of the prefix ledger: "
+            f"snapshot={actual_hash!r} ledger_terminal={log.events[-1].after_hash!r}"
         )
 
     # Rebuild the prefix in a fresh ledger from the sealed JSONL bytes.

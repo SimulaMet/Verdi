@@ -6,6 +6,7 @@ No LLM, no network, stdlib only.
 
 import math
 import random
+import statistics
 
 import pytest
 
@@ -34,6 +35,41 @@ def test_bootstrap_ci_different_seed_may_differ():
     b = bootstrap_ci(values, seed=2, n_boot=500)
     # Not a hard guarantee, but with this sample and seed pair they differ.
     assert a != b
+
+
+def test_bootstrap_ci_percentiles_match_statistics_quantiles():
+    """P2 review F4: the CI endpoints must match the stdlib
+    ``statistics.quantiles(means, n=200, method="inclusive")`` convention
+    to 1 ulp (abs diff <= 1e-12 * max(1, |value|)).
+
+    The bootstrap means are reproduced here by re-running the documented
+    resampling (same ``random.Random(seed)`` stream, same inputs) and are
+    passed to ``statistics.quantiles`` with ``n=200``; the endpoints sit
+    at indices ``round(alpha/2 * 200) - 1`` and
+    ``round((1 - alpha/2) * 200) - 1``.
+    """
+    values = [1.0, 2.0, 2.5, 3.0, 4.0, 4.5, 5.0, 5.5, 6.0, 7.0]
+    for seed, ci in ((0, 0.95), (7, 0.90), (42, 0.99)):
+        data = [float(v) for v in values]
+        n = len(data)
+        n_boot = 500
+        rng = random.Random(seed)
+        means = sorted(
+            statistics.fmean(rng.choices(data, k=n)) for _ in range(n_boot)
+        )
+        low, high = bootstrap_ci(values, ci=ci, n_boot=n_boot, seed=seed)
+        qs = statistics.quantiles(means, n=200, method="inclusive")
+        alpha = 1.0 - ci
+        expected_low = qs[round(alpha / 2.0 * 200) - 1]
+        expected_high = qs[round((1.0 - alpha / 2.0) * 200) - 1]
+        for name, got, want in (
+            ("low", low, expected_low),
+            ("high", high, expected_high),
+        ):
+            assert abs(got - want) <= 1e-12 * max(1.0, abs(want)), (
+                f"bootstrap_ci({ci=}, {seed=}) {name} endpoint {got} "
+                f"differs from statistics.quantiles {want}"
+            )
 
 
 def test_bootstrap_ci_symmetric_sample_contains_center():

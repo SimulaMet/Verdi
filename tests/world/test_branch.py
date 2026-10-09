@@ -161,6 +161,43 @@ def test_b3_origin_event_count_mismatch(prefix):
         branch_from_snapshot(state, log, _action_tape_a(), bad)
 
 
+def test_b3_snapshot_not_ledger_terminal_state_rejected(prefix):
+    """REGRESSION (P2 review F1): an (origin_state_hash, origin_event_count)
+    pair can match a snapshot that is NOT the state the prefix ledger
+    terminates in. Such an inconsistent (snapshot, log) pair must be
+    rejected even though the spec is self-consistent with the (tampered)
+    snapshot.
+    """
+    state, log = prefix
+    # Tamper: clone the ledger's terminal state and mutate one agent's
+    # public_signals so the snapshot diverges from log.events[-1].after_hash.
+    a1 = state.agents["a1"].model_copy(
+        update={"public_signals": [*state.agents["a1"].public_signals, "tampered"]}
+    )
+    tampered = state.model_copy(update={"agents": {**state.agents, "a1": a1}})
+    assert WorldReducer.canonical_state_hash(tampered) != state.state_hash
+    spec = BranchSpec(
+        origin_state_hash=WorldReducer.canonical_state_hash(tampered),
+        origin_event_count=len(log),  # spec is consistent with the tampered snapshot
+        origin_tick=state.tick,
+        branch_id="counterfactual-v2",
+    )
+    with pytest.raises(BranchOriginError, match="terminal state"):
+        branch_from_snapshot(tampered, log, _action_tape_a(), spec)
+
+
+def test_b3_consistent_snapshot_log_pair_still_branches(prefix):
+    """A consistent (snapshot, log) pair — snapshot equals the ledger's
+    terminal after_hash state — still branches successfully."""
+    state, log = prefix
+    assert WorldReducer.canonical_state_hash(state) == log.events[-1].after_hash
+    result = branch_from_snapshot(state, log, _action_tape_a(), _spec(state, log))
+    result.log.verify()
+    assert result.branch_state_hash == WorldReducer.canonical_state_hash(
+        result.final_state
+    )
+
+
 # --------------------------------------------------------------------------- #
 # B4: ledger re-verifies and continues the hash chain
 # --------------------------------------------------------------------------- #
@@ -222,7 +259,11 @@ def pilot():
     return PilotDriver(REPO_ROOT).run()
 
 
-def test_branch_from_pilot_event_28_reproduces_pilot_final_hash(pilot):
+def test_branch_replay_matches_live_ledger(pilot):
+    """This is a REPLAY/hash-chain equivalence invariant (same recorded
+    tape folded from an earlier point), NOT counterfactual or treatment
+    evidence.
+    """
     log = pilot.log
     n = 28
     first_gov = log.events[n]

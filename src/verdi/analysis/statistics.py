@@ -59,6 +59,21 @@ def bootstrap_ci(
     using ``random.Random(seed)`` and returns the percentile interval
     ``((1 - ci) / 2, 1 - (1 - ci) / 2)`` over the bootstrap means.
 
+    Percentile convention (P2 review F4): the bounds are the *inclusive*
+    linear-interpolation percentiles of the sorted bootstrap means, i.e.
+    exactly the values ``statistics.quantiles(means, n=200,
+    method="inclusive")`` would return at indices
+    ``round(alpha/2 * 200) - 1`` and ``round((1 - alpha/2) * 200) - 1``
+    (``alpha = 1 - ci``). For the usual levels (ci = 0.90/0.95/0.99) the
+    product ``alpha/2 * 200`` is an exact integer, so the endpoints match
+    the stdlib ``quantiles`` values to within floating-point rounding.
+    The equivalent local linear-interpolation implementation is kept
+    (rather than switching to ``statistics.quantiles``) because it is
+    stdlib-only and handles any ``n_boot`` / ``ci`` without re-sorting
+    into 200 buckets; an equivalence test pins it to
+    ``statistics.quantiles`` to 1 ulp in
+    ``tests/analysis/test_statistics.py``.
+
     Args:
         values: Observed values; must contain at least two values.
         ci: Confidence level in the open interval (0, 1).
