@@ -21,21 +21,27 @@ re-implemented here)::
                              directly from the action_accepted /
                              action_rejected event kinds of the ledger
     false_punishment_rate    false_sanction_rate
-                             (upheld-appeal fraction over all sanctions;
-                             sanctions reconstructed from the ledger's
-                             sanction_imposed events, appeals from
-                             appeal_* events)
+                             (OPERATIONAL definition, PREREGISTRATION
+                             v1.1 addendum: appealed-and-upheld / all
+                             sanctions; sanctions reconstructed from
+                             the ledger's sanction_imposed events,
+                             appeals from appeal_* events)
     welfare_mean_food        welfare_and_inequality(states, "food")
                              (mean of agent-held food at the TERMINAL
                              snapshot — the maximum lifecycle tick)
     inequality_gini_food     welfare_and_inequality(states, "food")
                              (Gini of agent-held food at the TERMINAL
                              snapshot)
-    sustained_recovery       sustained_recovery
-                             (per treated agent: fraction of ticks at or
-                             after the restriction's end at which the
-                             agent's food is >= its pre-sanction level,
-                             with the k-consecutive-tick criterion)
+    sustained_recovery       OPERATIONAL definition (PREREGISTRATION
+                             v1.1 addendum): the MEAN over evaluated
+                             treated agents of the fraction of
+                             post-restriction SNAPSHOT ticks at which
+                             the agent's food is >= its pre-sanction
+                             level. metrics.sustained_recovery (the
+                             k-consecutive-tick boolean) is still
+                             computed per agent and reported in the
+                             detail, but the estimand value is the
+                             mean of the per-agent snapshot fractions.
     time_under_deprivation   time_under_deprivation
                              (sum over sanctions of ticks the restriction
                              was in force by run end)
@@ -100,11 +106,15 @@ ESTIMANDS: tuple[str, ...] = (
     "time_under_deprivation",
 )
 
-#: Pre-specified consecutive-tick count for the sustained-recovery
-#: criterion (PREREGISTRATION estimand 5: "sustained ... not just
-#: instant"). One consecutive tick after the restriction ends counts as
-#: recovery for this frozen threshold; the pilot's snapshot cadence
-#: (every ~5-7 lifecycle ticks) means a larger k would be unobservable.
+#: Pre-specified consecutive-tick count for the k-consecutive-tick
+#: criterion of :func:`verdi.analysis.metrics.sustained_recovery`
+#: (PREREGISTRATION estimand 5: "sustained ... not just instant"). One
+#: consecutive tick after the restriction ends counts for this frozen
+#: threshold; the pilot's snapshot cadence (every ~5-7 lifecycle
+#: ticks) means a larger k would be unobservable. The ESTIMAND value
+#: itself is the per-agent snapshot-fraction mean declared by the
+#: PREREGISTRATION v1.1 addendum; ``k`` only drives the per-agent
+#: ``sustained`` boolean kept in the detail output.
 SUSTAINED_RECOVERY_K = 1
 
 # Ledger event kinds that feed the estimands.
@@ -232,11 +242,21 @@ def _sustained_recovery_detail(
       earlier snapshot exists).
     * *post-restriction ticks*: lifecycle snapshot ticks >= the
       restriction end at which the agent is present.
-    * Per agent the metric is 1.0 when >= fraction of those ticks meet
-      the level AND the :func:`verdi.analysis.metrics.sustained_recovery`
-      criterion (k consecutive ticks) holds; otherwise 0.0.
-    * The estimand value is the fraction over all TREATED agents whose
-      restriction has ended by the terminal tick (0.0 if none treated).
+    * *Per-agent fraction*: the number of those ticks at which the
+      agent's held resource is >= its pre-sanction level, divided by the
+      number of post-restriction ticks (0.0 when there is no
+      post-restriction snapshot evidence).
+    * The :func:`verdi.analysis.metrics.sustained_recovery`
+      k-consecutive-tick boolean is also computed per agent (``k``
+      consecutive post-restriction snapshot ticks meeting the level) and
+      kept in the detail as ``sustained``.
+    * The ESTIMAND value is the MEAN of the per-agent fractions over all
+      TREATED agents whose restriction has ended by the terminal tick
+      (0.0 if none evaluated). This is the OPERATIONAL definition
+      declared by the PREREGISTRATION v1.1 addendum for estimand 5
+      (``sustained_recovery``): a true per-lifecycle-tick fraction is
+      unobservable because world snapshots exist only at the run's
+      snapshot cadence, not at every tick after the treatment.
     """
     sanctions = _reconstruct_sanctions(events)
     end_by_sanction: dict[str, int] = {}
@@ -291,12 +311,21 @@ def _sustained_recovery_detail(
     terminal = ticks_sorted[-1] if ticks_sorted else 0
     evaluated = [a for a, d in per_agent.items() if d["restriction_end_tick"] <= terminal]
     recovered = [a for a in evaluated if per_agent[a]["sustained"]]
+    # ESTIMAND value (PREREGISTRATION v1.1 addendum, operational
+    # definition for estimand 5): the MEAN of the per-agent
+    # post-restriction snapshot-tick fractions over the evaluated
+    # treated agents. 0.0 when no agent is evaluated (no evidence).
+    value = (
+        sum(per_agent[a]["fraction_meeting_level"] for a in evaluated) / len(evaluated)
+        if evaluated
+        else 0.0
+    )
     return {
         "per_agent": dict(sorted(per_agent.items())),
         "n_treated": len(per_agent),
         "n_evaluated": len(evaluated),
         "n_recovered": len(recovered),
-        "value": (len(recovered) / len(evaluated)) if evaluated else 0.0,
+        "value": value,
     }
 
 
@@ -455,6 +484,8 @@ def paired_estimates(
     No causal labels are attached anywhere: the results are paired
     differences of the estimands, nothing more.
     """
+    if not pairs:
+        raise ValueError("at least one matched pair is required")
     normalized: list[tuple[Mapping[str, float], Mapping[str, float]]] = []
     for pair in pairs:
         t, p = pair

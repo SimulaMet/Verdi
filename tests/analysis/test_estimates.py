@@ -148,3 +148,142 @@ def test_run_dict_pairs_are_accepted():
 def test_run_dict_missing_estimates_raises():
     with pytest.raises(ValueError, match="missing estimand keys"):
         paired_estimates([({"arm": "t"}, {"arm": "p"})])
+
+
+def test_paired_estimates_empty_raises():
+    # SF2b: an empty pair sequence is a caller bug, not an estimate.
+    with pytest.raises(ValueError, match="at least one matched pair"):
+        paired_estimates([])
+
+
+# --------------------------------------------------------------------------- #
+# SF1: sustained_recovery operational definition (PREREGISTRATION v1.1)
+# --------------------------------------------------------------------------- #
+
+def _single_sanction_events(sid="s1", subject="a-01", end=4):
+    return [
+        event(0, tick=3, kind="sanction_imposed", decision="accepted",
+              payload={"tick": 3, "sanction_id": sid, "subject_id": subject,
+                       "scope": ["speaking"], "duration_ticks": 2,
+                       "evidence_event_ids": []}),
+        event(1, tick=end, kind="rights_restored", decision="accepted",
+              payload={"tick": end, "sanction_id": sid, "appellant_id": subject}),
+    ]
+
+
+def test_sustained_recovery_single_crossing_disagrees_with_k_boolean():
+    # SF1 fail-before/pass-after: the agent meets the pre-sanction level
+    # at only ONE of three post-restriction snapshot ticks (ticks 6, 7, 9;
+    # food 1, 1, 3; pre-sanction level 3).
+    #   OLD formula: k=1 consecutive-crossing boolean -> no 2 consecutive
+    #                 crossings... in fact the OLD code required the
+    #                 metrics.sustained_recovery(k) boolean over the
+    #                 crossing ticks: crossing = [9] alone, longest_run 1
+    #                 >= k=1 -> sustained True -> value 1.0/1.0 = 1.0.
+    #   NEW formula (v1.1 operational): per-agent snapshot fraction
+    #                 1/3 -> estimand 1/3.
+    # The two formulas DISAGREE (1.0 vs 1/3); assert the new one.
+    states = {
+        0: world_state(0, {"a-01": {"food": 3.0}}),
+        3: world_state(3, {"a-01": {"food": 1.0}}),
+        6: world_state(6, {"a-01": {"food": 1.0}}),
+        7: world_state(7, {"a-01": {"food": 1.0}}),
+        9: world_state(9, {"a-01": {"food": 3.0}}),
+    }
+    values = run_estimand_values(states_by_tick=states,
+                                 log=_single_sanction_events())
+    assert values["sustained_recovery"] == pytest.approx(1.0 / 3.0)
+    # (old formula would have reported 1.0 here)
+
+
+def test_sustained_recovery_mean_of_per_agent_fractions():
+    # SF1: two treated agents, each with post-restriction snapshot ticks
+    # {5,6,7,8}. a-01 meets its pre-sanction level at tick 5 only (1/4);
+    # a-02 meets at ticks 6 and 8 (2/4).
+    #   NEW formula (v1.1 operational): estimand = mean(1/4, 2/4) = 3/8.
+    #   OLD k-boolean formula: each agent has >= one crossing run of k=1
+    #     -> both "sustained" -> value = 2/2 = 1.0.
+    # Formulas disagree (1.0 vs 3/8); assert the new one.
+    events = _single_sanction_events("s1", "a-01", end=4) + [
+        event(2, tick=3, kind="sanction_imposed", decision="accepted",
+              payload={"tick": 3, "sanction_id": "s2", "subject_id": "a-02",
+                       "scope": ["speaking"], "duration_ticks": 2,
+                       "evidence_event_ids": []}),
+        event(3, tick=4, kind="rights_restored", decision="accepted",
+              payload={"tick": 4, "sanction_id": "s2", "appellant_id": "a-02"}),
+    ]
+
+    def ws(tick, f1, f2):
+        return world_state(tick, {"a-01": {"food": f1}, "a-02": {"food": f2}})
+
+    states = {
+        0: ws(0, 3.0, 6.0),   # pre-sanction: a-01=3.0, a-02=6.0
+        3: ws(3, 1.0, 2.0),   # sanctioned
+        5: ws(5, 3.0, 2.0),   # a-01 meets level
+        6: ws(6, 1.0, 6.0),   # a-02 meets level
+        7: ws(7, 1.0, 2.0),
+        8: ws(8, 1.0, 6.0),   # a-02 meets level again
+    }
+    values = run_estimand_values(states_by_tick=states, log=events)
+    # a-01: post ticks {5,6,7,8} -> meets at 5 -> 1/4
+    # a-02: post ticks {5,6,7,8} -> meets at 6,8 -> 2/4
+    # estimand = (1/4 + 2/4) / 2 = 3/8
+    assert values["sustained_recovery"] == pytest.approx((1 / 4 + 2 / 4) / 2)
+
+
+# --------------------------------------------------------------------------- #
+# SF2: false_punishment_rate operational definition (PREREGISTRATION v1.1)
+# --------------------------------------------------------------------------- #
+
+def _sanction_with_restoration_but_dismissed_appeal():
+    # A sanction whose appeal was DISMISSED but whose rights were later
+    # restored (rights_restored event): under the PREREG v1.0 ideal
+    # definition ("upheld-then-reversed OR appealed-and-restored") this
+    # sanction counts in the numerator via the restoration leg; under
+    # the v1.1 OPERATIONAL definition (appealed-and-upheld / all) it
+    # does not.
+    return [
+        event(0, tick=3, kind="sanction_imposed", decision="accepted",
+              payload={"tick": 3, "sanction_id": "s1", "subject_id": "a-01",
+                       "scope": ["speaking"], "duration_ticks": 2,
+                       "evidence_event_ids": []}),
+        event(1, tick=4, kind="appeal_filed", decision="accepted",
+              payload={"tick": 4, "appeal_id": "ap1", "sanction_id": "s1",
+                       "appellant_id": "a-01", "grounds": "g"}),
+        event(2, tick=5, kind="appeal_dismissed", decision="accepted",
+              payload={"tick": 5, "appeal_id": "ap1", "sanction_id": "s1"}),
+        event(3, tick=5, kind="rights_restored", decision="accepted",
+              payload={"tick": 5, "sanction_id": "s1", "appellant_id": "a-01"}),
+    ]
+
+
+def test_false_punishment_rate_restoration_leg_disagrees():
+    # SF2: restored-but-appeal-dismissed sanction. In the v1.0 ledger
+    # schema there is NO sanction state distinct from "upheld appeal":
+    # the only reversal evidence is a `rights_restored` event, which
+    # this synthetic run carries alongside a DISMISSED appeal.
+    #   ideal v1.0 numerator (upheld-then-reversed OR appealed-and-
+    #   restored), counting that restoration event: 1/1 = 1.0
+    #   v1.1 OPERATIONAL (appealed-and-upheld only, implemented): 0/1 = 0.0
+    # The formulas DISAGREE; assert the operational one and document the
+    # data-model gap that forces path (b).
+    events = _sanction_with_restoration_but_dismissed_appeal()
+    # data-model fact: no appeal was upheld; the only restoration evidence
+    # is the rights_restored event itself (not an upheld-appeal state)
+    assert not any(e.kind == "appeal_upheld" for e in events)
+    assert any(e.kind == "rights_restored" for e in events)
+    states = {
+        0: world_state(0, {"a-01": {"food": 3.0}, "a-02": {"food": 7.0}}),
+        6: world_state(6, {"a-01": {"food": 3.0}, "a-02": {"food": 7.0}}),
+    }
+    values = run_estimand_values(states_by_tick=states, log=events)
+    # the operational definition counts only appealed-and-upheld
+    assert values["false_punishment_rate"] == pytest.approx(0.0)
+    # the upheld-appeal case is still counted (regression guard): the
+    # synthetic run from _events() has one sanction with an upheld appeal
+    # -> 1/1 = 1.0 under BOTH the v1.0 ideal and the v1.1 operational
+    # numerator (they agree whenever the restoration is expressible as
+    # an upheld appeal, which is the only reversal state in v1.0)
+    assert run_estimand_values(states_by_tick=states, log=_events())[
+        "false_punishment_rate"
+    ] == pytest.approx(1.0)

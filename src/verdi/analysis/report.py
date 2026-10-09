@@ -14,6 +14,7 @@ hash, and data-availability counters. Rules:
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -176,33 +177,90 @@ def _null_control(pairs_results: dict[str, Any]) -> dict[str, Any]:
     of the mean difference contains 0) and by direct comparison to 0.
     ``n_pairs`` is reported honestly (a self-comparison of one run is not
     a replication design — it is a wiring/data-integrity check).
+
+    The CI leg is computed over the ACTUAL per-estimand difference
+    values from the paired results (one mean paired difference per
+    estimand), never over constant zeros: when all differences are zero
+    the bootstrap CI over them is trivially [0, 0] and the control
+    passes truthfully; when they are not, the CI is the real one. With
+    fewer than two difference values the CI cannot be computed, so
+    ``ci_contains_zero`` and ``passed`` are reported as ``null`` with
+    an explicit ``ci_input: "insufficient pairs"`` marker rather than a
+    vacuous computation over constant zeros.
     """
     from verdi.analysis.statistics import null_control_passes
 
     per_estimand: dict[str, Any] = {}
-    all_zero = True
-    ci_contains_zero = True
+    differences: list[float] = []
     for name in G5_ESTIMANDS:
         result = pairs_results.get(name)
         if result is None:
             continue
-        estimate = float(getattr(result, "estimate", 0.0))
-        zero = estimate == 0.0
-        all_zero = all_zero and zero
-        # Deterministic null control over the single all-zero difference:
-        # the CI of the mean over [0, 0, 0, 0] (bootstrap of zeros) is
-        # [0, 0] and contains 0.
-        ci_ok = null_control_passes([0.0, 0.0, 0.0, 0.0])
-        ci_contains_zero = ci_contains_zero and ci_ok
-        per_estimand[name] = {"difference": estimate, "zero": zero,
-                              "ci_contains_zero": ci_ok}
+        difference = float(result.estimate)
+        differences.append(difference)
+        per_estimand[name] = {
+            "difference": difference,
+            "zero": difference == 0.0,
+        }
+    all_zero = all(d == 0.0 for d in differences)
+    if len(differences) < 2:
+        ci_contains_zero: float | None = None
+        ci_input = "insufficient pairs"
+    else:
+        ci_input = "per-estimand differences"
+        ci_contains_zero = null_control_passes(differences)
+    for entry in per_estimand.values():
+        entry["ci_contains_zero"] = ci_contains_zero
     return {
         "design": "placebo arm vs itself (same run compared to itself)",
+        "ci_input": ci_input,
         "all_differences_zero": all_zero,
         "ci_contains_zero": ci_contains_zero,
-        "passed": bool(all_zero and ci_contains_zero),
+        "passed": (
+            bool(all_zero and ci_contains_zero)
+            if ci_contains_zero is not None
+            else None
+        ),
         "per_estimand": per_estimand,
     }
+
+
+#: Required top-level keys for a WS-2 arm run dict. ``estimates`` is
+#: required unless the run dict instead carries both ``states_by_tick``
+#: and ``log`` (from which estimands can be computed), in which case the
+#: estimator falls back to :func:`verdi.analysis.estimates.run_estimates_for`.
+_REQUIRED_ARM_KEYS: tuple[str, ...] = (
+    "arm",
+    "applied",
+    "reason",
+    "final_state_hash",
+    "state_snapshots",
+)
+#: The estimand source: exactly one of these groups must be present.
+_ESTIMATES_KEY = "estimates"
+_RAW_SOURCE_KEYS: tuple[str, ...] = ("states_by_tick", "log")
+
+
+def _validate_arm_run_dict(
+    arm_name: str, run: Mapping[str, Any]
+) -> None:
+    """Validate the required key set for a WS-2 arm run dict up front.
+
+    Raises :class:`ValueError` naming every missing required key so a
+    mis-constructed run dict never silently yields nulls in the G5
+    report. ``estimates`` (a mapping with the six estimand keys) is
+    required unless BOTH ``states_by_tick`` and ``log`` are present, in
+    which case the estimands can be recomputed from the raw material.
+    """
+    missing = [key for key in _REQUIRED_ARM_KEYS if key not in run]
+    has_estimates = _ESTIMATES_KEY in run
+    has_raw = all(key in run for key in _RAW_SOURCE_KEYS)
+    if not has_estimates and not has_raw:
+        missing = missing + [f"{_ESTIMATES_KEY} (or both states_by_tick + log)"]
+    if missing:
+        raise ValueError(
+            f"{arm_name} run dict is missing required key(s): {missing}"
+        )
 
 
 def _pairs_to_json(pairs_results: dict[str, Any]) -> dict[str, Any]:
@@ -240,12 +298,24 @@ def build_g5_report(
     :class:`~verdi.analysis.statistics.PairedResult` mapping from
     :func:`verdi.analysis.estimates.paired_estimates`.
 
+    Both run dicts are validated up front (:func:`_validate_arm_run_dict`):
+    ``arm``, ``applied``, ``reason``, ``final_state_hash``,
+    ``state_snapshots`` are required, as is ``estimates`` (or both
+    ``states_by_tick`` + ``log``); missing keys raise :class:`ValueError`
+    rather than silently producing nulls in the report.
+
     Contents (G5, docs/ACCEPTANCE.md): raw per-arm trajectories
     (per-lifecycle-tick canonical state hashes + estimand values),
     per-estimand paired results with CI-or-null and the sufficiency
     flag, the null control (placebo vs itself), and the required
     ``limitations`` list. No causal labels anywhere.
     """
+    # Validate both arm run dicts up front: a missing required key is a
+    # caller bug and must fail loudly (naming the missing key), never
+    # silently yield nulls in the statistical report.
+    _validate_arm_run_dict("treatment", treatment_run)
+    _validate_arm_run_dict("placebo", placebo_run)
+
     manifest = pilot.manifest
     manifest_dict = manifest.model_dump() if hasattr(manifest, "model_dump") else dict(manifest)
     report: dict[str, Any] = {

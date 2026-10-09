@@ -48,3 +48,64 @@ governance event counts.
 - No guaranteed recovery from a single counterfactual branch.
 - No novelty claims.
 - No internal-belief claims; only observable, logged behavior.
+
+---
+
+## v1.1 operational addendum (2026-10-10, post-freeze, pre-G5-close)
+
+This section is a documented, versioned OPERATIONAL interpretation, applied
+pre-G5-close. It does **not** edit or replace the frozen v1.0 text above: the
+v1.0 estimand definitions stand unchanged as the *ideal* definitions. Where an
+ideal definition is not computable from the recorded-tape data model, this
+addendum declares the operational definition actually implemented in
+`src/verdi/analysis/estimates.py`. The declared formula below is
+character-for-character equivalent in meaning to the code. Two estimands are
+affected: **#2 false_punishment_rate** and **#5 sustained_recovery**. The
+other four estimands are implemented exactly per v1.0.
+
+### #5 sustained_recovery — operational definition (path b)
+
+*Ideal (v1.0, unchanged):* "fraction of ticks after a recovery treatment in
+which the affected agent's food is >= pre-sanction level (per treated agent)."
+
+*Reason for operational interpretation:* the ideal definition quantifies over
+every lifecycle tick after the treatment. World states are only observed at
+the run's snapshot cadence (pilot: ticks 5, 10, 17, 24, 29), not at every
+post-treatment tick, so the literal per-tick fraction is **unobservable** from
+the recorded tape.
+
+*Operational definition (implemented):* for each treated agent, take the
+**snapshot ticks** at or after the restriction's end (the lifecycle tick of a
+`rights_restored` event for that sanction, else `effective_tick + duration_ticks`)
+at which the agent is present. The agent's **per-agent fraction** is the number
+of those snapshot ticks at which the agent's food is >= its pre-sanction level
+(the agent's food in the last snapshot at a lifecycle tick < the sanction's
+effective tick; 0.0 if no earlier snapshot), divided by the number of those
+snapshot ticks (0.0 when there is no post-restriction snapshot evidence). The
+estimand value is the **mean of the per-agent fractions** over all treated
+agents whose restriction has ended by the terminal snapshot tick (0.0 if none).
+
+The `k`-consecutive-tick boolean (`metrics.sustained_recovery`, frozen
+`k = SUSTAINED_RECOVERY_K = 1`) is still computed per agent and retained in the
+detail output, but it no longer gates the estimand value.
+
+### #2 false_punishment_rate — operational definition (path b)
+
+*Ideal (v1.0, unchanged):* "sanctions upheld-then-reversed or appealed and
+restored / all sanctions imposed."
+
+*Reason for operational interpretation:* the v1.0 schema expresses sanction
+reversal **only** via an upheld appeal — the `Appeal.status` enum is
+`filed | upheld | dismissed` and `Sanction` carries no `reversed`/`restored`
+state distinct from an upheld appeal. Restoration events are tracked separately
+(and are already accounted for under `#6 time_under_deprivation`), so the
+"upheld-then-reversed" and "appealed-and-restored" legs of the ideal numerator
+are not expressible as a distinct state in the v1.1 schema.
+
+*Operational definition (implemented):* the fraction is
+**appealed-and-upheld sanctions / all sanctions imposed** — the count of
+sanctions having at least one appeal with final status `upheld`, divided by the
+total number of sanctions imposed. Sanctions never appealed, or appealed and
+dismissed, are not classified as false (the same blind-spot convention already
+carried by `metrics.false_sanction_rate`, reported alongside as
+`appeal_coverage`). With no sanctions imposed the value is 0.0.

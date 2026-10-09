@@ -2,13 +2,19 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
 
 from verdi.analysis import RunReport, RunReportError
 from verdi.analysis.estimates import ESTIMANDS, paired_estimates, run_estimand_values
-from verdi.analysis.report import G5_LIMITATIONS, build_g5_report, write_g5_report
+from verdi.analysis.report import (
+    G5_ESTIMANDS,
+    G5_LIMITATIONS,
+    build_g5_report,
+    write_g5_report,
+)
 from verdi.experiments.treatments import (
     placebo_treatment,
     rights_restoration_treatment,
@@ -102,8 +108,28 @@ def test_roundtrip_via_jsonl_parse():
 # G5 statistical sanity report (P2 WS-4): pilot + WS-2 arms end-to-end
 # --------------------------------------------------------------------------- #
 
-G5_REPO_ROOT = Path("/Users/sushantgautam/Documents/verdi")
-G5_SNAPSHOT_TICKS = (5, 10, 17, 24, 29)
+# SF4: derive the repo root from THIS test file's location — the
+# checkout (worktree or main) that contains src/verdi/pilot/driver.py —
+# instead of a hardcoded absolute path. Optional override via the
+# VERDI_REPO_ROOT env var: use it only when the pilot's recorded assets
+# live in a different checkout than the code under test.
+# parents: [0]=analysis, [1]=tests, [2]=checkout root
+G5_REPO_ROOT = Path(os.environ.get("VERDI_REPO_ROOT") or
+                    Path(__file__).resolve().parents[2])
+
+
+def _pilot():
+    """Run the pilot with the derived repo root.
+
+    ``PilotDriver`` itself would already default to
+    ``Path(__file__).parents[3]`` of ``src/verdi/pilot/driver.py``; we
+    pass the explicitly-derived root so the derivation lives in one,
+    testable place and an env-var override can redirect it.
+    """
+    assert (G5_REPO_ROOT / "src" / "verdi" / "pilot" / "driver.py").is_file(), (
+        f"G5_REPO_ROOT {G5_REPO_ROOT} does not contain src/verdi/pilot/driver.py"
+    )
+    return PilotDriver(G5_REPO_ROOT).run()
 
 
 def _g5_setup():
@@ -112,7 +138,7 @@ def _g5_setup():
     Returns (pilot, snapshot, prefix_log, remaining_tape, placebo_result,
     treatment_result, dispatch_ticks).
     """
-    pilot = PilotDriver(G5_REPO_ROOT).run()
+    pilot = _pilot()
     tape = pilot.full_tape_steps
     branch_index = next(i for i, step in enumerate(tape) if step.kind == "governance")
     snapshot, _, prefix_log = replay_in_memory(
@@ -157,7 +183,7 @@ def _g5_setup():
         dispatch_ticks
 
 
-def _arm_states_by_tick(remaining, snapshot, dispatch_ticks):
+def _arm_states_by_tick(remaining, snapshot, dispatch_ticks, snapshot_ticks):
     """Per-LIFECYCLE-tick snapshots for one branch fold (ADR-008).
 
     The fold starts at the first governance step (tick 10 in pilot_v1):
@@ -165,8 +191,10 @@ def _arm_states_by_tick(remaining, snapshot, dispatch_ticks):
     the prefix before the branch point, so the fold's ACTION steps map in
     order to ``dispatch_ticks[n_prefix:]``; governance steps carry their
     lifecycle tick in ``payload['tick']``. Snapshots are recorded at the
-    pilot's ``SNAPSHOT_TICKS`` cadence plus the terminal tick, exactly
-    mirroring the pilot's keying.
+    cadence given by ``snapshot_ticks`` plus the terminal tick, exactly
+    mirroring the pilot's keying. ``snapshot_ticks`` is derived from the
+    pilot run's own recorded ``state_snapshots`` keys (SF4), not a
+    frozen tuple.
 
     Returns ``(states_by_tick, final_state)``.
     """
@@ -189,10 +217,10 @@ def _arm_states_by_tick(remaining, snapshot, dispatch_ticks):
         else:
             tick = int(step.governance["tick"])
         state = reducer.apply(state, step.action, step.validation)
-        if tick in G5_SNAPSHOT_TICKS and tick not in covered:
+        if tick in snapshot_ticks and tick not in covered:
             states_by_tick[tick] = state
             covered.add(tick)
-    terminal = max(G5_SNAPSHOT_TICKS)
+    terminal = max(snapshot_ticks)
     states_by_tick[terminal] = state
     return states_by_tick, state
 
@@ -221,12 +249,19 @@ def test_g5_report_pilot_v1(tmp_path):
         placebo_result, treatment_result, dispatch_ticks,
     ) = _g5_setup()
 
+    # ---- snapshot cadence: the pilot's own recorded keys (SF4) --------------
+    # Exclude the initial t0 snapshot: the branch fold starts at the
+    # first governance step, so the arm cadence is the pilot's cadence
+    # ticks only (its t0 predates the branch point).
+    snapshot_ticks = tuple(t for t, _ in pilot.state_snapshots if t > 0)
+    assert snapshot_ticks, "pilot recorded no post-initial snapshots"
+
     # ---- arm run dicts -----------------------------------------------------
     placebo_states, placebo_final = _arm_states_by_tick(
-        remaining, snapshot, dispatch_ticks
+        remaining, snapshot, dispatch_ticks, snapshot_ticks
     )
     treatment_states, treatment_final = _arm_states_by_tick(
-        remaining, snapshot, dispatch_ticks
+        remaining, snapshot, dispatch_ticks, snapshot_ticks
     )
     # the fold's terminal state is the branch's final state
     assert WorldReducer.canonical_state_hash(placebo_final) == (
@@ -306,3 +341,170 @@ def test_g5_report_pilot_v1(tmp_path):
     assert "n_pairs < 10" in joined
     assert "recorded tape" in joined
     assert set(report1["limitations"]) == set(G5_LIMITATIONS)
+    # SF3b: the null-control CI leg is computed over the ACTUAL
+    # per-estimand differences (here all zero), never constant zeros as
+    # an input label.
+    assert report1["null_control"]["ci_input"] == "per-estimand differences"
+    assert report1["null_control"]["all_differences_zero"] is True
+
+
+# --------------------------------------------------------------------------- #
+# SF3b: null control is computed over actual differences, not constant zeros
+# --------------------------------------------------------------------------- #
+
+def _single_result(estimate):
+    from verdi.analysis.statistics import PairedResult
+
+    return PairedResult(
+        estimate=estimate, ci_low=None, ci_high=None, n_pairs=1, sufficient=False
+    )
+
+
+def test_null_control_nonzero_differences_fail_ci_leg():
+    # SF3b: every per-estimand difference is a constant 5.0 (non-zero).
+    # The CI must be computed over these REAL differences, not constant
+    # zeros: the bootstrap CI of the mean over [5.0]*6 is [5, 5], which
+    # does NOT contain 0, so the CI leg must FAIL. The old code computed
+    # over [0,0,0,0] and would have reported passed=True here.
+    from verdi.analysis.report import _null_control
+
+    pairs = {name: _single_result(5.0) for name in G5_ESTIMANDS}
+    control = _null_control(pairs)
+    assert control["ci_input"] == "per-estimand differences"
+    assert control["all_differences_zero"] is False
+    assert control["ci_contains_zero"] is False
+    assert control["passed"] is False
+    for name in G5_ESTIMANDS:
+        assert control["per_estimand"][name]["difference"] == 5.0
+        assert control["per_estimand"][name]["ci_contains_zero"] is False
+
+
+def test_null_control_zero_differences_ci_is_over_real_zeros():
+    # SF3b: all-zero differences -> CI trivially [0,0], contains 0,
+    # passes truthfully (this is the inert-arm wiring check).
+    from verdi.analysis.report import _null_control
+
+    pairs = {name: _single_result(0.0) for name in G5_ESTIMANDS}
+    control = _null_control(pairs)
+    assert control["ci_input"] == "per-estimand differences"
+    assert control["all_differences_zero"] is True
+    assert control["ci_contains_zero"] is True
+    assert control["passed"] is True
+
+
+def test_null_control_insufficient_pairs_marks_null():
+    # SF3b: fewer than two difference values -> CI cannot be computed;
+    # the field is null with an explicit marker, not computed over
+    # constant zeros.
+    from verdi.analysis.report import _null_control
+
+    pairs = {G5_ESTIMANDS[0]: _single_result(0.0)}
+    control = _null_control(pairs)
+    assert control["ci_input"] == "insufficient pairs"
+    assert control["ci_contains_zero"] is None
+    assert control["passed"] is None
+    assert control["per_estimand"][G5_ESTIMANDS[0]]["ci_contains_zero"] is None
+
+
+# --------------------------------------------------------------------------- #
+# SF1b: build_g5_report validates the required run-dict key set up front
+# --------------------------------------------------------------------------- #
+
+def _valid_run_dict() -> dict:
+    from tests.analysis.conftest import world_state
+
+    return {
+        "arm": "placebo",
+        "applied": False,
+        "reason": "inert",
+        "final_state_hash": "h0",
+        "state_snapshots": [
+            (0, world_state(0, {"a-01": {"food": 3.0}})),
+            (5, world_state(5, {"a-01": {"food": 3.0}})),
+        ],
+        "estimates": {name: 0.0 for name in G5_ESTIMANDS},
+    }
+
+
+def _dummy_pilot():
+    from tests.analysis.conftest import world_state
+
+    class _State:
+        state_hash = "h0"
+
+    class _Manifest:
+        def model_dump(self):
+            return {"experiment_id": "e", "branch_origin": "b"}
+
+    class _Pilot:
+        manifest = _Manifest()
+        final_state = _State()
+        state_snapshots = [
+            (0, world_state(0, {"a-01": {"food": 3.0}})),
+        ]
+
+    return _Pilot()
+
+
+def test_build_g5_report_missing_key_raises():
+    # SF1b: a missing required key raises ValueError naming the key,
+    # instead of silently writing a null into the statistical report.
+    run = _valid_run_dict()
+    del run["final_state_hash"]
+    with pytest.raises(ValueError, match="final_state_hash"):
+        build_g5_report(
+            _dummy_pilot(), run, _valid_run_dict(),
+            {name: _single_result(0.0) for name in G5_ESTIMANDS},
+        )
+
+
+def test_build_g5_report_missing_estimates_and_raw_raises():
+    # SF1b: neither 'estimates' nor both 'states_by_tick'+'log' present.
+    run = _valid_run_dict()
+    del run["estimates"]
+    with pytest.raises(ValueError, match="estimates"):
+        build_g5_report(
+            _dummy_pilot(), run, _valid_run_dict(),
+            {name: _single_result(0.0) for name in G5_ESTIMANDS},
+        )
+
+
+def test_build_g5_report_raw_source_satisfies_estimates():
+    # SF1b: 'states_by_tick' + 'log' in place of 'estimates' is accepted.
+    from tests.analysis.conftest import world_state
+
+    run = _valid_run_dict()
+    del run["estimates"]
+    run["state_snapshots"] = [
+        (0, world_state(0, {"a-01": {"food": 3.0}})),
+        (5, world_state(5, {"a-01": {"food": 3.0}})),
+    ]
+    run["states_by_tick"] = {
+        0: world_state(0, {"a-01": {"food": 3.0}}),
+        5: world_state(5, {"a-01": {"food": 3.0}}),
+    }
+    run["log"] = []
+    build_g5_report(
+        _dummy_pilot(), run, _valid_run_dict(),
+        {name: _single_result(0.0) for name in G5_ESTIMANDS},
+    )
+
+
+# --------------------------------------------------------------------------- #
+# SF4: repo root derivation
+# --------------------------------------------------------------------------- #
+
+def test_repo_root_derivation_contains_driver():
+    # SF4: the root is derived from this test file's own location, not a
+    # frozen hardcoded absolute path — so it points at the checkout
+    # containing src/verdi/pilot/driver.py and the pilot assets.
+    assert G5_REPO_ROOT.is_absolute()
+    # derived from __file__ (or the VERDI_REPO_ROOT override), not frozen
+    expected = (
+        Path(os.environ["VERDI_REPO_ROOT"])
+        if os.environ.get("VERDI_REPO_ROOT")
+        else Path(__file__).resolve().parents[2]
+    )
+    assert expected.resolve() == G5_REPO_ROOT
+    assert (G5_REPO_ROOT / "src" / "verdi" / "pilot" / "driver.py").is_file()
+    assert (G5_REPO_ROOT / "experiments" / "scenarios" / "pilot_v1.json").is_file()
