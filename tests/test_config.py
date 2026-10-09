@@ -1,5 +1,3 @@
-import os
-from types import SimpleNamespace
 
 from verdi.config import model_endpoint_from_env
 
