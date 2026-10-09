@@ -1,4 +1,4 @@
-"""Scenario loading and deterministic metric definitions (Worker E, P1-E).
+"""Scenario loading, deterministic metric definitions and run reporting (Worker E, P1-E).
 
 Public API
 ----------
@@ -6,6 +6,7 @@ Public API
   :func:`canonical_tape_hash`, :func:`build_t0_state`, :class:`LoadedScenario`.
 * :mod:`verdi.analysis.metrics` -- pure, stdlib+pydantic-only metric
   functions (descriptive estimands; no LLM, no network).
+* :mod:`verdi.analysis.report` -- :class:`RunReport` JSON/JSONL assembly.
 """
 from verdi.analysis.metrics import (
     attempted_vs_executed_violations,
@@ -16,6 +17,7 @@ from verdi.analysis.metrics import (
     value_drift_summary,
     welfare_and_inequality,
 )
+from verdi.analysis.report import RunReport, RunReportError
 from verdi.analysis.scenario import (
     LoadedScenario,
     ScenarioLoadError,
@@ -26,6 +28,8 @@ from verdi.analysis.scenario import (
 )
 
 __all__ = [
+    "RunReport",
+    "RunReportError",
     "LoadedScenario",
     "ScenarioLoadError",
     "ScenarioLoader",
