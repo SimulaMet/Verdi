@@ -61,6 +61,18 @@ class WorldReducer:
         tick = state.tick + 1
         event_cursor = state.event_cursor + 1
 
+        if action.action_kind == "governance":
+            # Governance transitions carry rule-version bookkeeping only:
+            # when an amendment takes effect the payload/arguments hold the
+            # enacted constitution version. No agent or resource content
+            # changes, so replay from the recorded tape is exact.
+            update: dict[str, Any] = {"tick": tick, "event_cursor": event_cursor}
+            if validation.accepted:
+                new_constitution = action.arguments.get("constitution_version")
+                if isinstance(new_constitution, str) and new_constitution:
+                    update["constitution_version"] = new_constitution
+            return self._with_hash(state.model_copy(update=update))
+
         if not validation.accepted:
             nxt = state.model_copy(update={"tick": tick, "event_cursor": event_cursor})
             return self._with_hash(nxt)

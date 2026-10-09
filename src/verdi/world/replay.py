@@ -18,10 +18,17 @@ from verdi.world.reducer import WorldReducer
 @dataclass(frozen=True)
 class TapeStep:
     """One recorded step: the proposed action plus its deterministic
-    validation outcome."""
+    validation outcome.
+
+    ``kind`` defaults to the action semantics; steps produced by the
+    governance engine carry ``kind="governance"`` so the reducer only
+    applies the rule-version bookkeeping (no resource mutation).
+    """
 
     action: ProposedAction
     validation: ValidationResult
+    kind: str = "action"
+    governance: dict | None = None
 
 
 def replay(

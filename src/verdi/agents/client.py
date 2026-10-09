@@ -104,7 +104,18 @@ class ModelClient:
         for attempt in range(self._config.max_retries + 1):
             try:
                 response = await self._client.post("/chat/completions", json=payload)
-            except httpx.HTTPError as exc:  # transport-level failure is not retryable
+            except httpx.TransportError as exc:
+                # Connection failures/timeouts are transient: retry with the
+                # same capped backoff as 429/502/503.
+                if attempt < self._config.max_retries:
+                    await asyncio.sleep(_backoff_delay(attempt, self._rng))
+                    continue
+                raise ModelError(
+                    f"request {trace_id} failed to reach endpoint "
+                    f"(after {self._config.max_retries} retries): {type(exc).__name__}",
+                    trace_id=trace_id,
+                ) from exc
+            except httpx.HTTPError as exc:  # non-transport HTTPError: not retryable
                 raise ModelError(
                     f"request {trace_id} failed to reach endpoint: {type(exc).__name__}",
                     trace_id=trace_id,

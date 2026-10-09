@@ -24,6 +24,9 @@ class TaskPool:
         self._semaphore = asyncio.Semaphore(max_concurrency)
         self.max_concurrency = max_concurrency
         #: Introspection aid: how many workers are currently inside a task.
+        # Safe only for a single running event loop: asyncio tasks in one loop
+        # run cooperatively, so the unsynchronized increment/decrement has no
+        # data race (do not read this from another thread/loop concurrently).
         self.active = 0
 
     async def run_all(
