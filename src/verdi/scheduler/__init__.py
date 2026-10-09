@@ -1,4 +1,10 @@
 """Task scheduling: seeded baseline (default) and LLM-adaptive ablation arm."""
+from .adaptive import (
+    ADAPTIVE_PROMPT_VERSION,
+    AdaptiveScheduleError,
+    AdaptiveScheduler,
+    LLMCallLog,
+)
 from .seeded import (
     Schedule,
     SeededScheduler,
@@ -9,6 +15,10 @@ from .seeded import (
 )
 
 __all__ = [
+    "ADAPTIVE_PROMPT_VERSION",
+    "AdaptiveScheduleError",
+    "AdaptiveScheduler",
+    "LLMCallLog",
     "Schedule",
     "SeededScheduler",
     "SkippedTask",
