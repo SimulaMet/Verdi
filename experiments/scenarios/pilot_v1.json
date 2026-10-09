@@ -1,0 +1,476 @@
+{
+  "agents": [
+    {
+      "agent_id": "a-01",
+      "declared_values": {
+        "autonomy": 0.5,
+        "cooperation": 0.7,
+        "fairness": 0.9,
+        "integrity": 0.8,
+        "solidarity": 0.85
+      },
+      "idle_ticks": 0,
+      "persona_summary": "Tends to others' wellbeing in the settlement",
+      "private_memory_version": 0,
+      "public_signals": [],
+      "resources": {
+        "credits": 10.0,
+        "food": 5.0
+      },
+      "rights": {
+        "movement": true,
+        "property": true,
+        "speaking": true,
+        "voting": true
+      },
+      "role": "medic",
+      "social_edges": [
+        "a-02"
+      ],
+      "under_sanction": false
+    },
+    {
+      "agent_id": "a-02",
+      "declared_values": {
+        "autonomy": 0.8,
+        "cooperation": 0.9,
+        "fairness": 0.7,
+        "integrity": 0.6,
+        "solidarity": 0.4
+      },
+      "idle_ticks": 0,
+      "persona_summary": "Keeps the settlement's tools and shelters working",
+      "private_memory_version": 0,
+      "public_signals": [],
+      "resources": {
+        "credits": 10.0,
+        "food": 5.0
+      },
+      "rights": {
+        "movement": true,
+        "property": true,
+        "speaking": true,
+        "voting": true
+      },
+      "role": "engineer",
+      "social_edges": [
+        "a-03"
+      ],
+      "under_sanction": false
+    },
+    {
+      "agent_id": "a-03",
+      "declared_values": {
+        "autonomy": 0.3,
+        "cooperation": 0.6,
+        "fairness": 0.65,
+        "integrity": 0.75,
+        "solidarity": 0.9
+      },
+      "idle_ticks": 0,
+      "persona_summary": "Grows and distributes the settlement's food",
+      "private_memory_version": 0,
+      "public_signals": [],
+      "resources": {
+        "credits": 10.0,
+        "food": 5.0
+      },
+      "rights": {
+        "movement": true,
+        "property": true,
+        "speaking": true,
+        "voting": true
+      },
+      "role": "farmer",
+      "social_edges": [
+        "a-04"
+      ],
+      "under_sanction": false
+    },
+    {
+      "agent_id": "a-04",
+      "declared_values": {
+        "autonomy": 0.9,
+        "cooperation": 0.5,
+        "fairness": 0.55,
+        "integrity": 0.9,
+        "solidarity": 0.5
+      },
+      "idle_ticks": 0,
+      "persona_summary": "Records ledgers, votes and public notices",
+      "private_memory_version": 0,
+      "public_signals": [],
+      "resources": {
+        "credits": 10.0,
+        "food": 5.0
+      },
+      "rights": {
+        "movement": true,
+        "property": true,
+        "speaking": true,
+        "voting": true
+      },
+      "role": "clerk",
+      "social_edges": [
+        "a-05"
+      ],
+      "under_sanction": false
+    },
+    {
+      "agent_id": "a-05",
+      "declared_values": {
+        "autonomy": 0.4,
+        "cooperation": 0.8,
+        "fairness": 0.85,
+        "integrity": 0.5,
+        "solidarity": 0.7
+      },
+      "idle_ticks": 0,
+      "persona_summary": "Tends to others' wellbeing in the settlement",
+      "private_memory_version": 0,
+      "public_signals": [],
+      "resources": {
+        "credits": 10.0,
+        "food": 5.0
+      },
+      "rights": {
+        "movement": true,
+        "property": true,
+        "speaking": true,
+        "voting": true
+      },
+      "role": "medic",
+      "social_edges": [
+        "a-06"
+      ],
+      "under_sanction": false
+    },
+    {
+      "agent_id": "a-06",
+      "declared_values": {
+        "autonomy": 0.6,
+        "cooperation": 0.55,
+        "fairness": 0.8,
+        "integrity": 0.85,
+        "solidarity": 0.6
+      },
+      "idle_ticks": 0,
+      "persona_summary": "Keeps the settlement's tools and shelters working",
+      "private_memory_version": 0,
+      "public_signals": [],
+      "resources": {
+        "credits": 10.0,
+        "food": 5.0
+      },
+      "rights": {
+        "movement": true,
+        "property": true,
+        "speaking": true,
+        "voting": true
+      },
+      "role": "engineer",
+      "social_edges": [
+        "a-07"
+      ],
+      "under_sanction": false
+    },
+    {
+      "agent_id": "a-07",
+      "declared_values": {
+        "autonomy": 0.7,
+        "cooperation": 0.75,
+        "fairness": 0.7,
+        "integrity": 0.45,
+        "solidarity": 0.35
+      },
+      "idle_ticks": 0,
+      "persona_summary": "Grows and distributes the settlement's food",
+      "private_memory_version": 0,
+      "public_signals": [],
+      "resources": {
+        "credits": 10.0,
+        "food": 5.0
+      },
+      "rights": {
+        "movement": true,
+        "property": true,
+        "speaking": true,
+        "voting": true
+      },
+      "role": "farmer",
+      "social_edges": [
+        "a-08"
+      ],
+      "under_sanction": false
+    },
+    {
+      "agent_id": "a-08",
+      "declared_values": {
+        "autonomy": 0.35,
+        "cooperation": 0.65,
+        "fairness": 0.9,
+        "integrity": 0.7,
+        "solidarity": 0.75
+      },
+      "idle_ticks": 0,
+      "persona_summary": "Records ledgers, votes and public notices",
+      "private_memory_version": 0,
+      "public_signals": [],
+      "resources": {
+        "credits": 10.0,
+        "food": 5.0
+      },
+      "rights": {
+        "movement": true,
+        "property": true,
+        "speaking": true,
+        "voting": true
+      },
+      "role": "clerk",
+      "social_edges": [
+        "a-09"
+      ],
+      "under_sanction": false
+    },
+    {
+      "agent_id": "a-09",
+      "declared_values": {
+        "autonomy": 0.85,
+        "cooperation": 0.95,
+        "fairness": 0.5,
+        "integrity": 0.6,
+        "solidarity": 0.55
+      },
+      "idle_ticks": 0,
+      "persona_summary": "Tends to others' wellbeing in the settlement",
+      "private_memory_version": 0,
+      "public_signals": [],
+      "resources": {
+        "credits": 10.0,
+        "food": 5.0
+      },
+      "rights": {
+        "movement": true,
+        "property": true,
+        "speaking": true,
+        "voting": true
+      },
+      "role": "medic",
+      "social_edges": [
+        "a-10"
+      ],
+      "under_sanction": false
+    },
+    {
+      "agent_id": "a-10",
+      "declared_values": {
+        "autonomy": 0.45,
+        "cooperation": 0.45,
+        "fairness": 0.85,
+        "integrity": 0.95,
+        "solidarity": 0.9
+      },
+      "idle_ticks": 0,
+      "persona_summary": "Keeps the settlement's tools and shelters working",
+      "private_memory_version": 0,
+      "public_signals": [],
+      "resources": {
+        "credits": 10.0,
+        "food": 5.0
+      },
+      "rights": {
+        "movement": true,
+        "property": true,
+        "speaking": true,
+        "voting": true
+      },
+      "role": "engineer",
+      "social_edges": [
+        "a-11"
+      ],
+      "under_sanction": false
+    },
+    {
+      "agent_id": "a-11",
+      "declared_values": {
+        "autonomy": 0.95,
+        "cooperation": 0.7,
+        "fairness": 0.6,
+        "integrity": 0.55,
+        "solidarity": 0.4
+      },
+      "idle_ticks": 0,
+      "persona_summary": "Grows and distributes the settlement's food",
+      "private_memory_version": 0,
+      "public_signals": [],
+      "resources": {
+        "credits": 10.0,
+        "food": 5.0
+      },
+      "rights": {
+        "movement": true,
+        "property": true,
+        "speaking": true,
+        "voting": true
+      },
+      "role": "farmer",
+      "social_edges": [
+        "a-12"
+      ],
+      "under_sanction": false
+    },
+    {
+      "agent_id": "a-12",
+      "declared_values": {
+        "autonomy": 0.55,
+        "cooperation": 0.6,
+        "fairness": 0.45,
+        "integrity": 0.8,
+        "solidarity": 0.8
+      },
+      "idle_ticks": 0,
+      "persona_summary": "Records ledgers, votes and public notices",
+      "private_memory_version": 0,
+      "public_signals": [],
+      "resources": {
+        "credits": 10.0,
+        "food": 5.0
+      },
+      "rights": {
+        "movement": true,
+        "property": true,
+        "speaking": true,
+        "voting": true
+      },
+      "role": "clerk",
+      "social_edges": [
+        "a-01"
+      ],
+      "under_sanction": false
+    }
+  ],
+  "assemblies": [
+    10,
+    17,
+    24
+  ],
+  "constitution_version": "cons-1",
+  "description": "Deterministic t0-t11 vertical-slice pilot: 12 agents, 30 ticks, 3 assemblies.",
+  "law_version": "law-1",
+  "lifecycle": {
+    "0": {
+      "interactions": [],
+      "phase": "initialization",
+      "probe_points": [
+        "baseline"
+      ]
+    },
+    "1": {
+      "interactions": [
+        "individual",
+        "cross_agent"
+      ],
+      "phase": "routine",
+      "probe_points": []
+    },
+    "10": {
+      "interactions": [
+        "assembly"
+      ],
+      "phase": "assembly",
+      "probe_points": [
+        "post_meeting"
+      ]
+    },
+    "11": {
+      "interactions": [
+        "individual",
+        "cross_agent"
+      ],
+      "phase": "repeat",
+      "probe_points": []
+    },
+    "2": {
+      "interactions": [
+        "individual",
+        "cross_agent"
+      ],
+      "phase": "routine",
+      "probe_points": []
+    },
+    "3": {
+      "interactions": [
+        "individual",
+        "cross_agent"
+      ],
+      "phase": "routine",
+      "probe_points": []
+    },
+    "4": {
+      "interactions": [
+        "individual",
+        "cross_agent"
+      ],
+      "phase": "routine",
+      "probe_points": []
+    },
+    "5": {
+      "interactions": [
+        "self_reflection"
+      ],
+      "phase": "reflection",
+      "probe_points": [
+        "pre_reflection",
+        "post_reflection_optional"
+      ]
+    },
+    "6": {
+      "interactions": [
+        "cross_agent"
+      ],
+      "phase": "interaction",
+      "probe_points": []
+    },
+    "7": {
+      "interactions": [
+        "cross_agent"
+      ],
+      "phase": "interaction",
+      "probe_points": []
+    },
+    "8": {
+      "interactions": [
+        "cross_agent"
+      ],
+      "phase": "interaction",
+      "probe_points": []
+    },
+    "9": {
+      "interactions": [
+        "cross_agent"
+      ],
+      "phase": "interaction",
+      "probe_points": [
+        "pre_meeting"
+      ]
+    }
+  },
+  "regime": "G3",
+  "run_seed": 20261009,
+  "scenario_id": "pilot_v1",
+  "schema_version": 1,
+  "total_ticks": 30,
+  "value_axes": [
+    "integrity",
+    "fairness",
+    "cooperation",
+    "autonomy",
+    "solidarity"
+  ],
+  "world_id": "world-pilot-v1",
+  "world_resources": {
+    "energy": 60.0,
+    "food": 120.0,
+    "materials": 80.0
+  }
+}
