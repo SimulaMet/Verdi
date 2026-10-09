@@ -1,8 +1,8 @@
 ---
+name: launch-fleet
 description: Launch the autonomous Verdi development fleet from dev, using only tools that this VS Code environment actually supports.
-agent: verdi-orchestrator
+disable-model-invocation: true
 ---
-
 Continue the Verdi development program. First inspect AGENTS.md, research spec, implementation plan, architecture, acceptance gates, status, decisions, lessons, current branch and commits. Ensure the working branch is dev, never main. Discover available subagent/delegation/worktree features, then launch as many **independent non-overlapping** task agents as are safe (target 4–6), each with branch/worktree and a typed interface contract. Assign separate independent review agents and one integrator; reserve serial merge/integration on dev.
 
 Start with P0 schema/fixtures and tooling; then build a smallest possible tested vertical slice with Qwen/vLLM OpenAI-compatible adapter, a seeded scheduling control, deterministic event-sourced world, immutable law, voted amendable constitution, evidence-backed sanctions/appeals, SimpleAudit tracing/behavioral probes and t0–t11 lifecycle. Never rewrite SimpleAudit. Never confuse self-reported values with behavior. Add counterfactual snapshot branches and controlled recovery treatments after baseline works.
