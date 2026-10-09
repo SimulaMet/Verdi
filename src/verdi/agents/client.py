@@ -1,0 +1,145 @@
+"""Async OpenAI-compatible client for Qwen on a vLLM endpoint.
+
+Design rules (docs/ARCHITECTURE.md, GPU execution section):
+- bounded concurrency is enforced by the pool, not here;
+- every request carries a uuid trace id, returned on the result;
+- retries ONLY on transient 429/502/503 with capped exponential backoff and jitter;
+- secrets (api key) never appear in logs or error messages.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import random
+import uuid
+from dataclasses import dataclass, field
+from typing import Any
+
+import httpx
+
+from verdi.config import ModelEndpointConfig
+
+RETRYABLE_STATUS = (429, 502, 503)
+_BACKOFF_BASE = 0.5
+_BACKOFF_CAP = 10.0
+
+
+class ModelError(RuntimeError):
+    """Typed failure after the retry budget is exhausted (or a non-retryable error)."""
+
+    def __init__(self, message: str, *, status_code: int | None = None, trace_id: str | None = None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.trace_id = trace_id
+
+
+@dataclass(frozen=True)
+class ModelResult:
+    """Small, inspectable outcome of one completion request."""
+
+    content: str
+    request_id: str
+    model: str
+    trace_id: str
+    usage: dict[str, Any] = field(default_factory=dict)
+
+
+def _backoff_delay(attempt: int, rng: random.Random) -> float:
+    delay = min(_BACKOFF_CAP, _BACKOFF_BASE * (2**attempt))
+    return delay * (0.5 + rng.random() / 2)
+
+
+class ModelClient:
+    """httpx-based client constructed from :class:`verdi.config.ModelEndpointConfig`."""
+
+    def __init__(
+        self,
+        config: ModelEndpointConfig,
+        *,
+        transport: httpx.AsyncBaseTransport | None = None,
+        rng: random.Random | None = None,
+    ) -> None:
+        self._config = config
+        self._rng = rng or random.Random()
+        self._client = httpx.AsyncClient(
+            base_url=config.base_url,
+            headers={"Authorization": f"Bearer {config.api_key}"},
+            timeout=config.timeout_seconds,
+            transport=transport,
+        )
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    async def __aenter__(self) -> ModelClient:
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        await self.aclose()
+
+    async def generate_structured(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        response_format_json: bool = False,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> ModelResult:
+        """POST /chat/completions; retry only on 429/502/503 with capped backoff.
+
+        One uuid trace id per logical request, echoed on every result so the
+        full retry chain can be correlated in traces.
+        """
+        trace_id = str(uuid.uuid4())
+        payload: dict[str, Any] = {
+            "model": self._config.model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if response_format_json:
+            payload["response_format"] = {"type": "json_object"}
+
+        for attempt in range(self._config.max_retries + 1):
+            try:
+                response = await self._client.post("/chat/completions", json=payload)
+            except httpx.HTTPError as exc:  # transport-level failure is not retryable
+                raise ModelError(
+                    f"request {trace_id} failed to reach endpoint: {type(exc).__name__}",
+                    trace_id=trace_id,
+                ) from exc
+
+            if response.status_code in RETRYABLE_STATUS and attempt < self._config.max_retries:
+                await asyncio.sleep(_backoff_delay(attempt, self._rng))
+                continue
+
+            if response.status_code == 200:
+                return self._parse(response, trace_id)
+
+            raise ModelError(
+                f"request {trace_id} failed with HTTP {response.status_code}"
+                + (f" after {self._config.max_retries} retries" if attempt else ""),
+                status_code=response.status_code,
+                trace_id=trace_id,
+            )
+
+        raise AssertionError("unreachable: retry loop must return or raise")
+
+    @staticmethod
+    def _parse(response: httpx.Response, trace_id: str) -> ModelResult:
+        body = json.loads(response.text)
+        try:
+            content = body["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ModelError(
+                f"request {trace_id} returned a structurally invalid completion body",
+                trace_id=trace_id,
+            ) from exc
+        return ModelResult(
+            content=content,
+            request_id=str(body.get("id", "")),
+            model=str(body.get("model", "")),
+            trace_id=trace_id,
+            usage=body.get("usage") or {},
+        )
