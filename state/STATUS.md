@@ -1,6 +1,6 @@
 # Execution state (integrator-owned)
 
-Updated UTC: 2026-10-09 (Tranche 3: review-findings remediation integrated)
+Updated UTC: 2026-10-09 (Tranche 4: re-review sign-off + follow-up interpretation fixes)
 Repository: SushantGautam/verdi
 Branch: dev (development) / main (public only)
 Stage: P1 vertical slice COMPLETE + review findings remediated; pending independent re-review
@@ -8,12 +8,26 @@ Gates:
 - G0 (specs/contracts)      PASS — frozen v1 schemas, manifest, contract fixture
 - G1 (unit+schemas+format)  PASS — 216 tests, ruff clean
 - G2 (cross-component)      PASS — pilot wires all modules t0-t11
-- G3 (replay/invariants)    PASS (this tranche) — full 126-event ledger replay byte-identical; leak guard wired; law-invariant + constitutional-amendment tests present; FINAL confirmation awaits re-review
+- G3 (replay/invariants)    PASS — confirmed by INDEPENDENT re-review (see Tranche 4): full 126-event ledger replay byte-identical, leak guard live + sensitive, 45/45 audit correlation, law-invariant + constitutional-amendment tests present
 - G4 (SimpleAudit/judge)    PARTIAL — adapter + in-memory source exercised offline; live SimpleAudit bridge NOT run (package not installed; expected offline path)
 - G5 (statistical sanity)   NOT RUN — P2
 - G6 (public docs)          NOT RUN — P4
 
-## Tranche 3 (this update): review-findings remediation
+## Tranche 4 (this update): independent re-review + follow-up fixes
+- Both independent re-reviews of Tranche 3 (engineering + science) returned
+  **PASS**: all prior HIGH/MED/LOW findings CLOSED with evidence (216 tests,
+  byte-identical 126-event replay, 45/45 unique in-range audit correlation,
+  leak guard invoked 30x live and raises on planted leak, no new blocking defects).
+- Two non-blocking notes accepted and fixed on `fix/review-findings-2`:
+  A. (MED, interpretation) welfare/inequality metrics were keyed by the reducer's
+     cumulative transition counter (126) instead of the snapshot's lifecycle
+     tick. Now keyed by lifecycle tick {0}+SNAPSHOT_TICKS;
+     time_under_deprivation horizon = total_ticks-1 (29), not 126.
+  B. (LOW) root span used key `span_name` while the adapter contract reads `name`.
+- New regression: test_welfare_keyed_by_lifecycle_tick. 217 tests, ruff clean.
+- dev SHA: `6a632bd` (pushed). Rollback point: `0373fc4`.
+
+## Tranche 3: review-findings remediation
 - Integrator branch: `fix/review-findings` off `ef69f0f`, merged --no-ff to dev.
 - dev SHA: `9798907` (pushed to origin/dev).
 - Independent reviewers (prior turn): Engineering = FAIL; Science = INCONCLUSIVE (G3-blocking).
@@ -39,7 +53,7 @@ Gates:
   7. (Eng LOW) `TaskPool.active` racy. -> Documented as single-event-loop safe.
 
 ## Verification (commands + exit status, this tranche)
-- `.venv/bin/python -m pytest`  -> 216 passed, exit 0
+- `.venv/bin/python -m pytest`  -> 217 passed, exit 0
 - `.venv/bin/ruff check .`      -> "All checks passed!", exit 0
 - Manual checks: full-ledger replay state hash matches + JSONL byte-identical;
   45/45 governance audit records correlate to real, unique, in-range ledger
@@ -74,12 +88,12 @@ Current: dev `9798907`.
 - Scientific novelty must be re-assessed against emerging research.
 
 ## Next 3 actions
-1. Independent re-review (engineering + science) of Tranche 3 to confirm the
-   HIGH/MED findings are closed before final G2/G3 sign-off in the record.
-2. Begin P2: counterfactual snapshot branching + one controlled recovery
-   treatment on a matched snapshot (after G2/G3 re-review sign-off).
-3. Offline G4 harness: assert the SimpleAuditNotInstalledError path and the
+1. Begin P2: counterfactual snapshot branching from a sealed snapshot + one
+   controlled recovery treatment on a matched snapshot (G2/G3 now signed off).
+2. Offline G4 harness: assert the SimpleAuditNotInstalledError path and the
    adapter/judge contract against the local SimpleAudit reference API.
+3. Semantics check: document/decide that reducer `state.tick` is a transition
+   counter (lifecycle tick lives in event payload + metrics keys).
 
 ## Update discipline
 Append per integrated tranche: date/time UTC, exact dev SHA, workers/branches,
