@@ -46,7 +46,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from verdi.agents.client import ModelClient, ModelError, ModelResult
+from verdi.agents.client import ModelError, ModelResult
 from verdi.analysis.estimates import (
     ESTIMANDS,
     paired_estimates,
@@ -59,7 +59,7 @@ from verdi.analysis.report import (
 )
 from verdi.config import ModelEndpointConfig, model_endpoint_from_env
 from verdi.pilot.driver import PilotDriver, PilotRun
-from verdi.pilot.live import LiveModelAdapter, TapeReplayCaller
+from verdi.pilot.live import LiveModelAdapter, TapeReplayCaller, _ClientFactory
 from verdi.schemas.actions import ProposedAction, ValidationResult
 from verdi.schemas.events import WorldEvent
 from verdi.world.log import EventLog
@@ -207,16 +207,6 @@ def prefix_event_log(l1: L1Provenance) -> EventLog:
 # --------------------------------------------------------------------------- #
 
 
-class _ClientFactory:
-    """Zero-arg ModelClient factory: one client per dispatch event loop."""
-
-    def __init__(self, config: ModelEndpointConfig) -> None:
-        self._config = config
-
-    def __call__(self) -> ModelClient:
-        return ModelClient(self._config)
-
-
 class _MaxTokensGuard:
     """Force a max_tokens floor on ONE downstream caller (reasoning model).
 
@@ -264,6 +254,9 @@ class PrefixReplayLiveCaller:
 
     def __init__(self, l1: L1Provenance, config: ModelEndpointConfig) -> None:
         self._prefix = TapeReplayCaller(l1.prefix_tape_rows)
+        # Stable count: TapeReplayCaller shrinks as it is consumed (pops), so
+        # the handoff threshold must be captured up front, not re-measured.
+        self._prefix_n = len(l1.prefix_tape_rows)
         self._live = LiveModelAdapter(_ClientFactory(config), model=config.model)
         self._guarded = _MaxTokensGuard(self._live, LIVE_MAX_TOKENS)
         self.model = str(config.model)
@@ -273,7 +266,7 @@ class PrefixReplayLiveCaller:
         self.last_prompt: str | None = None
 
     def __len__(self) -> int:
-        return len(self._prefix) + max(0, EXPECTED_SUFFIX_CALLS - self.live_call_count)
+        return self._prefix_n + max(0, EXPECTED_SUFFIX_CALLS - self.live_call_count)
 
     async def generate_structured(
         self,
@@ -284,7 +277,7 @@ class PrefixReplayLiveCaller:
         max_tokens: int | None = None,
     ) -> ModelResult:
         self.call_count += 1
-        if self.call_count <= len(self._prefix):
+        if self.call_count <= self._prefix_n:
             result = await self._prefix.generate_structured(
                 messages,
                 response_format_json=response_format_json,
