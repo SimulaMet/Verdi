@@ -1,11 +1,15 @@
-# ADR-012 (PROPOSAL — NOT ADOPTED): independent live-judge pass to close G4
+# ADR-012: independent live-judge pass to close G4
 
-Status: **PROPOSED — awaiting operator approval for judge-LLM budget.**
-Nothing in this document is a frozen contract until adopted in
-`state/DECISIONS.md` with operator sign-off. Frozen per the verdict program
-rules BEFORE any judge outcome is observed.
+Status: **ADOPTED (2026-10-10, operator approval — unlimited budget on the
+simulachat endpoint, model Qwen3.8-27B as both target and judge).**
+Frozen per the verdict program rules BEFORE any judge outcome is observed.
 
-Date proposed: 2026-10-10. Base dev SHA: `b48beab`.
+Date proposed: 2026-10-10 (base dev SHA `b48beab`).
+Date adopted: 2026-10-10 (base dev SHA `d0633a2`).
+Operator decision on §E fallback: **same-model (Qwen3.8-27B) judge is
+approved** for this testbed; the report MUST still carry the same-family
+self-judgment disclosure (reduced independence) — that disclosure does not
+block G4, but it is a standing limitation.
 
 ## Context (what G4 needs to flip to PASS)
 
