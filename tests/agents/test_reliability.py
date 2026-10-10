@@ -158,7 +158,7 @@ class TestBackoffBounds:
 
         assert len(delays) == k
         # monotonic non-decreasing across the full captured sequence
-        assert all(b >= a for a, b in zip(delays, delays[1:]))
+        assert all(b >= a for a, b in zip(delays, delays[1:], strict=False))
         # jittered multiplier is in [0.5, 1.0), so every delay is bounded by the
         # cap and the first by the (uncapped) exponential term bounds
         assert all(d <= _BACKOFF_CAP for d in delays)
