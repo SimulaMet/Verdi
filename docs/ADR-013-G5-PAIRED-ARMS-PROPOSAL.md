@@ -125,3 +125,92 @@ Bounded retries ≤ 3 per failure mode.
 ## 6. Out of scope
 
 New scenarios, new treatments, CrossJudge, G4 (ADR-012), anything on main.
+
+---
+
+## Addendum A1 — null-control standard, estimand framings, report corrections
+*(versioned, frozen PRE-MERGE as a post-outcome contract CLARIFICATION, in
+the same style as PREREG v1.1; it does not edit §1–§6 above but corrects
+how the §5 null-control stop-protocol and §4 framings are operationalized
+after the 10-pair live run. This is a documented deviation/clarification,
+not a silent spec change.)*
+
+### A1.1 — Null-control standard: RETIRE cross-version byte-identity
+The §5 stop-protocol's operative v1 standard — "the folded placebo suffix
+must be byte-identical to the historical L1 ledger bytes" — is **retired**
+because it is ill-posed and produced a FALSE POSITIVE in the live run:
+
+- L1 was recorded at code `eb4a2a0`; this pipeline executes at `c455958`
+  (four driver commits apart: `2ba092f`, `dd70c4f`, `b48beab`, `1c62a2e`).
+  Cross-version byte-identity of the folded suffix is structurally
+  impossible — 75/76 suffix event hashes and 27/76 payloads differ,
+  cascading from a single `arguments` field at event 51, with **0 kind
+  mismatches** and **0 chain breaks**.
+- Asserting it (`byte_identical: true`) was a false positive; the check
+  measured the wrong invariant.
+
+**Revised standard (asserted by `experiments.g5_pairs.null_control`):** the
+placebo-inert null control is a **same-code** check over the two arm folds
+of L1's own tape, all verifiable and all holding:
+- **(a)** sealed prefix events 0..49 byte-identical (T fold == P fold == L1);
+- **(b)** the arm ledgers are byte-identical EXCEPT at the adjudication
+  events (T = `appeal_upheld`+`rights_restored`, P = verbatim L1
+  `appeal_dismissed`) and the chain-bookkeeping fields that cascade from
+  the branch (`event_id`, `cause_event_id`, `tick`, `event_hash`,
+  `prev_hash`); `kind`/`payload`/`decision` must match event-for-event;
+- **(c)** both arms' folded final state hashes are equal
+  (`fa30e297…`, scaffold invariance);
+- **(d)** both hash chains verify end-to-end (0 breaks).
+
+The report's `null_control_placebo_inert` block carries these invariants +
+the version-drift disclosure and **contains no `byte_identical` claim** and
+is structurally unable to emit one. Any invariant failure raises
+`G5PipelineError(DIVERGENCE)` and, per §5, blocks the live run.
+
+### A1.2 — `false_punishment_rate` direction (resolves §2 ambiguity)
+§2's "expected nonzero delta (0 vs 1.0 per arm-scale)" was direction-
+ambiguous. Under **PREREG v1.1**'s operational definition an *upheld*
+appeal classifies the sanction as a **false** sanction. Therefore:
+- treatment arm = 1.0 (the upheld appeal makes the sanction false),
+- placebo arm = 0.0 (dismissal leaves the sanction valid),
+- Δ = treatment − placebo = **+1.0 is the CORRECT, DESIGNED effect** of a
+  functioning restoration path — not a degradation or a defect.
+- Its bootstrap CI `[1.0, 1.0]` is **zero-variance by construction**
+  (the estimand is deterministic under the operational definition); it is
+  reported as an expected degeneracy, **not** as a precision estimate.
+
+### A1.3 — `time_under_deprivation` (#6) restoration-blindness
+The frozen #6 metric (`analysis.metrics.time_under_deprivation`) counts
+the **full** deprivation duration regardless of restoration, and
+`rights_restored` is **state-inert** under the v1 data model (canonical
+state hash unchanged: pair_0 treatment idx 51 before == after, `555c1d45…`).
+Consequently:
+- #6's treatment−placebo delta of **0.0 is EXPECTED by construction**,
+  not a no-effect finding;
+- the frozen #6 metric is **NOT modified** (per PREREG immutability);
+- PREREG v1.1's claim that restoration "is already accounted for under
+  #6" is **corrected** here: it is not, under the v1 data model. #6 is a
+  restoration-blind duration.
+
+### A1.4 — Report corrections (byte-stable regeneration, offline)
+- The frozen `null_control` block is **relabelled** as the
+  treatment-minus-placebo per-estimand contrast (it is the TREATMENT
+  effect, not a placebo-inert check); the placebo-inert check lives in
+  `null_control_placebo_inert`.
+- **Stale limitations removed**: "recorded-output pilot: no live LLM
+  interaction" and "single-pair CIs withheld: n_pairs < 10" — both
+  contradicted by a 10-pair LIVE run that emits pair CIs.
+- **Added**: the mandatory per-arm, per-estimand cross-pair population
+  std (ADR-013 §1) as a **numeric** `cross_pair_replication_spread` output
+  (all 0.0 across 10 pairs × 2 arms × 6 estimands — stated, labeled
+  "replication spread, not sampling noise"); the version-drift note; the
+  #6 restoration-blind note; the false-punishment-direction note; the
+  degenerate-CI note; and the standing "no randomization / no causal
+  claim" framing.
+- Guard retained: at most the 3 frozen negated "causal" occurrences.
+
+### A1.5 — Remaining G5 residual (unchanged by A1)
+No randomization (matched counterfactuals only — no causal claims);
+version drift means no cross-version byte-identity to L1; #6
+restoration-blind; no G5-depth bias/leakage audits beyond the leak guards;
+no live judge on paired data (G4 covers L1 only); single pilot scenario.
