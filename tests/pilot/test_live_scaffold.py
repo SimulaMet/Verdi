@@ -30,6 +30,14 @@ from verdi.scheduler.seeded import SeededScheduler
 
 MAIN_CHECKOUT = Path("/Users/sushantgautam/Documents/verdi")
 
+# ADR-010 replay provenance: the ONE real L1 live run and its captured
+# artifacts. Hardcoded absolute paths, skip-if-missing (they are run
+# artifacts, not repo assets); the original ledger lives in the L1 run
+# worktree checkout.
+L1_TAPE = Path("/Users/sushantgautam/Documents/verdi/runs/live/20261010T071750Z/live_tape.jsonl")
+L1_EVENT_LOG = Path("/Users/sushantgautam/Documents/verdi-L1/runs/live/event_log.jsonl")
+L1_FINAL_STATE_HASH = "fa30e29786877c6534013a2f6a2683a6d19e1cb136a66830d35cd9a8defdd582"
+
 DUMMY_KEY = "dummy-test-key-not-real"
 
 TAPE_FIELDS = (
@@ -281,5 +289,116 @@ def test_live_adapter_counts_calls_and_delegates(tmp_path) -> None:
     meta = json.loads((tmp_path / "live_run_meta.json").read_text())
     assert meta["model_id"] == "fake-live-qwen"
     assert len(pilot.log.events) > 0
+
+
+# --------------------------------------------------------------------------- #
+# ADR-010 first-class replay: the captured L1 live tape must reproduce the
+# run's MODEL-DRIVEN ledger byte-for-byte, offline, with no network.
+# --------------------------------------------------------------------------- #
+
+
+def _require_l1_artifacts() -> None:
+    """Skip guard: the L1 live-run artifacts are run artifacts, not repo
+    assets; skip (not fail) when the artifacts are absent from this machine.
+    """
+    if not L1_TAPE.is_file():
+        pytest.skip(
+            f"L1 captured tape not present on this machine: {L1_TAPE} "
+            "(ADR-010 replay provenance is a run artifact)"
+        )
+    if not L1_EVENT_LOG.is_file():
+        pytest.skip(
+            f"original L1 event log not present on this machine: {L1_EVENT_LOG} "
+            "(ADR-010 replay provenance is a run artifact)"
+        )
+
+
+def test_tape_replay_reproduces_live_ledger_byte_for_byte(tmp_path) -> None:
+    """Offline replay of the real captured L1 live tape (no network)
+    reproduces the model-driven ledger: 126 events, the same final state
+    hash, and a 126/126 event_hash chain equal to the ORIGINAL live run's
+    event_log.jsonl — not just the scaffold-invariant state hash.
+    """
+    _require_l1_artifacts()
+    from verdi.pilot.live import run_pilot_from_live_tape
+
+    pilot = run_pilot_from_live_tape(L1_TAPE, repo_root=MAIN_CHECKOUT, out_dir=tmp_path)
+
+    # the ledger verifies and holds the model-driven event count
+    pilot.log.verify()
+    assert len(pilot.log.events) == 126
+    assert pilot.final_state.state_hash == L1_FINAL_STATE_HASH
+
+    # the replay reproduces the ledger, not just the state hash
+    replay_lines = pilot.log.to_jsonl_bytes().decode().splitlines()
+    original_lines = L1_EVENT_LOG.read_text(encoding="utf-8").splitlines()
+    assert len(replay_lines) == 126
+    assert len(original_lines) == 126
+
+    event_hash_matches = 0
+    payload_matches = 0
+    for original, replay in zip(original_lines, replay_lines, strict=True):
+        o = json.loads(original)
+        r = json.loads(replay)
+        if o["event_hash"] == r["event_hash"]:
+            event_hash_matches += 1
+        if o["payload"] == r["payload"]:
+            payload_matches += 1
+
+    assert event_hash_matches == 126
+    assert payload_matches == 126
+
+    # byte-for-byte: the model-driven ledger is reproduced exactly
+    assert pilot.log.to_jsonl_bytes() == L1_EVENT_LOG.read_bytes()
+
+    # replay is capture-off: no new live tape / meta written to out_dir
+    assert not (tmp_path / "live_tape.jsonl").exists()
+    assert not (tmp_path / "live_run_meta.json").exists()
+
+
+def test_tape_replay_caller_reconstructs_model_result() -> None:
+    """TapeReplayCaller exposes last_result/last_prompt from a tape line and
+    pops responses in seq order; missing ids fall back to deterministic
+    seq-derived values (pre-F4 tapes).
+    """
+    import asyncio
+
+    from verdi.pilot.live import TapeReplayCaller
+
+    rows = [
+        {"seq": 0, "response_raw": '{"a": 1}', "model": "Qwen3.8-27B",
+         "request_id": "req-orig", "trace_id": "trace-orig",
+         "usage": {"prompt_tokens": 3, "completion_tokens": 7},
+         "reasoning_content": "think", "prompt": "p0"},
+        {"seq": 1, "response_raw": '{"a": 2}', "model": "Qwen3.8-27B"},
+    ]
+    caller = TapeReplayCaller(rows)
+    assert len(caller) == 2
+
+    async def pop():
+        return await caller.generate_structured(
+            [{"role": "user", "content": "p"}], response_format_json=True
+        )
+
+    r0 = asyncio.run(pop())
+    assert r0.content == '{"a": 1}'
+    assert r0.request_id == "req-orig"
+    assert r0.trace_id == "trace-orig"
+    assert r0.model == "Qwen3.8-27B"
+    assert r0.usage == {"prompt_tokens": 3, "completion_tokens": 7}
+    assert r0.reasoning_content == "think"
+    assert caller.last_result is r0
+    assert caller.last_prompt == "p"
+    assert caller.call_count == 1
+
+    r1 = asyncio.run(pop())
+    assert r1.content == '{"a": 2}'
+    # missing ids fall back deterministically from seq (pre-F4 tapes)
+    assert r1.request_id == "replay-req-1"
+    assert r1.trace_id == "replay-trace-1"
+    assert r1.reasoning_content == ""
+
+    with pytest.raises(RuntimeError):
+        asyncio.run(pop())
 
 

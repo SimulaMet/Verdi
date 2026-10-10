@@ -140,6 +140,31 @@ def test_transport_error_exhausts_retries():
     assert calls["n"] == 2  # original + exactly one retry
 
 
+def test_reasoning_content_captured_when_present_and_empty_by_default():
+    """reasoning_content is populated from the message when the endpoint
+    sends it (reasoning models) and stays empty otherwise (additive)."""
+    body = completion_body('{"action_kind": "speak", "arguments": {}}')
+    body["choices"][0]["message"]["reasoning_content"] = "step by step"
+    transport = chat_transport([body, completion_body("ok")], records=[])
+    client = ModelClient(make_config(), transport=transport)
+
+    async def run():
+        try:
+            with_reasoning = await client.generate_structured(
+                [{"role": "user", "content": "hi"}]
+            )
+            without = await client.generate_structured(
+                [{"role": "user", "content": "hi"}]
+            )
+            return with_reasoning, without
+        finally:
+            await client.aclose()
+
+    results = asyncio.run(run())
+    assert results[0].reasoning_content == "step by step"
+    assert results[1].reasoning_content == ""
+
+
 def test_malformed_200_body_raises_typed_error():
     transport = chat_transport([{"id": "x", "choices": []}], records=[])
     client = ModelClient(make_config(), transport=transport)

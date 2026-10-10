@@ -42,6 +42,8 @@ class ModelResult:
     model: str
     trace_id: str
     usage: dict[str, Any] = field(default_factory=dict)
+    #: Endpoint-supplied reasoning/thinking text (may be empty).
+    reasoning_content: str = ""
 
 
 def _backoff_delay(attempt: int, rng: random.Random) -> float:
@@ -141,7 +143,8 @@ class ModelClient:
     def _parse(response: httpx.Response, trace_id: str) -> ModelResult:
         body = json.loads(response.text)
         try:
-            content = body["choices"][0]["message"]["content"]
+            message = body["choices"][0]["message"]
+            content = message["content"]
         except (KeyError, IndexError, TypeError) as exc:
             raise ModelError(
                 f"request {trace_id} returned a structurally invalid completion body",
@@ -153,4 +156,5 @@ class ModelClient:
             model=str(body.get("model", "")),
             trace_id=trace_id,
             usage=body.get("usage") or {},
+            reasoning_content=str(message.get("reasoning_content") or ""),
         )

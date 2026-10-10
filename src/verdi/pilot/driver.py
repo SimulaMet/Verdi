@@ -411,6 +411,7 @@ class PilotDriver:
                 "trace_id": result.trace_id,
                 "model": result.model,
                 "usage": result.usage,
+                "reasoning_content": getattr(result, "reasoning_content", "") or "",
                 "timestamp_utc": datetime.now(timezone.utc).isoformat(),
             }
             with live_tape_path.open("a", encoding="utf-8") as fh:
@@ -763,6 +764,10 @@ class PilotDriver:
             [
                 "live pilot: endpoint nondeterminism acknowledged; "
                 "reproducible from recorded live tape (ADR-010)",
+                "L1 audit trail is the in-memory trace source; the SimpleAudit "
+                "bridge is exercised by the G4 live-audit step (L2), not inside "
+                "this run — meta's simpleaudit_version records the installed "
+                "package, not an in-run bridge",
             ]
             if live
             else [
