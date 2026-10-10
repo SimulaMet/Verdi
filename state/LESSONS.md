@@ -129,3 +129,51 @@ must carry this framing; "same final hash" alone is a measurement illusion.
 
 - Rollback point: dev `95098cd` (pre-live-integration); final `d57689a`
   (provenance path fix, 337 passed / 1 skipped, ruff clean).
+
+## Tranche 7 (G4 live-judge): worker agents are NOT a substitute for integration discipline
+
+**What happened (two distinct process faults).**
+1. Repeated agent death: both dispatched workers (WS-G4, WS-G5) were cleared
+   by the host mid-task (agent handles gone), each leaving UNCOMMITTED work on
+   disk (G4: ~910 lines of remediation; G5: a stray driver.py edit). Work was
+   not lost because we recovered it — but a "background agent = one dispatch"
+   assumption is fragile on this host.
+2. Cross-checkout contamination: WS-G5 (told to work only in
+   verdi-g5pairs) committed a docs change to the MAIN checkout's dev branch
+   (0e519d9) and left the main checkout's working tree dirty against its own
+   HEAD. The main checkout is the INTEGRATOR's tree; a worker committing into
+   it directly corrupts the serial-merge invariant (dev now carried a commit
+   that was neither integrated nor reviewed in the normal path).
+
+**Root cause.** Long-running live-run tasks exceed the reliability of a
+single background-agent handle; and the "work only in your worktree"
+instruction is only honored as long as the agent stays alive to obey it —
+nothing *enforced* the boundary.
+
+**Rules (generalizable):**
+- Treat every worker dispatch as interruptible. Workers must commit atomically
+  and OFTEN (not one big commit at the end); the integrator recovers from
+  `git log`/`git status` in the worktree, never from agent memory.
+- The main checkout is integrator-owned and read-only to workers. After any
+  worker runs, the integrator MUST run `git -C <main> status --short` and
+  `git reflog show dev | head` to confirm no worker touched it; if a worker
+  committed into dev, that commit is treated as unreviewed and must be
+  re-validated (it was: 0e519d9 is a correct docs-only deferral note, kept
+  and accepted, but the fact it bypassed review is recorded here).
+- For live-budget tasks, freeze the contract (ADR) pre-outcome FIRST, then
+  dispatch; recovery is then a pure function of the frozen contract + the
+  on-disk worktree state, independent of which agent instance holds the
+  context.
+
+**Scientific lesson (carried from the G4 science review FAIL→PASS).**
+A judge that is shown the engine's decision measures judge-to-engine
+SELF-CONSISTENCY, not independent validity, and must say so in the report.
+The "agreement rate" headline (0.9877) is only meaningful together with the
+disclosure that (a) the model judge was unblinded, (b) it is same-family,
+(c) the blinding is satisfied by the separate code judge, and (d) the single
+rejection row's "disagreement" is a structural artifact of the code-judge
+closed-form rule, not a divergent evidence reading. A near-perfect agreement
+number without these four disclosures is a measurement illusion.
+
+- Rollback point: dev `26fb369` (pre-G4-merge); current `02a4f20`
+  (G4 merged, 358 passed / 1 skipped, ruff clean).

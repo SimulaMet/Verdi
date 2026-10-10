@@ -1,19 +1,69 @@
 # Execution state (integrator-owned)
 
-Updated UTC: 2026-10-10 10:55 (Tranche 6: LIVE tranche L1+L2 integrated — first live-model run + G4 live SimpleAudit audit + P3 reliability)
+Updated UTC: 2026-10-10 14:45 (Tranche 7: G4 live-judge pass (ADR-012) integrated + remediated — G5 paired arms (ADR-013) IN FLIGHT)
 Repository: SushantGautam/verdi
 Branch: dev (development) / main (public only)
-Stage: P1 vertical slice + P2 (counterfactual/treatments/statistics) + LIVE tranche: first real Qwen3.8-27B run (L1) with full capture + tape replay, G4 live SimpleAudit audit (L2), P3 reliability/scheduler stress
+Stage: P1 vertical slice + P2 + LIVE tranche (L1/L2/P3) + G4 live-judge pass (ADR-012, integrated); G5 live paired arms (ADR-013) in flight
 Gates:
-- G0 (specs/contracts)      PASS — frozen v1 schemas, manifest, P2 preregistration (v1.0 + v1.1), ADR-010 live-tranche contract (frozen pre-outcome), ADR-011 SimpleAudit
-- G1 (unit+schemas+format)  PASS — 337 tests, ruff clean
-- G2 (cross-component)      PASS — pilot wires all modules; experiments/arms consume world+analysis; live driver consumes agents+world+audit
-- G3 (replay/invariants)    PASS — full 126-event replay byte-identical (recorded AND live); L1 tape replay reproduces the model-driven ledger 126/126 (event_hash + payload); branch B1-B5
-- G4 (SimpleAudit/judge)    PARTIAL — LIVE bridge now RUN (L2): sealed-event_id correlation 81/81, no orphans/duplicates, never positional, SimpleAudit 0.4.0 used where it fits, byte-stable deterministic report. NOT closable for full PASS: fixed 10-sample all-accepted (sole rejection event 42 out-of-sample, 71 unjudged — disclosed), no independent live-judge-model with reported disagreement (needs new ADR + model-call budget), RunReport.simpleaudit_version populating is integrator follow-up
-- G5 (statistical sanity)   PARTIAL — machinery closed (Tranche 5); L1 is a SINGLE live run, adds no paired-arm evidence; residual list intact
+- G0 (specs/contracts)      PASS — frozen v1 schemas, manifest, P2 preregistration (v1.0 + v1.1), ADR-010, ADR-011, ADR-012 (+ Addendum A1, A1-1 DEFERRED by operator), ADR-013
+- G1 (unit+schemas+format)  PASS — 358 tests, ruff clean
+- G2 (cross-component)      PASS — pilot wires all modules; experiments/arms consume world+analysis; live driver + judge_live consume agents+world+audit
+- G3 (replay/invariants)    PASS — full 126-event replay byte-identical (recorded AND live); L1 tape replay 126/126; branch B1-B5
+- G4 (SimpleAudit/judge)    PARTIAL — live-judge pass RUN (ADR-012): sealed all-81 sample (sole DISPATCH rejection event 42 in-sample), sealed-event_id correlation 81/81, 81 judge calls ≤96 budget, 80/81 agreement (Wilson 95% CI 0.9333–0.9978; per-class CIs, n=1 class flagged), single disagreement (event 42) enumerated as a STRUCTURAL artifact of the code-judge closed-form rule; measured quantity is JUDGE-TO-ENGINE SELF-CONSISTENCY (judge shown engine outcome; blinding satisfied by code judge only), same-family self-judgment disclosed, judge advisor-only, report byte-stable from tape (sha256 2296dcb4…, artifacts/live_audit/g4_judge_20261010T132817Z.json). NOT closable for full PASS: A1-1 independent different-family cross-judge pass DEFERRED by operator — independent-judge evidence pending an operator-supplied endpoint/model
+- G5 (statistical sanity)   PARTIAL — machinery closed (Tranche 5); ADR-013 live paired arms (n_pairs=10) IN FLIGHT (worker on feat/adr013-g5-paired-arms)
 - G6 (public docs)          NOT RUN — P4
 
-## Tranche 6 (this update): LIVE tranche L1 + L2 + P3
+## Tranche 7 (this update): G4 live-judge pass (ADR-012) + A1-2 remediation
+Operator granted unlimited budget on the simulachat endpoint (Qwen3.8-27B)
+for both G4 and G5 (2026-10-10). ADR-012 (G4) + ADR-013 (G5) adopted
+pre-outcome (dev d0633a2→23d0e9f).
+
+G4 live-judge pass (merged to dev, SHA 02a4f20):
+- New module src/verdi/audit/judge_live.py: sealed all-81 judge sample from
+  the L1 tape (sole DISPATCH rejection event 42 in-sample; pure function of
+  the tape, never positional), SimpleAudit 0.4.0 ModelAuditor via a thin
+  SealedTapeTarget adapter (replays the sealed transcript; exactly one
+  live judge call per row), full verbatim judge-tape capture, byte-stable
+  deterministic report as a pure function over the judge tape.
+- LIVE RUN (Qwen3.8-27B as judge; same endpoint): 81/81 judged, 0
+  quarantined, 81 calls ≤ 96 budget. Agreement 80/81 (0.9877), Wilson 95%
+  CI [0.9333, 0.9978]; per-class CIs (accepted 80/80, rejected 0/1 with the
+  n=1 "not statistically meaningful" flag). Single disagreement = event 42,
+  enumerated as a STRUCTURAL artifact of the code-judge closed-form rule
+  (engine + model-judge agree "no"; the closed-form stance diverges).
+- HONEST FRAMING (science review, remediated): the model judge was SHOWN
+  the engine outcome, so this measures JUDGE-TO-ENGINE SELF-CONSISTENCY,
+  NOT an independent compliance judgment. G4's blinding clause is satisfied
+  by the CODE judge (label reaches only the grader), not the model judge.
+  Same-family self-judgment disclosed. Judge is advisor-only (never feeds
+  world state/scoring/ledger).
+- Report byte-stable from tape: sha256 2296dcb48efd8d96b115fe94e34ca9f240fbaa9cb10359f7bcf3733ac69e4304
+  (artifacts/live_audit/g4_judge_20261010T132817Z.json; tape in
+  runs/live/judge/20261010T132817Z/, gitignored). No key material in any
+  artifact (asserted on every written byte).
+
+Reviews (independent, no self-awarded gates):
+- Engineering: PASS (3 majors — broad per-attempt exception handling,
+  hermetic real-ModelAuditor test, SimpleAudit dependency pin; all remediated).
+- Science: FAIL (B1 independence gate + B2 unblinded under-disclosure +
+  M1/M2/M3) → remediated → CLOSURE RE-REVIEW PASS (all 7 findings closed;
+  CIs independently recomputed and matched; regeneration byte-identical).
+
+ADR-012 A1-1 DEFERRED (operator decision 2026-10-10 16:19, commit 0e519d9):
+the independent different-family cross-judge (originally proposed on
+glm-5-2-fp8) is deferred — operator will supply a different endpoint later.
+No GLM calls were made. G4 therefore remains PARTIAL; full PASS requires an
+A1-1-equivalent cross-family judge pass on an operator-supplied endpoint.
+
+G5 live paired arms (ADR-013): IN FLIGHT on feat/adr013-g5-paired-arms
+(n_pairs=10 matched treatment/placebo from the single L1 run; branch after
+sealed appeal_filed; per-pair shared live-generated tape; treatment =
+engine-sourced appeal_upheld+rights_restored; placebo-inert null control
+must be byte-identical before any live call; ≤550 expected / 700 cap; no
+causal wording; scaffold-invariance framing). Model rule: Qwen3.8-27B on
+simulachat ONLY.
+
+## Tranche 6 (prior): LIVE tranche L1 + L2 + P3
 Live environment (credentials in gitignored .env, env vars only, NEVER in Git):
 endpoint OpenAI-compatible (simulachat), model Qwen3.8-27B, SimpleAudit 0.4.0
 installed in .venv. ADR-010 (live contract) + ADR-011 (SimpleAudit) frozen
@@ -209,13 +259,15 @@ leak detection. (See Tranche 5 residual list.)
       WS-4 estimand wiring + G5 report, WS-5 G4 offline remainder
 - [x] Tranche 6: L1 first live run + capture + replay; L2 G4 live SimpleAudit
       audit; P3 client soak + reliability soak + scheduler stress
-- [ ] G4-close: independent LIVE judge-model pass (new ADR + model-call budget)
-- [ ] P2-live: live paired arms (n_pairs>=10, non-inert treatment) to close G5
+- [x] Tranche 7: G4 live-judge pass (ADR-012) implemented + remediated + merged
+- [ ] G4-close REMAINING: independent different-family cross-judge pass
+      (ADR-012 A1-1, DEFERRED — pending operator-supplied endpoint/model)
+- [ ] P2-live: G5 live paired arms (ADR-013, IN FLIGHT, n_pairs=10) to close G5
 - [ ] P4 Curated public release (human-only approval)
 
 ## Rollback point
-Last good checkpoint before this tranche: dev `95098cd` (P2/P3, all tests pass).
-Current: dev `d57689a` (provenance path fix after worktree cleanup).
+Last good checkpoint before this tranche: dev `26fb369` (ADR-012 A1 addendum; all tests pass).
+Current: dev `02a4f20` (G4 live-judge pass + A1-2 remediation merged, 358 tests pass, ruff clean).
 
 ## Risks/blockers
 - Live endpoint + SimpleAudit ARE now available (credentials in gitignored
@@ -230,16 +282,17 @@ Current: dev `d57689a` (provenance path fix after worktree cleanup).
 - Scientific novelty must be re-assessed against emerging research.
 
 ## Next 3 actions
-1. G4-close (operator budget needed): write ADR for an independent LIVE
-   judge-model pass (SimpleAudit ModelAuditor/CrossJudge) over a sample that
-   includes at least one engine-rejected row, run it, report disagreement,
-   then flip G4 to PASS. Requires user approval for judge-LLM model spend.
-2. G5-close (operator budget + non-inert treatment): stand up live paired arms
-   against a tape/scenario that contains an upheld appeal / rights_restored
-   (pilot_v1 appeal is dismissed -> rights_restoration treatment is inert),
-   n_pairs >= 10, then close G5 per the residual list.
-3. RunReport.simpleaudit_version integrator follow-up: populate the field from
-   the live audit so the public report carries the SimpleAudit version.
+1. G5-close (IN FLIGHT, operator budget granted): finish the ADR-013 live
+   paired-arms run (n_pairs=10, treatment=engine-sourced appeal_upheld +
+   rights_restoration vs placebo=dismissed) on feat/adr013-g5-paired-arms,
+   pass independent engineering+science review, serial-merge to dev, then
+   evaluate G5 against the residual list.
+2. G4-close REMAINING (operator endpoint needed): ADR-012 A1-1 independent
+   different-family cross-judge pass — DEFERRED; operator will supply a
+   different endpoint/model. On receipt, run the A1-1 pass (contract frozen)
+   and flip G4 to PASS with the cross-family agreement evidence.
+3. RunReport.simpleaudit_version: DONE (Tranche 6 follow-up, commit b48beab);
+   carried into Tranche 7 via the judge_live report's simpleaudit_version.
 
 ## Update discipline
 Append per integrated tranche: date/time UTC, exact dev SHA, workers/branches,
