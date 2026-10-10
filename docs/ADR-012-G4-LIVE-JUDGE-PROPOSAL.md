@@ -120,7 +120,23 @@ ACCEPTANCE.md's "at least one independent judge process"; (b) the endpoint
 hosts a different-family model. This addendum is append-only; the frozen
 v1 text above stands.
 
-**A1-1. Independent cross-judge pass (mandatory for G4 closure).**
+Operator decision 2026-10-10 16:19: **A1-1 DEFERRED** — no cross-judge run
+now (glm-5-2-fp8 declined as unverified; a different endpoint will be
+supplied later). Only A1-2 (remediation) is active for this tranche. G4
+stays PARTIAL with the A1-1-stated residual.
+
+**A1-1. Independent cross-judge pass — DEFERRED by operator decision (2026-10-10).**
+The operator declined the `glm-5-2-fp8` cross-judge (unverified deployment
+capability) and will provide a different endpoint later. **No GLM calls are
+to be made.** G4 therefore remains **PARTIAL** after this tranche, with the
+precise residual: *no independent different-family model-judge pass; the
+implemented judge is same-model (Qwen3.8-27B) and unblinded — it measures
+judge-to-engine self-consistency, disclosed as such; the blinded judge is the
+deterministic code judge.* The A1-1 spec below is retained verbatim so a
+future addendum can activate it by substituting an operator-supplied
+endpoint/model; the "mandatory" wording applies only when activated.
+
+**A1-1 spec (retained, not active).**
 A SECOND judge pass over the identical frozen all-81 sample (same sample
 function, same sealed-event_id correlation, same advisor-only rules, same
 capture/report format) with **judge model `glm-5-2-fp8`** (different family
