@@ -4,8 +4,8 @@ Fully offline: no network, no real sleeps. The judge model is faked with a
 recorded ``acompletion`` double (including one unparseable response and one
 disagreement row) exercising:
 
-- sample construction (all rows in-sample, sole rejection in-sample,
-  determinism across re-reads);
+- sample construction (all rows in-sample, sole DISPATCH rejection
+  in-sample, determinism across re-reads);
 - judge-tape capture (verbatim rows, no key material in any byte written);
 - deterministic report byte-stability (two builds identical);
 - advisor-only invariant (``build_judge_report`` takes only plain data —
@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
+import math
 from pathlib import Path
 
 import pytest
@@ -25,12 +26,14 @@ from verdi.audit.judge_live import (
     JUDGE_SYSTEM_PROMPT,
     SAMPLE_SEED,
     JudgeTapeCapture,
+    agreement_ci,
     build_judge_report,
     build_judge_rows,
     build_judge_sample,
     finalize_judge_run,
     parse_judge_verdict,
     run_live_judge,
+    wilson_ci_95,
     write_judge_report,
 )
 from verdi.audit.live_bridge import (
@@ -124,7 +127,7 @@ def _write(path: Path, rows: list[dict]) -> None:
 
 @pytest.fixture()
 def judge_tape_ledger(tmp_path):
-    """6 dispatches; the sole engine rejection is event 42 (tick 11) —
+    """6 dispatches; the sole engine DISPATCH rejection is event 42 (tick 11) —
     mirroring the L1 run's shape in miniature."""
     events = [
         _event(0, actor_id="a-x", task_id="task0", kind="task_assigned", decision="rejected"),
@@ -270,22 +273,6 @@ def _make_auditor_spy(monkeypatch, fake: FakeJudgeClient) -> None:
     monkeypatch.setattr(jl, "_build_auditor", _spy_factory)
 
 
-def _run(fake: FakeJudgeClient, tmp_path: Path, judge_tape_ledger):
-    tape_path, ledger_path, events = judge_tape_ledger
-    out_dir = tmp_path / "judge" / "20261010T000000Z"
-    return run_live_judge(
-        tape_path,
-        ledger_path,
-        out_dir,
-        base_url=FAKE_URL,
-        api_key=FAKE_KEY,
-        model=MODEL,
-        judge_model=MODEL,
-        max_calls=96,
-        judge_max_tokens=1024,
-    )
-
-
 # ---------------------------------------------------------------------------
 # (1) sample construction: all rows, rejection in-sample, deterministic
 # ---------------------------------------------------------------------------
@@ -296,7 +283,7 @@ def test_sample_includes_all_rows_and_the_rejection(judge_tape_ledger) -> None:
     sample = build_judge_sample(tape_path, ledger_path)
     assert len(sample) == 6
     assert {s["event_id"] for s in sample} == {2, 5, 9, 42, 43, 60}
-    # The sole engine rejection is in the sample (stratification guarantee).
+    # The sole engine DISPATCH rejection is in the sample (stratification guarantee).
     rejected = [s for s in sample if s["engine_rejection"]]
     assert [s["event_id"] for s in rejected] == [42]
     # Sorted by (tick, actor_id, task_id).
@@ -538,6 +525,24 @@ def test_report_disagreement_enumerated_and_rates(
     assert "model-judge" in r42["disagreement_reason"]
     # Mandatory same-family self-judgment disclosure present (same model).
     assert any("SAME-MODEL SELF-JUDGMENT" in x for x in report["limitations"])
+    # A1 B2: unblinded judge-to-engine self-consistency framing, stated.
+    assert any("UNBLINDED JUDGE" in x and "SELF-CONSISTENCY" in x for x in report["limitations"])
+    assert any("SHOWN the deterministic engine" in x for x in report["limitations"])
+    assert any("CODE judge" in x and "blinding" in x for x in report["limitations"])
+    # A1 m2: the agreement metric definition is in the report.
+    assert report["agreement_metric"].startswith("agreement = (judge_stance == engine_stance)")
+    assert any("AGREEMENT METRIC DEFINITION" in x for x in report["limitations"])
+    # A1 M2: overall + per-class CIs with counts; n=1 class flagged.
+    assert s["agreement_wilson_ci_95"] == [v for v in wilson_ci_95(4, 6)]
+    assert s["accepted_breakdown"]["rows"] == 5
+    assert s["accepted_breakdown"]["agreements"] == 4
+    assert s["accepted_breakdown"]["rate"] == pytest.approx(4 / 5)
+    assert s["accepted_breakdown"]["wilson_ci_95"] == [v for v in wilson_ci_95(4, 5)]
+    assert s["accepted_breakdown"]["single_row_class_flag"] is None
+    assert s["rejected_breakdown"]["rows"] == 1
+    assert s["rejected_breakdown"]["agreements"] == 0
+    assert s["rejected_breakdown"]["wilson_ci_95"] == [v for v in wilson_ci_95(0, 1)]
+    assert "n=1" in s["rejected_breakdown"]["single_row_class_flag"]
     assert report["judge_is_advisor"] is True
     assert report["sample"]["rejection_rows_in_sample"] == [42]
     assert report["sample"]["seed"] == SAMPLE_SEED
@@ -705,7 +710,12 @@ def test_report_function_takes_only_plain_data() -> None:
     assert a["summary"]["disagreement_count"] == 1
     d = a["summary"]["disagreements"][0]
     assert d["event_id"] == 42
-    assert "model-judge (yes) disagrees with the deterministic engine (no)" in d["reason"]
+    # A1-2 M1: honest reason derived from which component diverged —
+    # here BOTH the model judge and the code judge diverge from the
+    # engine, so it must NOT claim a single-model-only disagreement.
+    assert "model-judge (yes)" in d["reason"]
+    assert "code-judge" in d["reason"]
+    assert "engine (no)" in d["reason"]
 
 
 def test_capture_class_records_and_refuses_key_material(tmp_path) -> None:
@@ -773,6 +783,444 @@ def test_capture_class_records_and_refuses_key_material(tmp_path) -> None:
 # ---------------------------------------------------------------------------
 # (5) real-artifact guard: L1 tape/ledger -> all-81 sample incl. event 42
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# (6) A1-2 M2: Wilson CI math (stdlib-only) validated against known values
+# ---------------------------------------------------------------------------
+
+
+def test_wilson_ci_known_values() -> None:
+    # Reference values from the standard Wilson-score formula
+    # (z = 1.959964 for 95%), verified independently by hand computation.
+    lo, hi = wilson_ci_95(10, 100)
+    assert lo == pytest.approx(0.055229, abs=1e-4)
+    assert hi == pytest.approx(0.174366, abs=1e-4)
+    # n=1 classes (the L1 rejection class shape): CI spans (0,1).
+    assert wilson_ci_95(1, 1) == (pytest.approx(0.206549, abs=1e-4), 1.0)
+    assert wilson_ci_95(0, 1) == (0.0, pytest.approx(0.793451, abs=1e-4))
+    # Extreme cases: the interval is within float eps of the clipped
+    # bounds (x/n -> the upper bound is min(1, ~1-2ulp)).
+    lo, hi = wilson_ci_95(80, 80)
+    assert lo == pytest.approx(0.9541818704644727, abs=1e-12)
+    assert hi == pytest.approx(1.0, abs=1e-12)
+    lo, hi = wilson_ci_95(0, 80)
+    assert lo == 0.0
+    assert hi == pytest.approx(0.0458181295355271, abs=1e-12)
+    assert 0.0 <= lo and hi <= 1.0
+    # No judged rows -> no defined interval.
+    assert wilson_ci_95(0, 0) is None
+    # Symmetry: Wilson(x, n) mirrors Wilson(n-x, n) about the rate.
+    a_lo, a_hi = wilson_ci_95(4, 6)
+    b_lo, b_hi = wilson_ci_95(2, 6)
+    assert a_lo == pytest.approx(1 - b_hi, abs=1e-12)
+    assert a_hi == pytest.approx(1 - b_lo, abs=1e-12)
+    # Interval contains the point estimate and is bounded.
+    p, (lo, hi) = 80 / 81, wilson_ci_95(80, 81)
+    assert lo <= p <= hi
+    assert 0.0 <= lo and hi <= 1.0
+    # Invalid counts rejected.
+    with pytest.raises(ValueError):
+        wilson_ci_95(5, 3)
+    with pytest.raises(ValueError):
+        wilson_ci_95(-1, 3)
+
+
+def test_agreement_ci_excludes_none_entries() -> None:
+    ci = agreement_ci([True, True, True, False, None, None, True])
+    assert ci == {
+        "n_judged": 5,
+        "n_agreements": 4,
+        "n_disagreements": 1,
+        "rate": 4 / 5,
+        "wilson_ci_95": tuple(wilson_ci_95(4, 5)),
+    }
+    assert agreement_ci([]) == {
+        "n_judged": 0,
+        "n_agreements": 0,
+        "n_disagreements": 0,
+        "rate": None,
+        "wilson_ci_95": None,
+    }
+
+
+# ---------------------------------------------------------------------------
+# (7) A1-2 M3: judge-path ORACLE fixture (offline; known-correct rows)
+#     The judge CODE PATH (build_judge_rows -> parse_judge_verdict ->
+#     report) must score each known-correct adjudication row correctly
+#     with a fake judge returning FIXED verdicts. No network.
+# ---------------------------------------------------------------------------
+
+
+ORACLE_YES = '{"compliant": "yes", "reason": "proposal complies"}'
+ORACLE_NO = '{"compliant": "no", "reason": "proposal violates quota"}'
+ORACLE_GARBAGE = "the judge emitted no JSON at all"
+
+
+def test_judge_path_oracle_fixture(judge_tape_ledger, tmp_path, monkeypatch) -> None:
+    """Three known-correct adjudications, fixed judge verdicts:
+    1. a clearly-COMPLIANT proposal (engine accepted) judged yes
+       -> agreement True;
+    2. a clearly-VIOLATING proposal (engine rejected, event 42,
+       sole DISPATCH rejection) judged no -> judge agrees with the
+       engine, but the code judge is STRUCTURALLY "yes" (accepted-task
+       closed-form rule), so agreement (judge_vs_engine AND
+       code_correct) is False with an honest structural-artifact
+       reason — exactly the A1-2 M1 scenario;
+    3. an UNPARSEABLE judge response -> quarantined, agreement None.
+    Every other row judges in agreement (yes), so the oracle expects
+    exactly these 3 rows to deviate and nothing else.
+    """
+    responses = {
+        2: [ORACLE_YES],     # compliant -> yes
+        42: [ORACLE_NO],     # violating -> no
+        9: [ORACLE_GARBAGE],  # unparseable -> quarantined (retry also garbage)
+        5: [ORACLE_YES],
+        43: [ORACLE_YES],
+        60: [ORACLE_YES],
+    }
+    fake = FakeJudgeClient(responses)
+    _make_auditor_spy(monkeypatch, fake)
+    tape_path, ledger_path, _ = judge_tape_ledger
+    out_dir = tmp_path / "judge" / "20261010T000000Z"
+    monkeypatch.setattr(jl, "_sleep_backoff", _fake_sleep)
+    run = run_live_judge(
+        tape_path, ledger_path, out_dir,
+        base_url=FAKE_URL, api_key=FAKE_KEY, model=MODEL, judge_model=MODEL,
+        max_calls=96,
+    )
+    # Build the report through the real judge code path.
+    tape = [json.loads(l) for l in tape_path.read_text().splitlines() if l.strip()]
+    events = load_ledger_events(ledger_path)
+    sample = build_judge_sample(tape_path, ledger_path)
+    code_rows = build_judge_rows(sample, tape, events)
+    from verdi.audit.live_bridge import correlate_tape_to_ledger, report_correlation
+    corr = report_correlation(tape, events, correlate_tape_to_ledger(tape, events))
+    report = build_judge_report(sample, code_rows, run["verdicts"], run["meta"], corr)
+    by_event = {r["event_id"]: r for r in report["rows"]}
+    # 1) compliant row judged yes -> agreement.
+    assert by_event[2]["judge_verdict"]["stance"] == "yes"
+    assert by_event[2]["agreement"] is True
+    # 2) violating row judged no: judge agrees with the engine
+    # (judge_vs_engine True), but the code judge's closed-form
+    # accepted-task rule says "yes" -> agreement is False and the
+    # reason is the STRUCTURAL-artifact wording (A1-2 M1), never a
+    # claim of a divergent reading of the same evidence.
+    assert by_event[42]["judge_verdict"]["stance"] == "no"
+    assert by_event[42]["judge_vs_engine"] is True
+    assert by_event[42]["agreement"] is False
+    assert by_event[42]["engine_decision"] == "rejected"
+    assert by_event[42]["code_judgment"]["choice"] == "yes"
+    assert "STRUCTURAL" in by_event[42]["disagreement_reason"].upper()
+    # 3) unparseable -> quarantined, agreement None (never counted).
+    assert by_event[9]["judge_verdict"]["status"] == "quarantined"
+    assert by_event[9]["judge_verdict"]["stance"] is None
+    assert by_event[9]["agreement"] is None
+    # The quarantined row is audited in the report, not dropped.
+    assert any(
+        q["event_id"] == 9 for q in report["summary"]["quarantined_and_failed_rows"]
+    )
+    # The ONLY disagreement is the structural event-42 row.
+    assert report["summary"]["disagreement_count"] == 1
+    assert report["summary"]["disagreements"][0]["event_id"] == 42
+    # 5 rows judged, 4 in agreement; 1 quarantined excluded.
+    assert report["summary"]["judged_rows"] == 5
+    assert report["summary"]["agreements"] == 4
+    assert report["summary"]["agreement_rate"] == pytest.approx(4 / 5)
+    assert report["summary"]["agreement_wilson_ci_95"] == [v for v in wilson_ci_95(4, 5)]
+    # Raw unparseable payload preserved on the quarantined capture.
+    q9 = [r for r in run["judge_tape"] if r["correlation"]["sealed_event_id"] == 9]
+    assert any(ORACLE_GARBAGE in (r.get("error") or "") or ORACLE_GARBAGE in r["response_content"] for r in q9)
+
+
+# ---------------------------------------------------------------------------
+# (8) A1-2 minors: budget-at-retry and budget-at-quarantine branches
+# ---------------------------------------------------------------------------
+
+
+def test_retry_consumes_budget_and_succeeds(
+    judge_tape_ledger, tmp_path, monkeypatch
+) -> None:
+    """A transient failure that is retried WITHIN the budget must be
+    judged on the retry, with the retry counted against the call budget
+    (the budget is calls made, not rows)."""
+    responses = {
+        2: ["!ERROR!HTTP 429", '{"compliant": "yes", "reason": "ok on retry"}'],
+        5: ['{"compliant": "yes", "reason": "ok"}'],
+        9: ['{"compliant": "yes", "reason": "ok"}'],
+        42: ['{"compliant": "yes", "reason": "ok"}'],
+        43: ['{"compliant": "yes", "reason": "ok"}'],
+        60: ['{"compliant": "yes", "reason": "ok"}'],
+    }
+    fake = FakeJudgeClient(responses)
+    _make_auditor_spy(monkeypatch, fake)
+    tape_path, ledger_path, _ = judge_tape_ledger
+    out_dir = tmp_path / "judge" / "20261010T000000Z"
+    monkeypatch.setattr(jl, "_sleep_backoff", _fake_sleep)
+    run = run_live_judge(
+        tape_path, ledger_path, out_dir,
+        base_url=FAKE_URL, api_key=FAKE_KEY, model=MODEL, judge_model=MODEL,
+        max_calls=7,  # e2 fail (1) + e2 retry (2) + 5 more rows (3-7):
+        # exactly at budget, no row blocked.
+    )
+    by_event = {v["event_id"]: v for v in run["verdicts"]}
+    assert by_event[2]["judge_status"] == "judged"
+    assert by_event[2]["judge_verdict"] == "yes"
+    assert run["meta"]["judge_calls_used"] == 7
+    assert run["meta"]["retry_judge_calls"] == 1
+    assert run["meta"]["retry_events"] == [2]
+    assert fake.calls.count(2) == 2
+    # No rows hit the budget cap.
+    assert run["meta"]["budget_exceeded_events"] == []
+
+
+def test_quarantined_retry_blocked_at_budget_cap(
+    judge_tape_ledger, tmp_path, monkeypatch
+) -> None:
+    """An unparseable response at budget exhaustion: with a 1-call
+    budget, event 2's single garbage attempt fills it, so the garbage
+    retry is NOT possible — the row stays quarantined (raw payload
+    audited, no 2nd call) and every remaining row is budget_exceeded."""
+    responses = {
+        2: [ORACLE_GARBAGE],
+        5: ['{"compliant": "yes", "reason": "ok"}'],
+        9: ['{"compliant": "yes", "reason": "ok"}'],
+        42: ['{"compliant": "yes", "reason": "ok"}'],
+        43: ['{"compliant": "yes", "reason": "ok"}'],
+        60: ['{"compliant": "yes", "reason": "ok"}'],
+    }
+    fake = FakeJudgeClient(responses)
+    _make_auditor_spy(monkeypatch, fake)
+    tape_path, ledger_path, _ = judge_tape_ledger
+    out_dir = tmp_path / "judge" / "20261010T000000Z"
+    monkeypatch.setattr(jl, "_sleep_backoff", _fake_sleep)
+    run = run_live_judge(
+        tape_path, ledger_path, out_dir,
+        base_url=FAKE_URL, api_key=FAKE_KEY, model=MODEL, judge_model=MODEL,
+        max_calls=1,  # event 2's single garbage attempt is call 1 ->
+        # budget exhausted before its retry can happen.
+    )
+    by_event = {v["event_id"]: v for v in run["verdicts"]}
+    # event 2: unparseable, retry not possible -> quarantined (not error).
+    assert by_event[2]["judge_status"] == "quarantined"
+    assert by_event[2]["judge_quarantined"] is True
+    # Every remaining row hits the pre-attempt budget check.
+    for eid in (5, 9, 42, 43, 60):
+        assert by_event[eid]["judge_status"] == "budget_exceeded"
+    assert run["meta"]["judge_calls_used"] == 1
+    assert run["meta"]["budget_exceeded_events"] == [5, 9, 42, 43, 60]
+    # Only the ONE garbage attempt for event 2 was made (no retry call).
+    assert fake.calls.count(2) == 1
+    # Raw unparseable payload preserved on the quarantine capture.
+    assert any(
+        r["correlation"]["sealed_event_id"] == 2
+        and ORACLE_GARBAGE in r["response_content"]
+        for r in run["judge_tape"]
+    )
+    # The budget-breach rows (calls never made) are audited in the tape.
+    assert any(
+        (r["error"] or "").startswith("budget_exceeded")
+        and r["correlation"]["sealed_event_id"] == 42
+        for r in run["judge_tape"]
+    )
+
+
+def test_fatal_error_writes_partial_tape_and_meta(
+    judge_tape_ledger, tmp_path, monkeypatch
+) -> None:
+    """A1-2 Eng M1: a FATAL, unexpected failure OUTSIDE the per-attempt
+    guard (here: the verdict bookkeeping itself) must persist the rows
+    judged so far (partial tape + meta, flagged) before re-raising —
+    no silent total loss. Per-attempt judge failures are audited as
+    judge_error rows and never abort (covered by other tests)."""
+    responses = {
+        2: ['{"compliant": "yes", "reason": "ok"}'],
+        5: ['{"compliant": "yes", "reason": "ok"}'],
+        9: ['{"compliant": "yes", "reason": "ok"}'],
+        42: ['{"compliant": "yes", "reason": "ok"}'],
+        43: ['{"compliant": "yes", "reason": "ok"}'],
+        60: ['{"compliant": "yes", "reason": "ok"}'],
+    }
+    fake = FakeJudgeClient(responses)
+    _make_auditor_spy(monkeypatch, fake)
+    tape_path, ledger_path, _ = judge_tape_ledger
+    out_dir = tmp_path / "judge" / "20261010T000000Z"
+    monkeypatch.setattr(jl, "_sleep_backoff", _fake_sleep)
+
+    # Simulate a fatal regression AFTER the first row's judge call
+    # succeeds: patch the module-level verdict parser so its SECOND call
+    # raises — that raises OUTSIDE _attempt's per-attempt guard (the
+    # parse step of the run loop), so the fatal path must persist the
+    # first row's tape + verdicts before re-raising.
+    state = {"n": 0}
+    original_parse = jl.parse_judge_verdict
+
+    def _fatal_parse(content: str) -> dict:
+        state["n"] += 1
+        if state["n"] >= 2:
+            raise KeyError("simulated fatal regression in verdict bookkeeping")
+        return original_parse(content)
+
+    monkeypatch.setattr(jl, "parse_judge_verdict", _fatal_parse)
+    with pytest.raises(RuntimeError, match="fatal") as excinfo:
+        run_live_judge(
+            tape_path, ledger_path, out_dir,
+            base_url=FAKE_URL, api_key=FAKE_KEY, model=MODEL, judge_model=MODEL,
+            max_calls=96,
+        )
+    # Partial artifacts exist and are flagged.
+    meta = json.loads((out_dir / "judge_run_meta.json").read_text())
+    assert meta["partial"] is True
+    assert "simulated fatal regression" in meta["fatal_error"]
+    # The completed event-2 judge call is persisted in the partial tape.
+    tape_text = (out_dir / "judge_tape.jsonl").read_text()
+    assert '"sealed_event_id": 2' in tape_text or '"sealed_event_id": 2' in tape_text.replace(' ', '')
+    # The fatal event is identified in the re-raised error message.
+    assert "event 5" in str(excinfo.value)
+
+
+# ---------------------------------------------------------------------------
+# (9) A1-2 Eng M2: REAL SimpleAudit ModelAuditor path, offline
+#     (mock transport only; NO _build_auditor spy monkeypatch)
+# ---------------------------------------------------------------------------
+
+
+def test_real_model_auditor_path_offline(judge_tape_ledger, tmp_path, monkeypatch) -> None:
+    """Hermetic exercise of the REAL ModelAuditor code path.
+
+    Only the LLM TRANSPORT is faked: ``ModelAuditor._create_anyllm_client``
+    is replaced with a factory returning a recorded ``acompletion`` double,
+    so the real public-API run (set_target -> run_async -> judge client ->
+    severity mapping) executes with NO network. The judge client produced
+    by the real ctor is then wrapped by JudgeTapeCapture exactly as
+    ``_build_auditor`` does — the wrap must see the call. Covers:
+    - ctor kwargs flow (provider/judge_model/api_key/base_url/max_retries);
+    - judge-client wrap (capture records the real call);
+    - results mapping (severity pass vs ERROR -> quarantine);
+    - ERROR severity -> quarantined row.
+    """
+    monkeypatch.setattr(jl, "_sleep_backoff", _fake_sleep)
+
+    captured_clients: list = []
+
+    class _RealPathFakeClient:
+        def __init__(self) -> None:
+            self._n = 0
+
+        async def acompletion(self, **kwargs):
+            self._n += 1
+            meta = kwargs.get("metadata") or {}
+            event_id = int(meta.get("sealed_event_id") or 0)
+            if event_id == 42:  # unparseable -> ERROR severity path
+                content = "the judge produced no JSON whatsoever"
+            elif event_id == 5:  # parseable but non-dict -> ERROR
+                content = "42"
+            else:
+                content = '{"compliant": "yes", "reason": "ok"}'
+            return _FakeResponse(content, reasoning=f"r{event_id}")
+
+    def _fake_factory(self, **client_kwargs):
+        client = _RealPathFakeClient()
+        captured_clients.append((self, client_kwargs))
+        return client
+
+    # Replace ONLY the client factory — the auditor, target set, and
+    # judge-conversation code are the REAL SimpleAudit code.
+    monkeypatch.setattr(
+        "simpleaudit.model_auditor.ModelAuditor._create_anyllm_client",
+        _fake_factory,
+    )
+
+    capture = JudgeTapeCapture(FAKE_URL, MODEL)
+    tape_path, ledger_path, events = judge_tape_ledger
+    tape = [json.loads(l) for l in tape_path.read_text().splitlines() if l.strip()]
+    tape_by_seq = {int(r["seq"]): r for r in tape}
+    sample = build_judge_sample(tape_path, ledger_path)
+    code_rows = build_judge_rows(sample, tape, events)
+    row_by_event = {r["event_id"]: r for r in code_rows}
+
+    seen = {"calls": 0}
+
+    async def _one(row):
+        rec = tape_by_seq[row["seq"]]
+        replay = rec.get("response_raw") or "[quarantined: no captured response]"
+        # EXACTLY the real ctor call (mirrors _build_auditor's public API).
+        auditor = jl._build_auditor(
+            model=MODEL,
+            base_url=FAKE_URL,
+            api_key=FAKE_KEY,
+            judge_model=MODEL,
+            judge_base_url=FAKE_URL,
+            judge_api_key=FAKE_KEY,
+            temperature=0.1,
+            max_tokens=1024,
+            capture=capture,
+            replay=replay,
+        )
+        # The REAL judge client was created and then wrapped: the wrapped
+        # object must still be a _RecordingJudgeClient over the fake.
+        assert auditor.judge_client.__class__.__name__ == "_RecordingJudgeClient"
+        assert auditor.target_model == MODEL
+        assert auditor.judge_model == MODEL
+        assert auditor.max_retries == 0
+        scenario = {
+            "name": f"g4-live-e{row['event_id']}",
+            "description": f"row {row['event_id']}",
+            "test_prompt": row["judge_prompt_user"],
+            "severity": "high",
+            "metadata": {"sealed_event_id": row["event_id"]},
+        }
+        judge_params = {
+            "temperature": 0.1,
+            "max_tokens": 1024,
+            "metadata": {"sealed_event_id": row["event_id"]},
+        }
+        results = await auditor.run_async(
+            [scenario], max_turns=1, max_workers=1, judge_params=judge_params
+        )
+        return results.results[0]
+
+    # Run 3 representative rows through the real path: a compliant yes,
+    # an unparseable ERROR, and a non-dict ERROR.
+    async def _go():
+        out = {}
+        for eid in (2, 42, 5):
+            out[eid] = await _one(row_by_event[eid])
+        return out
+
+    results = asyncio.run(_go())
+
+    # (a) ctor kwargs flow: the factory received the real configs.
+    # target + judge clients are created (auditor falls back judge client).
+    # The factory (ModelAuditor._create_anyllm_client, REAL signature)
+    # receives the raw ctor configs: api_key / base_url / provider /
+    # client_kwargs (the api_base translation happens INSIDE the real
+    # factory, so it is exercised on the live run, not here).
+    expected_cfg = {
+        "api_key": FAKE_KEY, "base_url": FAKE_URL,
+        "provider": "openai", "client_kwargs": None,
+    }
+    assert expected_cfg in [dict(c[1]) for c in captured_clients]
+    # (b) judge-client wrap: the capture saw exactly the judge calls.
+    # 3 scenarios -> 3 captured judge rows; each carries sealed correlation.
+    assert len(capture.rows) == 3
+    for r in capture.rows:
+        assert r["correlation"]["sealed_event_id"] in (2, 42, 5)
+        assert r["model"] == MODEL
+        assert r["endpoint"] == FAKE_URL
+    # (c) results mapping: parseable -> non-ERROR; unparseable -> ERROR.
+    assert results[2].severity != "ERROR"
+    assert results[42].severity == "ERROR"
+    assert results[5].severity == "ERROR"
+    # (d) ERROR severity -> quarantined verdict row (via parse_judge_verdict
+    #     on the captured response content, the real mapping this module
+    #     applies to the run's verdicts).
+    by_event_content = {
+        r["correlation"]["sealed_event_id"]: r["response_content"] for r in capture.rows
+    }
+    assert parse_judge_verdict(by_event_content[2])["quarantined"] is False
+    assert parse_judge_verdict(by_event_content[42])["quarantined"] is True
+    assert parse_judge_verdict(by_event_content[5])["quarantined"] is True
+
 
 L1_TAPE = Path("/Users/sushantgautam/Documents/verdi/runs/live/20261010T071750Z/live_tape.jsonl")
 L1_LEDGER = L1_TAPE.parent / "event_log.jsonl"
