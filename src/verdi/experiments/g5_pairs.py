@@ -308,7 +308,7 @@ def generate_pair_tape(
     pair_dir: str | Path,
     config: ModelEndpointConfig,
     used_calls: int,
-) -> tuple[list[dict[str, Any]], int]:
+) -> tuple[list[dict[str, Any]], int, list[tuple[str, Any]]]:
     """Generate ONE shared R_p live (pair tape = 34 replayed + 47 live rows).
 
     Returns ``(pair_tape_rows, used_calls_after, quarantined)``. Cost: exactly
@@ -878,7 +878,9 @@ def run_g5_pairs(
     exemplar_p: dict[str, Any] = None
     used_calls = 0
 
-    def _generate_with_transient_retry(pair_dir: Path) -> tuple[list[Any], list[tuple[Any, Any]]]:
+    def _generate_with_transient_retry(
+        pair_dir: Path,
+    ) -> tuple[list[dict[str, Any]], list[tuple[str, Any]]]:
         """ADR-013 §5: on transient endpoint errors (429/5xx), back off and
         retry within a bounded budget; persistent failure raises
         G5PipelineError (caller must STOP and report BLOCKED).
@@ -961,6 +963,11 @@ def run_g5_pairs(
                     f"rows, expected {EXPECTED_SUFFIX_CALLS}"
                 )
             pair_tape = tape_rows
+            tape_quarantined = [
+                (row["task_id"], "quarantined in saved tape")
+                for row in live_rows
+                if row.get("quarantined")
+            ]
             used_calls += len(live_rows)
             print(f"[g5-pairs] pair {pair}: resume (markers present)", flush=True)
         else:
