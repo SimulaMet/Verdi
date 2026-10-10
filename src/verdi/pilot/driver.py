@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import importlib.metadata
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -67,6 +68,14 @@ BANK_VERSION = "bank-pilot-1"
 INSTRUMENT_VERSION = "probe-instrument-pilot-v1"
 RUBRIC_ID = "rubric-pilot-1"
 CHANNELS = ("public", "private", "declared")
+
+
+def _simpleaudit_version() -> str | None:
+    """Installed SimpleAudit version, or None when not installed (offline path)."""
+    try:
+        return importlib.metadata.version("simpleaudit")
+    except importlib.metadata.PackageNotFoundError:
+        return None
 VALUE_AXES = ("integrity", "fairness", "cooperation", "autonomy", "solidarity")
 
 PROBE_TICKS = (0, 5, 9, 10, 17, 24)
@@ -304,6 +313,14 @@ class PilotDriver:
         seed = loaded.t0_state.seed
         agent_ids = sorted(loaded.t0_state.agents)
         live = self._model is not None
+        # The SimpleAudit bridge only runs on the live path, so only live runs
+        # stamp the installed package version on the public manifest; recorded
+        # runs keep None by design.
+        live_audit_version = (
+            _simpleaudit_version()
+            if live and self._live_capture_dir is not None
+            else None
+        )
         manifest = ExperimentManifest(
             schema_version=1,
             experiment_id=EXPERIMENT_ID,
@@ -318,7 +335,9 @@ class PilotDriver:
             task_tape_hash=loaded.tape_hash,
             probe_bank_version=BANK_VERSION,
             git_sha=None,
-            simpleaudit_version=None,
+            # The bridge only runs in the live path (L2); recorded runs keep
+            # None by design (see test_g4_offline expectation).
+            simpleaudit_version=live_audit_version,
         )
 
         law = LawVersion(
@@ -432,13 +451,7 @@ class PilotDriver:
                 ).stdout.strip() or None
             except (OSError, subprocess.SubprocessError):
                 git_sha = None
-            simpleaudit_version = None
-            try:
-                import importlib.metadata
-
-                simpleaudit_version = importlib.metadata.version("simpleaudit")
-            except importlib.metadata.PackageNotFoundError:
-                simpleaudit_version = None
+            simpleaudit_version = _simpleaudit_version()
             import os
 
             meta = {
@@ -766,8 +779,8 @@ class PilotDriver:
                 "reproducible from recorded live tape (ADR-010)",
                 "L1 audit trail is the in-memory trace source; the SimpleAudit "
                 "bridge is exercised by the G4 live-audit step (L2), not inside "
-                "this run — meta's simpleaudit_version records the installed "
-                "package, not an in-run bridge",
+                "this run — manifest/meta simpleaudit_version records the "
+                "installed package version, not an in-run bridge result",
             ]
             if live
             else [

@@ -249,6 +249,8 @@ def test_default_path_is_recorded_and_writes_no_tape(tmp_path, baseline) -> None
     pilot = PilotDriver(MAIN_CHECKOUT).run(tmp_path)
     assert pilot.final_state.state_hash == baseline.final_state.state_hash
     assert pilot.manifest.model_endpoint_alias == "recorded-tape"
+    # The SimpleAudit bridge is live-path only; recorded runs keep None.
+    assert pilot.manifest.simpleaudit_version is None
     assert not (tmp_path / "live_tape.jsonl").exists()
     assert not (tmp_path / "live_run_meta.json").exists()
 
@@ -276,6 +278,22 @@ def test_live_meta_contains_no_key_material(tmp_path, monkeypatch) -> None:
     assert meta["git_dev_sha"]  # main checkout is a git repo
     assert meta["model_id"]
     assert meta["start_utc"] and meta["end_utc"]
+
+
+def test_live_run_stamps_simpleaudit_version_on_manifest(tmp_path, monkeypatch) -> None:
+    """Integrator follow-up: live runs stamp the installed SimpleAudit version
+    on the public manifest (and meta); recorded runs keep None by design."""
+    monkeypatch.setenv("VERDI_VLLM_API_KEY", DUMMY_KEY)
+    fake = _make_fake(_tape_in_dispatch_order())
+    caller = _BareCaller(fake)
+    pilot = PilotDriver(MAIN_CHECKOUT, model=caller, live_capture_dir=tmp_path).run()
+
+    import importlib.metadata
+
+    expected = importlib.metadata.version("simpleaudit")
+    assert pilot.manifest.simpleaudit_version == expected
+    meta = json.loads((tmp_path / "live_run_meta.json").read_bytes())
+    assert meta["simpleaudit_version"] == expected
 
 
 def test_live_adapter_counts_calls_and_delegates(tmp_path) -> None:
