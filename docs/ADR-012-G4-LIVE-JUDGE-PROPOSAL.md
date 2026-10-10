@@ -110,3 +110,65 @@ the Tranche 6 L2 review:
 4. On approval: this file is frozen, ADR-012 is recorded in
    `state/DECISIONS.md`, work is dispatched to a feature branch with
    independent engineering + science review, serial merge to dev.
+
+---
+
+## Addendum A1 (2026-10-10, post-freeze, PRE-outcome — versioned deviation note)
+
+Triggers: (a) science review FAIL B1 — a same-model judge cannot satisfy
+ACCEPTANCE.md's "at least one independent judge process"; (b) the endpoint
+hosts a different-family model. This addendum is append-only; the frozen
+v1 text above stands.
+
+**A1-1. Independent cross-judge pass (mandatory for G4 closure).**
+A SECOND judge pass over the identical frozen all-81 sample (same sample
+function, same sealed-event_id correlation, same advisor-only rules, same
+capture/report format) with **judge model `glm-5-2-fp8`** (different family
+from the Qwen3.8-27B target), same endpoint, temperature 0.1,
+max_tokens >= 1024, concurrency 1, <= 96 calls including retries.
+- Pre-run smoke: exactly 1 live call verifying the model id works and
+  returns parsable JSON; smoke evidence recorded in the run meta. If the
+  model is unusable, G4 stays PARTIAL with the documented reason (no
+  substitute model without a further addendum).
+- The judge prompt is the SAME frozen prompt (the unblinded
+  judge-to-engine self-consistency framing is disclosed in BOTH reports);
+  the cross-judge comparison (Qwen judge vs GLM judge stances, per row) is
+  the NEW independent-judge evidence: agreement/disagreement between two
+  different-family judges is reported in full (never an average).
+- Artifacts: runs/live/judge_independent/<stamp>/ (gitignored) +
+  artifacts/live_audit/g4_judge_independent_<stamp>.json +
+  artifacts/live_audit/g4_judge_cross_<stamp>.json (pure function over both
+  judge tapes; byte-stable).
+- Cross-judge disagreements with the engine are EXPECTED and are the point;
+  neither judge feeds world state/scoring (advisor-only).
+
+**A1-2. Remediation contract (from the two independent reviews, 2026-10-10).**
+- B2 (sci): both reports must state explicitly: the judge was shown the
+  engine outcome and the measured quantity is judge-to-engine
+  self-consistency, NOT an independent compliance judgment; the blinding
+  clause of G4 is satisfied by the code judge (label reaches only the
+  grader), not by the model judge.
+- M1 (sci): the event-42 disagreement wording must say it is a STRUCTURAL
+  artifact of the code-judge closed-form rule (accepted-task => choice
+  "yes"), not a divergent reading of the same evidence.
+- M2 (sci): uncertainty quantification: exact/Wilson 95% CI on the
+  agreement rate, per-class rates with n (rejection class n=1 explicitly
+  flagged).
+- M3 (sci): a judge-path oracle fixture (known-correct adjudication rows
+  the judge code path must score correctly; offline).
+- m1: "sole rejection" -> "sole DISPATCH rejection" (ledger has two
+  rejected-decision events: 42 action_rejected, 50 appeal_dismissed).
+- m2: state the `agreement` metric definition in the report
+  (judge_vs_engine AND code_judgment.correct).
+- Eng M1: `run_live_judge` must catch broad exceptions per attempt and
+  record the row as errored+audited (never abort the whole run losing all
+  in-memory rows); partial tape/meta written on failure.
+- Eng M2: pin the real SimpleAudit ModelAuditor path with at least one
+  offline test (mock transport, no spy-auditor monkeypatch) covering ctor
+  kwargs, judge-client wrap, results mapping, ERROR severity -> quarantine.
+- Eng M3: declare `SimpleAudit>=0.4,<0.5` in pyproject.toml dependencies.
+- Minors: fix max_retries docstring/report text (ctor param, not
+  judge_kwargs); remove dead `_run` test helper; add tests for
+  retry-not-possible-at-cap and quarantined-at-budget-exhausted branches.
+
+A1 is frozen at commit time; any further change requires A1-x.
