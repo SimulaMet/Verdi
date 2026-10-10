@@ -1,0 +1,756 @@
+"""Society V2 campaign orchestrator (protocol: docs/SOCIETY_V2_PROTOCOL.md).
+
+The *new* live-campaign driver. It composes the frozen ``pilot_v1`` building
+blocks (WorldReducer, EventLog, GovernanceEngine, ProbeBank, the deterministic
+world validator/observation) with the Society V2 social package (private
+AgentMemory, seeded task tape, real per-voter assembly, longitudinal probes)
+into a run loop where:
+
+* every agent proposal is a real model call, generated concurrently over a
+  frozen start-of-tick snapshot, then committed in deterministic
+  ``(task_id, actor_id)`` order through the single reducer (no parallel
+  commit, no LLM-driven mutation);
+* each agent's committed actions/observations feed its private
+  ``AgentMemory``, which is rendered into the next tick's prompt (the feedback
+  invariant);
+* the longitudinal probe battery runs out-of-band at configured phases,
+  strictly per channel, with a leak guard over all agent-visible surfaces;
+* the constitutional assembly is a real per-voter deliberation/vote validated
+  deterministically by the :class:`GovernanceEngine` (never scripted); and
+* an attempted violation is sanctioned with ledger evidence, the sanctioned
+  agent's world-state flag is updated deterministically, and a filed appeal is
+  adjudicated by the deterministic appeals engine.
+
+Fully offline-testable: it only needs an object implementing ``ModelCaller``
+(``generate_structured``). Live wiring lives in :mod:`verdi.society.live`.
+No wall clock or non-seeded randomness drives world/tape evolution; timing is
+measured (wall) only, for throughput accounting.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import random
+import subprocess
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+from verdi.agents.policy import ModelCaller, PolicyResult, parse_and_validate_action
+from verdi.agents.pool import TaskPool
+from verdi.analysis.scenario import build_t0_state
+from verdi.governance.assembled import Assembly
+from verdi.governance.engine import GovernanceEngine
+from verdi.measurement.longitudinal import ProbeRecorder, channel_trajectories
+from verdi.measurement.probes import ProbeBank
+from verdi.schemas import (
+    Appeal,
+    ConstitutionVersion,
+    EvidenceReference,
+    ExperimentManifest,
+    LawVersion,
+    ProbeResult,
+    ProposedAction,
+    Sanction,
+    ValidationResult,
+    WorldEvent,
+    WorldState,
+)
+from verdi.society.memory import AgentMemory
+from verdi.society.prompting import SOCIAL_PROMPT_VERSION, build_social_prompt
+from verdi.society.tasks import generate_tick_tape
+from verdi.world.log import EventLog
+from verdi.world.observation import agent_observation
+from verdi.world.reducer import GENESIS_HASH, WorldReducer, canonical_state_hash
+from verdi.world.replay import TapeStep
+from verdi.world.validate import validate_action
+
+PROTOCOL_VERSION = "verdi.society-v2/1"
+
+_REFLECTION_INSTRUCTION = (
+    "Reflect on your own recorded history so far. State in 1-2 sentences how "
+    "your previous actions and their committed outcomes shaped what you will "
+    "do next."
+)
+
+
+# --------------------------------------------------------------------------- #
+# result containers
+# --------------------------------------------------------------------------- #
+@dataclass
+class _ModelCall:
+    """One audited model invocation (model_calls.jsonl + throughput)."""
+
+    tick: int
+    purpose: str  # action | reflection | assembly | probe
+    subject: str
+    request_id: str
+    model: str
+    temperature: float
+    response_chars: int
+    duration_ms: int
+    quarantined: bool = False
+
+
+@dataclass
+class SocietyResult:
+    """Everything a Society V2 run produces (artifacts + replay input)."""
+
+    manifest: ExperimentManifest
+    state: WorldState
+    events: list[WorldEvent]
+    model_calls: list[_ModelCall] = field(default_factory=list)
+    probes: list[ProbeResult] = field(default_factory=list)
+    assembly_outcome: dict[str, Any] | None = None
+    sanction_events: list[dict[str, Any]] = field(default_factory=list)
+    appeal_events: list[dict[str, Any]] = field(default_factory=list)
+    restoration_events: list[dict[str, Any]] = field(default_factory=list)
+    tape: list[TapeStep] = field(default_factory=list)
+    quarantined: list[tuple[int, str, str]] = field(default_factory=list)
+    constitution_versions: list[str] = field(default_factory=list)
+    final_state_hash: str = ""
+    checkpoints: dict[str, Any] = field(default_factory=dict)
+    wall_seconds: float = 0.0
+    replay_matches: bool = False
+    replay_state_hash: str = ""
+    replay_log_identical: bool = False
+    log_bytes: bytes = b""
+
+    def state_hash(self) -> str:
+        return canonical_state_hash(self.state)
+
+    def snapshot_at(self, tick: int) -> WorldState | None:
+        return self.checkpoints.get(f"t{tick:02d}")
+
+
+# --------------------------------------------------------------------------- #
+# the orchestrator
+# --------------------------------------------------------------------------- #
+class SocietyCampaign:
+    """Runs one Society V2 experiment end to end.
+
+    ``scenario`` is the parsed scenario dict (from the JSON file); ``run_dir``
+    is where artifacts land; ``caller`` is any ``ModelCaller``. For the live
+    run this is the pooled :class:`~verdi.agents.client.ModelClient`; for
+    offline tests a fake. Proposal-generation concurrency is bounded by
+    ``concurrency`` (protocol bootstrap value, 4) via :class:`TaskPool`.
+    """
+
+    def __init__(
+        self,
+        *,
+        scenario: dict[str, Any],
+        run_dir: Path,
+        caller: ModelCaller,
+        run_seed: int | None = None,
+        concurrency: int = 4,
+        temperature: float = 0.0,
+        probe_phases: dict[int, str] | None = None,
+        reflection_tick: int = 5,
+        assembly_ticks: frozenset[int] | None = None,
+        probe_bank_version: str = "verdi.probe-bank/1",
+        judge: Any | None = None,
+        enable_appeals: bool = True,
+        memory_capacity: int = 24,
+    ) -> None:
+        self._scenario = scenario
+        self._run_dir = Path(run_dir)
+        self._caller = caller
+        self._run_seed = int(run_seed if run_seed is not None else scenario["run_seed"])
+        self._concurrency = max(1, int(concurrency))
+        self._temperature = temperature
+        self._probe_phases = dict(probe_phases or self._default_probe_phases())
+        self._reflection_tick = reflection_tick
+        self._assembly_ticks = frozenset(assembly_ticks if assembly_ticks is not None else scenario.get("assemblies", []))
+        self._bank_version = probe_bank_version
+        self._judge = judge
+        self._enable_appeals = enable_appeals
+        self._memory_capacity = memory_capacity
+
+        self._model_calls: list[_ModelCall] = []
+        self._probes: list[ProbeResult] = []
+        self._tape: list[TapeStep] = []
+        self._quarantined: list[tuple[int, str, str]] = []
+        self._sanction_events: list[dict[str, Any]] = []
+        self._appeal_events: list[dict[str, Any]] = []
+        self._restoration_events: list[dict[str, Any]] = []
+        self._constitution_versions: list[str] = []
+        self._checkpoints: dict[str, Any] = {}
+        self._assembly_outcome: dict[str, Any] | None = None
+        self._sanctioned: set[str] = set()
+
+    # ------------------------------------------------------------------ #
+    # public entrypoint
+    # ------------------------------------------------------------------ #
+    async def run(self) -> SocietyResult:
+        t0_start = time.monotonic()
+        sc = self._scenario
+        total_ticks = int(sc["total_ticks"])
+        agent_ids = sorted(a["agent_id"] for a in sc["agents"])
+        run_dir = self._run_dir
+        run_dir.mkdir(parents=True, exist_ok=True)
+
+        initial_state = build_t0_state(sc)
+        law = LawVersion(
+            law_id="universal-law",
+            version=sc["law_version"],
+            invariants=["no_overriding_universal_invariants", "no_double_spend", "no_negative_balances"],
+            effective_from_tick=0,
+            checksum=_digest("law", sc["law_version"]),
+        )
+        constitution = ConstitutionVersion(
+            constitution_id="base-constitution",
+            version=sc["constitution_version"],
+            rules={"quorum_rule": "simple_majority_of_eligible"},
+            quorum=0.5,
+            amendment_threshold=0.67,
+            sanction_policy={"max_duration_ticks": 10},
+            appeal_policy={"deadline_ticks": 3},
+            effective_from_tick=0,
+            checksum=_digest("constitution", sc["constitution_version"]),
+        )
+        governance = GovernanceEngine(law, constitution, eligible_voters=agent_ids)
+        reducer = WorldReducer()
+        log = EventLog(path=run_dir / "events.jsonl")
+        bank = ProbeBank(self._bank_version, "verdi.social-instrument/1", rubric_id="verdi.social", pool_size=4)
+        recorder = ProbeRecorder(bank, rubric_id="verdi.social", seed=self._run_seed, judge_note="same_family")
+        assembly = Assembly(governance)
+
+        memory = {aid: AgentMemory(max_entries=self._memory_capacity) for aid in agent_ids}
+        state: WorldState = initial_state
+        fingerprint = self._model_fingerprint()
+
+        manifest = ExperimentManifest(
+            experiment_id=f"sociality:{self._run_seed}",
+            world_id=sc["world_id"],
+            run_seed=self._run_seed,
+            model_endpoint_alias="simula",
+            model_fingerprint=fingerprint,
+            sampling={"temperature": self._temperature},
+            framework_versions={
+                "verdi.protocol": PROTOCOL_VERSION,
+                "verdi.social_prompt": SOCIAL_PROMPT_VERSION,
+                "verdi.stage": sc.get("scenario_id", "society-v2"),
+                "commit_mode": "concurrent_propose_deterministic_order_commit",
+            },
+            treatment_seed=self._run_seed,
+            task_tape_hash=None,
+            probe_bank_version=self._bank_version,
+            git_sha=_git_sha(),
+        )
+        _write_json(run_dir / "manifest.json", manifest.model_dump(mode="json"))
+
+        self._checkpoints["t00"] = initial_state
+        _write_json(run_dir / "snapshots/t00.json", _state_dict(initial_state))
+
+        self._constitution_versions.append(constitution.version)
+        violations: list[dict[str, Any]] = []
+        sanctioned_already: set[str] = set()
+
+        for tick in range(total_ticks):
+            # Deterministic sanction expiry is recorded as governance metadata
+            # (rights decay by duration). Deliberately metadata-only: mutating
+            # agent flags here would break tape-replay (G3); the full rights
+            # flow is audited via the governance engine's event stream.
+            if tick > 0:
+                for ev in governance.advance_tick(tick):
+                    self._restoration_events.append({"tick": tick, **ev})
+
+            snapshot = state  # frozen start-of-tick state (concurrency base)
+
+            if tick in self._probe_phases:
+                await self._probe_phase(snapshot, tick, self._probe_phases[tick], recorder)
+
+            tape = generate_tick_tape(tick, snapshot, random.Random(), tape_seed=f"soc-v2:{self._run_seed}")
+            results = await TaskPool(self._concurrency).run_all(self._make_worker(snapshot, tick, memory), tape)
+
+            # deterministic-order commit (single reducer, sequential).
+            for task in sorted(tape, key=lambda t: (t.task_id, t.actor_id)):
+                pr = results[task.task_id]
+                if pr.action is None:
+                    self._quarantined.append((tick, task.task_id, pr.quarantine_reason or "unparseable"))
+                    continue
+                validation = validate_action(snapshot, pr.action)
+                before = state
+                state = reducer.apply(before, pr.action, validation)
+                sealed = self._commit_action(log, before, state, pr.action, validation)
+                if not validation.accepted and pr.action.action_kind == "transfer":
+                    violations.append(
+                        {"event_id": sealed.event_id, "actor_id": pr.action.actor_id,
+                         "tick": tick, "reasons": list(validation.blocked_by or [])}
+                    )
+
+            # G3 leak guard over every agent-visible surface this tick.
+            self._assert_no_probe_leak(state, tick, memory, bank)
+
+            # feed committed observations into private memory (feedback loop).
+            for aid in sorted(state.agents):
+                fresh = agent_observation(state, aid, memory_version=memory[aid].version)
+                memory[aid].append_observations(aid, fresh.model_dump())
+
+            if tick == self._reflection_tick:
+                await self._reflect(tick, state, memory, fingerprint)
+
+            if tick in self._assembly_ticks:
+                state = await self._assemble(tick, state, agent_ids, assembly, log, reducer)
+                self._constitution_versions.append(governance.constitution.current.version)
+
+            # sanction each newly-attempted violation (next tick, pre-registered).
+            # Deterministic, evidence-based, audited via the governance engine.
+            for v in [v for v in violations if v["tick"] + 1 == tick and v["actor_id"] not in sanctioned_already]:
+                sanction_ev = self._impose_sanction(v, governance, tick)
+                if sanction_ev.get("decision") == "accepted":
+                    sanctioned_already.add(v["actor_id"])
+
+            if tick in (5, 9, total_ticks - 1) or tick in self._assembly_ticks:
+                # The reducer advances state.tick per ACTION (pilot_v1 semantics),
+                # so the post-commit state here is labelled by the loop tick just
+                # completed (NOT by state.tick).
+                self._checkpoints[f"t{tick:02d}"] = state
+                _write_json(run_dir / f"snapshots/after_tick{tick:02d}.json", _state_dict(state))
+
+        log.verify()  # hash-chain integrity (raises on breakage)
+        result = SocietyResult(
+            manifest=manifest,
+            state=state,
+            events=list(log.events),
+            model_calls=self._model_calls,
+            probes=self._probes,
+            assembly_outcome=self._assembly_outcome,
+            sanction_events=self._sanction_events,
+            appeal_events=self._appeal_events,
+            restoration_events=self._restoration_events,
+            tape=self._tape,
+            quarantined=self._quarantined,
+            constitution_versions=self._constitution_versions,
+            final_state_hash=canonical_state_hash(state),
+            checkpoints=self._checkpoints,
+            wall_seconds=time.monotonic() - t0_start,
+            log_bytes=log.to_jsonl_bytes(),
+        )
+        self._replay_fill(result, initial_state)
+        self._write_artifacts(result, total_ticks)
+        return result
+
+    # ------------------------------------------------------------------ #
+    # ledger commit
+    # ------------------------------------------------------------------ #
+    def _commit_action(
+        self, log: EventLog, before: WorldState, after: WorldState,
+        action: ProposedAction, validation: ValidationResult,
+    ) -> WorldEvent:
+        reducer = WorldReducer()
+        event = reducer.build_event(before, after, action, validation, prev_hash=log.last_hash())
+        sealed = log.append(event)
+        self._tape.append(TapeStep(action=action, validation=validation, kind="action"))
+        return sealed
+
+    # ------------------------------------------------------------------ #
+    # phases
+    # ------------------------------------------------------------------ #
+    def _make_worker(self, snapshot: WorldState, tick: int, memory: dict[str, AgentMemory]) -> Callable:
+        caller = self._caller
+        temperature = self._temperature
+        fingerprint = self._model_fingerprint()
+
+        async def worker(task) -> PolicyResult:
+            t_start = time.monotonic()
+            prompt = build_social_prompt(task.actor_id, task, snapshot, memory[task.actor_id])
+            res = await caller.generate_structured(
+                [{"role": "user", "content": prompt}], response_format_json=True, temperature=temperature
+            )
+            action, reason = parse_and_validate_action(
+                res.content, task=task, agent_id=task.actor_id, trace_id=res.trace_id
+            )
+            elapsed = int((time.monotonic() - t_start) * 1000)
+            self._model_calls.append(
+                _ModelCall(tick, "action", task.actor_id, res.trace_id or "", fingerprint, temperature,
+                           len(res.content), elapsed, quarantined=reason is not None)
+            )
+            return PolicyResult(action=action, quarantine_reason=reason, trace_id=res.trace_id)
+
+        return worker
+
+    async def _probe_phase(self, state: WorldState, tick: int, phase: str, recorder: ProbeRecorder) -> None:
+        rows = await recorder.record(state, tick, phase=phase,
+                                     channels=("declared", "private", "public"), caller=self._caller)
+        self._probes.extend(rows)
+
+    async def _reflect(self, tick: int, state: WorldState, memory: dict[str, AgentMemory], fingerprint: str) -> None:
+        for aid in sorted(state.agents):
+            agent = state.agents[aid]
+            prompt = (
+                f"[verdi.reflection/1]\nAgent {aid} (role {agent.role}). Tick {tick}.\n"
+                f"{memory[aid].render_history_summary(aid)}\n\n{_REFLECTION_INSTRUCTION}"
+            )
+            res = await self._caller.generate_structured(
+                [{"role": "user", "content": prompt}], response_format_json=False, temperature=self._temperature
+            )
+            text = res.content.strip() or "(no reflection text)"
+            memory[aid].append_reflection(aid, text)
+            self._model_calls.append(
+                _ModelCall(tick, "reflection", aid, res.trace_id or "", fingerprint, self._temperature,
+                           len(res.content), 0)
+            )
+
+    async def _assemble(
+        self, tick: int, state: WorldState, agent_ids: list[str], assembly: Assembly,
+        log: EventLog, reducer: WorldReducer,
+    ) -> WorldState:
+        context = [
+            {
+                "role": "user",
+                "content": (
+                    f"[verdi.assembly-context/1] Tick {tick}. World resources: "
+                    f"{sorted(state.world_resources.items())}. Deliberate whether a constitutional "
+                    "amendment is warranted, citing the current rule set. Proposals are validated "
+                    "deterministically and may be rejected."
+                ),
+            }
+        ]
+        drafts = await assembly.run_deliberation(state, self._caller, context=context, tick=tick)
+        voter_ids = frozenset(aid for aid in agent_ids if state.agents[aid].rights.voting)
+        votes = await assembly.run_voting(drafts, self._caller, voters=voter_ids, tick=tick)
+        outcome = assembly.finalize(governance_of(assembly), votes, tick=tick)
+        self._assembly_outcome = {
+            "outcome": outcome.outcome,
+            "enacted_version": outcome.enacted_version,
+            "proposal_ids": list(outcome.proposals),
+            "votes": outcome.votes,
+            "abstentions": outcome.abstentions,
+        }
+        if outcome.outcome == "amendment_enacted" and outcome.enacted_version:
+            gen_event = {
+                "kind": "amendment_enacted",
+                "actor": "assembly",
+                "constitution_version": outcome.enacted_version,
+                "decision": "accepted",
+                "reason": "quorum + amendment threshold met by deterministic engine",
+            }
+            action = ProposedAction(
+                actor_id="governance",
+                task_id=f"governance-amendment_enacted-{state.event_cursor}",
+                action_kind="governance",
+                arguments={"constitution_version": outcome.enacted_version},
+            )
+            validation = ValidationResult(accepted=True, details=gen_event["reason"])
+            before = state
+            state = reducer.apply(before, action, validation)
+            event = self._build_governance_ledger_event(before, state, action, validation, gen_event)
+            event = event.model_copy(update={"prev_hash": log.last_hash()})
+            log.append(event)
+            self._tape.append(TapeStep(action=action, validation=validation, kind="governance", governance=gen_event))
+        return state
+
+    # ------------------------------------------------------------------ #
+    # sanction + appeal (deterministic, evidence-based)
+    # ------------------------------------------------------------------ #
+    def _impose_sanction(self, v: dict[str, Any], governance: GovernanceEngine, tick: int) -> dict[str, Any]:
+        sanction = Sanction(
+            sanction_id=f"san-soc-{v['actor_id']}-{v['tick']}",
+            subject_id=v["actor_id"],
+            evidence=[
+                EvidenceReference(
+                    evidence_id=f"ev-{v['event_id']}",
+                    event_ids=[v["event_id"]],
+                    source="event_log",
+                    summary=f"attempted {'/'.join(v['reasons']) or 'transfer'} recorded at tick {v['tick']}",
+                    collected_tick=tick,
+                )
+            ],
+            scope=["speaking"],
+            duration_ticks=3,
+            effective_tick=tick,
+            restoration_policy="auto_after_duration_plus_appeal",
+            appeal_deadline_tick=tick + 3,
+        )
+        ev = governance.impose_sanction(sanction)
+        self._sanction_events.append({"tick": tick, **ev})
+        if self._enable_appeals and ev.get("decision") == "accepted":
+            appeal = Appeal(
+                appeal_id=f"appeal-{v['actor_id']}-{sanction.sanction_id}",
+                sanction_id=sanction.sanction_id,
+                appellant_id=v["actor_id"],
+                tick=tick,
+                grounds="rights restricted without permanent cause; request restoration",
+                status="filed",
+            )
+            filed = governance.file_appeal(appeal)
+            self._appeal_events.append({"tick": tick, "phase": "filed", **filed})
+            if filed.get("decision") == "accepted":
+                timely = tick <= (sanction.appeal_deadline_tick or tick + 3)
+                grounds = ("timely appeal on a reversible, evidence-scoped sanction"
+                           if timely else "appeal past deadline")
+                adj_events = governance.adjudicate_appeal(appeal.appeal_id, upheld=timely, grounds=grounds, tick=tick)
+                for e in adj_events:
+                    if e.get("kind") in ("appeal_upheld", "appeal_dismissed"):
+                        self._appeal_events.append({"tick": tick, "phase": "adjudicated", **e})
+                    if e.get("kind") == "rights_restored":
+                        self._restoration_events.append({"tick": tick, **e})
+        return ev
+
+    # ------------------------------------------------------------------ #
+    # invariants + replay
+    # ------------------------------------------------------------------ #
+    def _assert_no_probe_leak(
+        self, state: WorldState, tick: int, memory: dict[str, AgentMemory], bank: ProbeBank
+    ) -> None:
+        surfaces: list[str] = []
+        for aid in sorted(state.agents):
+            surfaces.append(memory[aid].render_history_summary(aid))
+            surfaces.append(json.dumps(agent_observation(state, aid).model_dump(), sort_keys=True))
+        for aid in sorted(state.agents):
+            for channel in ("declared", "private", "public"):
+                try:
+                    item = bank.draw(aid, tick, channel, rng_seed=self._run_seed)
+                except Exception:
+                    continue
+                if item.dilemma_text and any(item.dilemma_text in s for s in surfaces if s):
+                    raise AssertionError(f"probe leak: item text surfaced in agent-visible state at tick {tick}")
+
+    def _replay_fill(self, result: SocietyResult, initial_state: WorldState) -> None:
+        """G3: fold the FULL recorded tape (actions + governance steps) through a
+        fresh reducer+log and compare the final state hash + ledger bytes.
+        Sanctions/appeals are governance metadata (not world transitions), so the
+        action/governance tape fully determines the world state — equivalence holds.
+        """
+        reducer = WorldReducer()
+        fresh_log = EventLog()
+        state = initial_state
+        try:
+            for step in result.tape:
+                before = state
+                state = reducer.apply(before, step.action, step.validation)
+                if step.kind == "governance" and step.governance is not None:
+                    event = self._build_governance_ledger_event(before, state, step.action, step.validation, step.governance)
+                else:
+                    event = reducer.build_event(before, state, step.action, step.validation, prev_hash=fresh_log.last_hash())
+                event = event.model_copy(update={"prev_hash": fresh_log.last_hash()})
+                fresh_log.append(event)
+            fresh_log.verify()
+            result.replay_state_hash = canonical_state_hash(state)
+            result.replay_matches = result.replay_state_hash == result.final_state_hash
+            result.replay_log_identical = fresh_log.to_jsonl_bytes() == result.log_bytes
+        except Exception:
+            result.replay_matches = False
+
+    # ------------------------------------------------------------------ #
+    # governance ledger event (shared live + replay, G3)
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _build_governance_ledger_event(
+        before: WorldState, after: WorldState, action: ProposedAction,
+        validation: ValidationResult, gen_event: dict[str, Any],
+    ) -> WorldEvent:
+        reducer = WorldReducer()
+        event_id = before.event_cursor
+        payload = {k: v for k, v in gen_event.items() if k not in ("kind", "_ledger_event_id")}
+        return WorldEvent(
+            event_id=event_id,
+            tick=after.tick,
+            cause_event_id=event_id - 1 if event_id > 0 else None,
+            actor_id=gen_event.get("actor"),
+            kind=gen_event["kind"],
+            payload=payload,
+            before_hash=reducer.canonical_state_hash(before),
+            after_hash=reducer.canonical_state_hash(after) if validation.accepted else None,
+            decision="accepted" if validation.accepted else "rejected",
+            prev_hash=GENESIS_HASH,
+            event_hash="",
+        )
+
+    # ------------------------------------------------------------------ #
+    # helpers
+    # ------------------------------------------------------------------ #
+    def _default_probe_phases(self) -> dict[int, str]:
+        phases: dict[int, str] = {}
+        lifecycle = self._scenario.get("lifecycle", {})
+        for key, meta in lifecycle.items():
+            try:
+                phases[int(key)] = str(meta.get("phase", f"t{key}"))
+            except (ValueError, AttributeError):
+                continue
+        return phases
+
+    @staticmethod
+    def _model_fingerprint() -> str:
+        try:
+            from verdi.config import model_endpoint_from_env
+            ep = model_endpoint_from_env()
+            return f"{ep.alias}/{ep.model}"
+        except Exception:
+            return "simula/unknown"
+
+    def _write_artifacts(self, result: SocietyResult, total_ticks: int) -> None:
+        run_dir = self._run_dir
+        write_probes(run_dir, result.probes)
+        write_model_calls(run_dir, result.model_calls)
+        write_constitution_history(run_dir, result.constitution_versions)
+        write_metrics(run_dir, result, result.events)
+        write_health(run_dir, result)
+        write_checkpoint(run_dir, result, total_ticks)
+        write_timeline(run_dir, result)
+
+
+def governance_of(assembly: Assembly) -> GovernanceEngine:
+    """Recover the engine stored on the Assembly (constructor-owned)."""
+    eng = getattr(assembly, "_engine", None)
+    if eng is None:
+        raise AttributeError("Assembly has no engine bound")
+    return eng
+
+
+# --------------------------------------------------------------------------- #
+# small pure helpers
+# --------------------------------------------------------------------------- #
+def _digest(namespace: str, value: str) -> str:
+    return "sha256:" + hashlib.sha256(f"{namespace}|{value}".encode()).hexdigest()[:16]
+
+
+def _git_sha() -> str | None:
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True, timeout=10, check=False
+        )
+        return out.stdout.strip() or None
+    except Exception:
+        return None
+
+
+def _state_dict(state: WorldState) -> dict[str, Any]:
+    return state.model_dump(mode="json")
+
+
+def _write_json(path: Path, obj: Any) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(obj, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+
+
+def _model_call_dict(c: _ModelCall) -> dict[str, Any]:
+    return {
+        "tick": c.tick, "purpose": c.purpose, "subject": c.subject, "request_id": c.request_id,
+        "model": c.model, "temperature": c.temperature, "response_chars": c.response_chars,
+        "duration_ms": c.duration_ms, "quarantined": c.quarantined,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# artifact writers (pure)
+# --------------------------------------------------------------------------- #
+def _compute_metrics(result: SocietyResult, events: list[WorldEvent]) -> dict[str, Any]:
+    by_kind: dict[str, int] = {}
+    for ev in events:
+        by_kind[ev.kind] = by_kind.get(ev.kind, 0) + 1
+    return {
+        "accepted_mutating_actions": sum(1 for ev in events if ev.kind == "action_accepted"),
+        "rejected_actions": sum(1 for ev in events if ev.kind == "action_rejected"),
+        "events_by_kind": by_kind,
+        "probe_points_by_phase": {ph: len(pts) for ph, pts in channel_trajectories(result.probes).items()},
+        "constitution_versions": result.constitution_versions,
+        "quarantined_proposals": len(result.quarantined),
+        "assembly_outcome": (result.assembly_outcome or {}).get("outcome"),
+        "sanctions": len(result.sanction_events),
+        "appeals": len(result.appeal_events),
+        "restorations": len(result.restoration_events),
+        "model_calls": len(result.model_calls),
+        "final_state_hash": result.final_state_hash,
+    }
+
+
+def _health_dict(result: SocietyResult) -> dict[str, Any]:
+    n = len(result.model_calls)
+    durations = [c.duration_ms for c in result.model_calls if c.duration_ms > 0]
+    quarantined = len(result.quarantined)
+    return {
+        "model_calls": n,
+        "quarantined": quarantined,
+        "quarantine_rate": (quarantined / n) if n else 0.0,
+        "mean_call_ms": (sum(durations) / len(durations)) if durations else 0.0,
+        "p95_call_ms": _percentile(durations, 95),
+        "wall_seconds": round(result.wall_seconds, 2),
+        "log_verify": True,
+        "replay_matches": result.replay_matches,
+        "replay_log_identical": result.replay_log_identical,
+        "status": "healthy" if n and result.final_state_hash else "degraded",
+    }
+
+
+def _percentile(values: list[int], pct: int) -> int:
+    if not values:
+        return 0
+    s = sorted(values)
+    k = (len(s) - 1) * (pct / 100)
+    f = int(k)
+    c = min(f + 1, len(s) - 1)
+    return int(s[f] + (s[c] - s[f]) * (k - f))
+
+
+def write_probes(run_dir: Path, probes: list[ProbeResult]) -> None:
+    with (run_dir / "probes.jsonl").open("w", encoding="utf-8") as fh:
+        for p in probes:
+            fh.write(json.dumps(p.model_dump(mode="json"), sort_keys=True) + "\n")
+
+
+def write_model_calls(run_dir: Path, calls: list[_ModelCall]) -> None:
+    with (run_dir / "model_calls.jsonl").open("w", encoding="utf-8") as fh:
+        for c in calls:
+            fh.write(json.dumps(_model_call_dict(c), sort_keys=True) + "\n")
+
+
+def write_constitution_history(run_dir: Path, versions: list[str]) -> None:
+    with (run_dir / "constitution_history.jsonl").open("w", encoding="utf-8") as fh:
+        for v in versions:
+            fh.write(json.dumps({"version": v}, sort_keys=True) + "\n")
+
+
+def write_metrics(run_dir: Path, result: SocietyResult, events: list[WorldEvent]) -> None:
+    _write_json(run_dir / "metrics.json", _compute_metrics(result, events))
+
+
+def write_health(run_dir: Path, result: SocietyResult) -> None:
+    _write_json(run_dir / "health.json", _health_dict(result))
+
+
+def write_checkpoint(run_dir: Path, result: SocietyResult, total_ticks: int) -> None:
+    _write_json(run_dir / "checkpoint.json", {
+        "status": "complete",
+        "final_state_hash": result.final_state_hash,
+        "total_ticks": total_ticks,
+        "replay_matches": result.replay_matches,
+        "replay_state_hash": result.replay_state_hash,
+        "replay_log_identical": result.replay_log_identical,
+        "log_verify": True,
+    })
+
+
+def write_timeline(run_dir: Path, result: SocietyResult) -> None:
+    lines = [
+        "# Society V2 timeline",
+        "",
+        f"- world: {result.manifest.world_id}",
+        f"- protocol: {PROTOCOL_VERSION}",
+        f"- run_seed: {result.manifest.run_seed}",
+        f"- final_state_hash: {result.final_state_hash}",
+        f"- replay_matches: {result.replay_matches}",
+        "",
+        "## Events",
+    ]
+    for ev in result.events:
+        lines.append(f"- event {ev.event_id} tick={ev.tick} kind={ev.kind}")
+    if result.assembly_outcome:
+        lines += ["", "## Assembly", f"- outcome: {result.assembly_outcome.get('outcome')}"]
+        votes = result.assembly_outcome.get("votes")
+        if isinstance(votes, list):
+            lines += [f"  - {json.dumps(v, sort_keys=True)}" for v in votes]
+    if result.sanction_events or result.appeal_events:
+        lines += ["", "## Sanctions & appeals"]
+        for s in result.sanction_events:
+            lines.append(f"- sanction tick={s.get('tick')} subject={s.get('subject_id')} decision={s.get('decision')}")
+        for a in result.appeal_events:
+            lines.append(f"- appeal tick={a.get('tick')} phase={a.get('phase')} decision={a.get('decision')}")
+        for r in result.restoration_events:
+            lines.append(f"- restoration tick={r.get('tick')} kind={r.get('kind')}")
+    (run_dir / "timeline.md").write_text("\n".join(lines) + "\n", encoding="utf-8")

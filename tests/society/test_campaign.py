@@ -1,0 +1,257 @@
+"""Offline (fake ModelCaller) tests for the Society V2 campaign orchestrator.
+
+These exercise the real deterministic core — reducer, hash-chained ledger,
+validator, sanction/appeal engine, probe leak guard, task tape, private memory,
+and the real assembly — with a scripted fake model caller. No network, no LLM.
+The G3 replay-evidence claims here are about the deterministic ledger, not
+about the live model's output distribution.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from verdi.agents.client import ModelResult
+from verdi.schemas import ProposedAction
+from verdi.society.campaign import SocietyCampaign
+from verdi.world.log import EventLog
+from verdi.world.validate import validate_action
+
+
+# --------------------------------------------------------------------------- #
+# fixtures
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def scenario() -> dict[str, Any]:
+    return json.loads(Path("experiments/scenarios/society_v2_stageA.json").read_text(encoding="utf-8"))
+
+
+class ScriptedCaller:
+    """Deterministic fake ModelCaller.
+
+    * agents: emit a signal (accepted); the ``adversary_agent`` attempts an
+      overdraft transfer (rejected) on its first action;
+    * reflection: returns fixed text;
+    * assembly deliberation: 4 of 6 voters propose the same-amendment rule,
+      2 abstain (scripted "no_change" vs "enacted" via ``enact`` flag);
+    * assembly voting: votes "for" when ``enact`` is True, else "against";
+    * probes: returns "yes".
+    """
+
+    def __init__(self, adversary_agent: str = "s05", enact: bool = False) -> None:
+        self.adversary = adversary_agent
+        self.enact = enact
+        self.action_calls: dict[str, int] = {}
+        self.n = 0
+
+    async def generate_structured(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        response_format_json: bool = False,
+        temperature: float = 0.0,
+        max_tokens: int | None = None,
+    ) -> ModelResult:
+        self.n += 1
+        content = messages[0]["content"]
+        trace = f"trace-{self.n}"
+
+        if "verdi.reflection" in content:
+            return ModelResult(content="Adjusted based on committed outcomes.", request_id=f"r{self.n}",
+                               model="fake", trace_id=trace)
+        if "assembly:deliberation" in content:
+            voter = content.split('agent "')[1].split('"')[0]
+            if self.enact and voter in ("s01", "s02", "s04", "s06"):
+                return ModelResult(
+                    content=json.dumps({"change_summary": "Adopt rationing fairness rule for scarce food",
+                                        "payload": {"rationing_rule": "max_delta_2_units", "effective_from_tick": 10}}),
+                    request_id=f"r{self.n}", model="fake", trace_id=trace,
+                )
+            return ModelResult(content=json.dumps({"abstain": True}), request_id=f"r{self.n}", model="fake", trace_id=trace)
+        if "assembly:vote" in content:
+            choice = "for" if self.enact else "against"
+            return ModelResult(content=json.dumps({"choice": choice}), request_id=f"r{self.n}", model="fake", trace_id=trace)
+        if "probe" in content.lower():
+            return ModelResult(content="yes", request_id=f"r{self.n}", model="fake", trace_id=trace)
+
+        # action proposal
+        actor = None
+        for aid in ("s01", "s02", "s03", "s04", "s05", "s06"):
+            if f'agent "{aid}"' in content or f"Agent {aid}" in content:
+                actor = aid
+                break
+        assert actor is not None, f"could not identify actor in prompt: {content[:120]}"
+        count = self.action_calls.get(actor, 0)
+        self.action_calls[actor] = count + 1
+        if actor == self.adversary and count == 0:
+            payload = {"action_kind": "transfer", "arguments": {"to": "s01", "resource": "credits", "units": 999},
+                       "reason": "overreach temptation"}
+        else:
+            payload = {"action_kind": "emit_signal", "arguments": {"text": "working together"}, "reason": "cooperation"}
+        return ModelResult(content=json.dumps(payload), request_id=f"r{self.n}", model="fake", trace_id=trace)
+
+
+def _run(scenario: dict[str, Any], tmp_path: Path, *, enact: bool = False) -> Any:
+    campaign = SocietyCampaign(
+        scenario=scenario, run_dir=tmp_path, caller=ScriptedCaller(enact=enact),
+        run_seed=20261011, concurrency=4,
+    )
+    return asyncio.run(campaign.run())
+
+
+# --------------------------------------------------------------------------- #
+# tests
+# --------------------------------------------------------------------------- #
+def test_full_offline_run_completes_and_replays(scenario, tmp_path):
+    res = _run(scenario, tmp_path)
+    # The reducer advances state.tick per attempted action (6 agents x 12 ticks
+    # = 72 committed steps, matching pilot_v1 semantics).
+    n_agents = len(scenario["agents"])
+    assert res.state.tick == n_agents * scenario["total_ticks"]
+    assert len(res.events) > 0
+    assert res.final_state_hash and len(res.final_state_hash) == 64
+    # G3: recorded-output replay reproduces state hash AND byte-identical ledger.
+    assert res.replay_matches is True
+    assert res.replay_log_identical is True
+    # ledger hash chain verifies (run() calls log.verify; assert non-empty chain).
+    log = EventLog.load_jsonl(tmp_path / "events.jsonl")
+    log.verify()
+    assert len(log) == len(res.events)
+
+
+def test_feedback_loop_visible_in_prompts(scenario, tmp_path):
+    """The committed-state feedback invariant: an agent's own earlier action
+    text must appear in its own later prompt (via private memory)."""
+    campaign = SocietyCampaign(scenario=scenario, run_dir=tmp_path, caller=ScriptedCaller(),
+                               run_seed=20261011, concurrency=4)
+    prompts: list[tuple[str, str]] = []
+    real_caller = campaign._caller
+
+    class Capture(ScriptedCaller):
+        async def generate_structured(self, messages, **kw):
+            content = messages[0]["content"]
+            for aid in ("s01", "s02", "s03", "s04", "s05", "s06"):
+                if f'agent "{aid}"' in content or f"Agent {aid}" in content:
+                    prompts.append((aid, content))
+            return await real_caller.generate_structured(messages, **kw)
+
+    campaign._caller = Capture()
+    asyncio.run(campaign.run())
+    # s01 (non-adversary) emitted "working together" from tick 1 onward; a later
+    # prompt for s01 must contain its own recorded history with that committed text.
+    s01_later = [c for (a, c) in prompts if a == "s01" and "Your recorded history" in c]
+    assert s01_later, "s01 never received its own recorded history in a later prompt"
+    assert any("working together" in c for c in s01_later), "s01's committed action not echoed back"
+
+
+def test_adversary_violation_sanctioned_and_appealed(scenario, tmp_path):
+    res = _run(scenario, tmp_path)
+    # adversary's overdraft was rejected by the deterministic validator.
+    rejected = [e for e in res.events if e.kind == "action_rejected"]
+    assert any(e.payload.get("attempted_violation_codes") == ["overdraft"] for e in rejected)
+    # a real (evidence-citing) sanction was imposed on the adversary next tick.
+    assert len(res.sanction_events) == 1
+    sanc = res.sanction_events[0]
+    assert sanc.get("subject_id") == "s05"
+    assert sanc.get("decision") == "accepted"
+    # an appeal was filed and adjudicated (pre-registered timely rule).
+    assert any(a.get("phase") == "filed" for a in res.appeal_events)
+    assert any(a.get("phase") == "adjudicated" for a in res.appeal_events)
+    # timeline records the rights flow.
+    timeline = (tmp_path / "timeline.md").read_text(encoding="utf-8")
+    assert "sanction tick=" in timeline and "appeal tick=" in timeline
+
+
+def test_assembly_really_deliberates_and_votes_no_change(scenario, tmp_path):
+    res = _run(scenario, tmp_path, enact=False)
+    assert res.assembly_outcome is not None
+    assert res.assembly_outcome["outcome"] in ("no_change", "amendment_rejected")
+    # no proposal was ever proposed by abstaining voters -> no_change.
+    assert res.assembly_outcome["outcome"] == "no_change"
+    assert res.constitution_versions[0] == res.constitution_versions[-1]
+
+
+def test_assembly_enacted_records_governance_step_and_replays(scenario, tmp_path):
+    res = _run(scenario, tmp_path, enact=True)
+    assert res.assembly_outcome["outcome"] == "amendment_enacted"
+    assert res.assembly_outcome["enacted_version"] is not None
+    # the enactment produced exactly one governance ledger step.
+    gov = [t for t in res.tape if t.kind == "governance"]
+    assert len(gov) == 1
+    # world state constitution version bumped.
+    assert res.state.constitution_version != res.constitution_versions[0]
+    # full-ledger replay (including the governance step) is still identical.
+    assert res.replay_matches is True
+    assert res.replay_log_identical is True
+
+
+def test_probes_recorded_out_of_band_per_phase(scenario, tmp_path):
+    res = _run(scenario, tmp_path)
+    # 5 phases (0,5,9,10,11) x 6 agents x 3 channels = 90 probe points.
+    assert len(res.probes) == 5 * 6 * 3
+    channels = {p.channel for p in res.probes}
+    assert channels == {"declared", "private", "public"}
+    ticks = {p.tick for p in res.probes}
+    assert ticks == {0, 5, 9, 10, 11}
+    # probe items must not be identical across channels for the same agent/tick.
+    from collections import defaultdict
+    by_key: dict[tuple, set] = defaultdict(set)
+    for p in res.probes:
+        by_key[(p.agent_id, p.tick, p.channel)].add(p.probe_id)
+
+
+def test_no_probe_leak_into_agent_surfaces(scenario, tmp_path):
+    """The leak guard must RAISE if a probe dilemma text is injected into a
+    surface the agents can see (here: pre-seeded into an agent memory)."""
+    campaign = SocietyCampaign(scenario=scenario, run_dir=tmp_path, caller=ScriptedCaller(),
+                               run_seed=20261011, concurrency=4)
+    from verdi.analysis.scenario import build_t0_state
+    from verdi.measurement.probes import ProbeBank
+    from verdi.society.memory import AgentMemory
+    sc = build_t0_state(scenario)
+    bank = ProbeBank("verdi.probe-bank/1", "verdi.social-instrument/1", rubric_id="verdi.social", pool_size=4)
+    item = bank.draw("s01", 0, "declared", rng_seed=20261011)
+    mem = {a: AgentMemory(max_entries=8) for a in sc.agents}
+    mem["s01"].append_observations("s01", {"note": item.dilemma_text})
+    with pytest.raises(AssertionError, match="probe leak"):
+        campaign._assert_no_probe_leak(sc, 0, mem, bank)
+
+
+def test_deterministic_tape_and_validation(scenario, tmp_path):
+    """Same seed + snapshot -> identical tape; validator rejects overdraft."""
+    import random
+
+    from verdi.analysis.scenario import build_t0_state
+    from verdi.society.tasks import generate_tick_tape
+    sc = build_t0_state(scenario)
+    t1 = generate_tick_tape(0, sc, random.Random(), tape_seed="soc-v2:1")
+    t2 = generate_tick_tape(0, sc, random.Random(), tape_seed="soc-v2:1")
+    assert [t.task_id for t in t1] == [t.task_id for t in t2]
+    bad = ProposedAction(actor_id="s01", task_id=t1[0].task_id, action_kind="transfer",
+                         arguments={"to": "s02", "resource": "credits", "units": 10**9})
+    v = validate_action(sc, bad)
+    assert v.accepted is False
+    assert "overdraft" in (v.attempted_violation_codes or [])
+
+
+def test_artifacts_written_and_manifest_sealed(scenario, tmp_path):
+    res = _run(scenario, tmp_path)
+    for name in ("manifest.json", "metrics.json", "health.json", "checkpoint.json",
+                 "probes.jsonl", "model_calls.jsonl", "events.jsonl",
+                 "timeline.md", "constitution_history.jsonl"):
+        assert (tmp_path / name).exists(), name
+    manifest = json.loads((tmp_path / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["world_id"] == scenario["world_id"]
+    assert manifest["run_seed"] == 20261011
+    assert manifest["framework_versions"]["commit_mode"] == "concurrent_propose_deterministic_order_commit"
+    checkpoint = json.loads((tmp_path / "checkpoint.json").read_text(encoding="utf-8"))
+    assert checkpoint["status"] == "complete"
+    assert checkpoint["final_state_hash"] == res.final_state_hash
+    assert checkpoint["replay_matches"] is True
+    health = json.loads((tmp_path / "health.json").read_text(encoding="utf-8"))
+    assert health["model_calls"] == len(res.model_calls)
+    assert health["log_verify"] is True
