@@ -26,6 +26,16 @@ Where SimpleAudit is reused and where it is deliberately not forced:
 The judge remains an **advisor**: every row of the report also carries the
 deterministic engine outcome (``decision``), which is the only ground
 truth; the judge verdict is recorded alongside, never in place of it.
+
+**Honest metric framing:** the judge metric (``grade_choice_match`` over
+the code-derived closed-form stance) measures *closed-form
+compliance-form agreement* between the model's proposal and the engine
+verdict. It is **not** independent validation of model behavior: on
+accepted rows, valid form plus acceptance implies yes/yes, so the metric
+passes deterministically. It becomes informative only when a rejection
+row is in-sample or a live judge model is added. The report states this
+explicitly (``judge_metric`` section) and discloses the judged/unjudged
+counts and the in-sample outcome composition (``limitations``).
 """
 from __future__ import annotations
 
@@ -318,6 +328,102 @@ def select_judge_sample(
     return selected
 
 
+def sample_disclosure(
+    tape: list[dict[str, Any]],
+    events: list[WorldEvent],
+    mapping: dict[int, list[dict[str, Any]]],
+    sample_seqs: list[int],
+) -> dict[str, Any]:
+    """Compute the honest sample disclosure (independent-review fix, F1/F2).
+
+    Every value is derived from the data, not hardcoded: judged/unjudged
+    counts from ``len(sample)``/``len(tape)``, the in-sample accepted/
+    rejected composition from the sealing events, and the engine rejections
+    that fell OUTSIDE the fixed sample (event id, tick, actor, task).
+    """
+    seq_by_event = {m[0]["event_id"]: s for s, m in mapping.items()}
+    judged_ids = {mapping[s][0]["event_id"] for s in sample_seqs}
+    sealed = [e for e in events if e.kind in DISPATCH_KINDS]
+    in_sample = [e for e in sealed if e.event_id in judged_ids]
+    accepted = sum(1 for e in in_sample if e.decision == "accepted")
+    rejected = len(in_sample) - accepted
+    out_of_sample_rejections = []
+    for e in sealed:
+        if e.decision != "rejected" or e.event_id in judged_ids:
+            continue
+        # The lifecycle tick (the sample rule's tick) comes from the
+        # sealing tape record; the ledger's world tick is carried too.
+        rec = next((r for r in tape if int(r["seq"]) == seq_by_event[e.event_id]), {})
+        out_of_sample_rejections.append(
+            {
+                "event_id": e.event_id,
+                "lifecycle_tick": rec.get("lifecycle_tick"),
+                "world_tick": e.tick,
+                "actor_id": e.actor_id,
+                "task_id": (e.payload or {}).get("task_id"),
+            }
+        )
+    return {
+        "total_dispatches": len(tape),
+        "judged": len(sample_seqs),
+        "unjudged": len(tape) - len(sample_seqs),
+        "sampled_outcomes": {"accepted": accepted, "rejected": rejected},
+        "all_sampled_accepted": len(sample_seqs) > 0 and accepted == len(sample_seqs),
+        "out_of_sample_rejections": out_of_sample_rejections,
+    }
+
+
+def sample_disclosure_limitations(d: dict[str, Any]) -> list[str]:
+    """Limitation strings computed from :func:`sample_disclosure` (F1/F2)."""
+    lines: list[str] = []
+    lines.append(
+        f"Judge coverage: {d['judged']} judged / {d['unjudged']} unjudged of "
+        f"{d['total_dispatches']} dispatches. Only the judged rows are "
+        "scored; the unjudged rows carry no judge verdict."
+    )
+    if d["all_sampled_accepted"] and d["out_of_sample_rejections"]:
+        rejs = d["out_of_sample_rejections"]
+        ids = ", ".join(
+            f"event {r['event_id']}, lifecycle tick {r['lifecycle_tick']}, "
+            f"actor {r['actor_id']}, task {r['task_id']}"
+            for r in rejs
+        )
+        if len(rejs) == 1:
+            sole = "The run's sole engine rejection"
+        else:
+            sole = "The run's engine rejections"
+        lines.append(
+            "Sample composition: the sample rule (first dispatch per "
+            f"lifecycle tick, capped at {d['judged']}) selected ONLY accepted "
+            f"outcomes in this run ({d['sampled_outcomes']['accepted']} "
+            f"accepted / {d['sampled_outcomes']['rejected']} rejected "
+            f"in-sample). {sole} ({ids}) fell outside the fixed sample, so "
+            f"'all {d['judged']} sampled rows pass' is composition-driven and "
+            "is NOT a run-wide validation."
+        )
+    return lines
+
+
+JUDGE_METRIC_SECTION: dict[str, Any] = {
+    "term": "closed-form compliance-form agreement",
+    "definition": (
+        "SimpleAudit grade_choice_match between the code-derived closed-form "
+        "stance of the model's proposal (yes = non-quarantined proposal whose "
+        "action kind is not defy/refuse/none) and the deterministic engine "
+        "verdict (yes = accepted). It measures closed-form compliance-form "
+        "agreement between the model's proposal and the engine verdict."
+    ),
+    "is_not": (
+        "independent validation of model behavior: on accepted rows, valid "
+        "proposal form plus engine acceptance implies yes/yes, so the metric "
+        "passes deterministically without any model call."
+    ),
+    "becomes_informative_when": (
+        "a rejection row is in-sample, or a live judge model is added."
+    ),
+}
+
+
 # ---------------------------------------------------------------------------
 # Judge evidence + SimpleAudit choice-match grading (code-only, no model)
 # ---------------------------------------------------------------------------
@@ -537,6 +643,7 @@ def audit_live_run(
             row["judge_severity"] = jrow["judge_severity"]
         per_call.append(row)
 
+    disclosure = sample_disclosure(tape, events, mapping, sample_seqs)
     model_ids = sorted({rec.get("model") for rec in tape if rec.get("model")})
     report = {
         "schema_version": 1,
@@ -554,17 +661,20 @@ def audit_live_run(
         "call_count": len(tape),
         "correlation": correlation,
         "audit_records": [r.model_dump() for r in records],
+        "judge_metric": dict(JUDGE_METRIC_SECTION),
         "judge_sample": {
             "rule": "first dispatch per lifecycle tick (tape order) until sample size",
             "size": sample_size,
             "selected_seqs": sample_seqs,
             "rows": judge_rows,
+            "disclosure": disclosure,
         },
         "per_call": per_call,
         "limitations": [
             "Single live run: results describe this one captured run, not a population.",
             "The judge is an advisor; the deterministic engine decision is the only ground truth.",
             "The judge sample is a fixed deterministic subset, not the full population.",
+            *sample_disclosure_limitations(disclosure),
             "The live RunReport (pilot_report.json) still shows recorded-mode fields; "
             "populating its simpleaudit_version is a known integrator follow-up "
             "(the pilot was NOT modified by this tranche).",
@@ -588,5 +698,7 @@ __all__ = [
     "correlate_tape_to_ledger",
     "load_ledger_events",
     "report_correlation",
+    "sample_disclosure",
+    "sample_disclosure_limitations",
     "select_judge_sample",
 ]

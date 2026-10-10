@@ -7,6 +7,7 @@ report bytes, and deterministic judge sampling.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -293,3 +294,59 @@ def test_judge_step_uses_simpleaudit_and_records_path(mini_tape) -> None:
     assert per_call[5]["judge_score"] == 1.0
     # Limitations name the known pilot gap.
     assert any("RunReport" in s for s in report["limitations"])
+
+
+# ---------------------------------------------------------------------------
+# (f) guard over the REAL captured pilot tape + ledger (skip if absent)
+# ---------------------------------------------------------------------------
+
+PILOT_TAPE = Path("/Users/sushantgautam/Documents/verdi/runs/live/20261010T071750Z/live_tape.jsonl")
+PILOT_LEDGER = Path("/Users/sushantgautam/Documents/verdi-L1/runs/live/event_log.jsonl")
+
+
+def test_pilot_tape_ledger_actor_task_unique_and_1_to_1() -> None:
+    """Guard: pilot_v1's (actor_id, task_id) pairs are unique on both sides
+    and map 1:1 — the invariant the sealed-event_id correlation relies on.
+
+    Runs over the real captured artifacts; skipped (with a clear message)
+    when the artifacts are not present on this machine.
+    """
+    if not (PILOT_TAPE.is_file() and PILOT_LEDGER.is_file()):
+        pytest.skip(
+            "captured pilot artifacts not present "
+            f"({PILOT_TAPE}, {PILOT_LEDGER}); guard test skipped"
+        )
+    tape = [json.loads(line) for line in PILOT_TAPE.read_text().splitlines() if line.strip()]
+    ledger = [json.loads(line) for line in PILOT_LEDGER.read_text().splitlines() if line.strip()]
+    tape_pairs = [(r.get("actor_id"), r.get("task_id")) for r in tape]
+    dispatches = [e for e in ledger if e["kind"] in ("action_accepted", "action_rejected")]
+    ledger_pairs = [(e.get("actor_id"), e["payload"].get("task_id")) for e in dispatches]
+
+    assert len(tape) == 81
+    assert len(dispatches) == 81
+    # (actor_id, task_id) unique across the 81 tape records and the 81
+    # dispatch events.
+    assert len(set(tape_pairs)) == 81, "duplicate (actor_id, task_id) in tape"
+    assert len(set(ledger_pairs)) == 81, "duplicate (actor_id, task_id) in ledger"
+    # 81/81 map 1:1.
+    assert set(tape_pairs) == set(ledger_pairs)
+    # Full audit correlation holds over the real artifacts.
+    mapping = correlate_tape_to_ledger(tape, [
+        WorldEvent(
+            schema_version=int(e["schema_version"]),
+            event_id=int(e["event_id"]),
+            tick=int(e["tick"]),
+            cause_event_id=e.get("cause_event_id"),
+            actor_id=e.get("actor_id"),
+            kind=e["kind"],
+            payload=e.get("payload") or {},
+            before_hash=e["before_hash"],
+            after_hash=e.get("after_hash"),
+            decision=e["decision"],
+            prev_hash=e["prev_hash"],
+            event_hash=e["event_hash"],
+        )
+        for e in ledger
+    ])
+    assert len(mapping) == 81
+    assert len({m[0]["event_id"] for m in mapping.values()}) == 81
