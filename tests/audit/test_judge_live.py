@@ -16,7 +16,6 @@ from __future__ import annotations
 import asyncio
 import inspect
 import json
-import math
 from pathlib import Path
 
 import pytest
@@ -806,7 +805,7 @@ def test_wilson_ci_known_values() -> None:
     lo, hi = wilson_ci_95(0, 80)
     assert lo == 0.0
     assert hi == pytest.approx(0.0458181295355271, abs=1e-12)
-    assert 0.0 <= lo and hi <= 1.0
+    assert lo >= 0.0 and hi <= 1.0
     # No judged rows -> no defined interval.
     assert wilson_ci_95(0, 0) is None
     # Symmetry: Wilson(x, n) mirrors Wilson(n-x, n) about the rate.
@@ -817,7 +816,7 @@ def test_wilson_ci_known_values() -> None:
     # Interval contains the point estimate and is bounded.
     p, (lo, hi) = 80 / 81, wilson_ci_95(80, 81)
     assert lo <= p <= hi
-    assert 0.0 <= lo and hi <= 1.0
+    assert lo >= 0.0 and hi <= 1.0
     # Invalid counts rejected.
     with pytest.raises(ValueError):
         wilson_ci_95(5, 3)
@@ -889,7 +888,7 @@ def test_judge_path_oracle_fixture(judge_tape_ledger, tmp_path, monkeypatch) -> 
         max_calls=96,
     )
     # Build the report through the real judge code path.
-    tape = [json.loads(l) for l in tape_path.read_text().splitlines() if l.strip()]
+    tape = [json.loads(line) for line in tape_path.read_text().splitlines() if line.strip()]
     events = load_ledger_events(ledger_path)
     sample = build_judge_sample(tape_path, ledger_path)
     code_rows = build_judge_rows(sample, tape, events)
@@ -1132,13 +1131,12 @@ def test_real_model_auditor_path_offline(judge_tape_ledger, tmp_path, monkeypatc
 
     capture = JudgeTapeCapture(FAKE_URL, MODEL)
     tape_path, ledger_path, events = judge_tape_ledger
-    tape = [json.loads(l) for l in tape_path.read_text().splitlines() if l.strip()]
+    tape = [json.loads(line) for line in tape_path.read_text().splitlines() if line.strip()]
     tape_by_seq = {int(r["seq"]): r for r in tape}
     sample = build_judge_sample(tape_path, ledger_path)
     code_rows = build_judge_rows(sample, tape, events)
     row_by_event = {r["event_id"]: r for r in code_rows}
 
-    seen = {"calls": 0}
 
     async def _one(row):
         rec = tape_by_seq[row["seq"]]
