@@ -1,0 +1,18 @@
+---
+name: run-society-campaign
+description: Execute the Verdi Society V2 real-Qwen simulation campaign in phased, audited, autonomous parallel engineering fleet, never main.
+disable-model-invocation: true
+---
+# Autonomous Society V2 campaign launch
+
+Do not merely plan. Execute actual source changes, tests, and LIVE Qwen experiments after gates pass. First read AGENTS.md, docs/LIVE_SOCIETY_CAMPAIGN.md, docs/RESEARCH_SPEC.md, docs/ARCHITECTURE.md, docs/ACCEPTANCE.md, docs/PREREGISTRATION.md, state/STATUS.md, state/LESSONS.md, and review dev HEAD and GitHub CI. Freeze a new Society V2 protocol independently of prior L1/G5 frozen experiments. Never touch main.
+
+1. Repair and verify CI first. Recent GitHub CI failed due local Mac-only absolute fixture paths; ensure that is fixed on latest dev and green on GitHub Linux. Local tests passing alone do not count. Diagnose residual CI failures; do not skip checked-in fixtures or conceal test errors.
+2. Examine existing code. The current 3-agent live pilot has Qwen proposals but mostly non-mutating action types, scripted governance and governance paired arms sharing identical future proposal tapes. DO NOT misrepresent that as longitudinal social drift. Require state-mutating proposals and a prompt-observable feedback test.
+3. Spawn 4–6 disjoint implementation worktrees for world state, async client, scheduler/society/memory, real governance, measurement/SimpleAudit, live driver/reporting. Assign strict interface contracts before coding, one serial integrator, independent science and engineering reviewers. Make the smallest vertical slice real before scaling.
+4. Once CI and scientific G0/G1/G2/G3 gates pass, **run** Stage A real Qwen: 6 agents, 12 ticks, one real constitutional assembly, hidden baseline/after probes, transactions, recurrent memory. Use SimulaChat default Qwen3.8-27B via gitignored VERDI_VLLM_* .env; never print secrets. Bootstrap 4 parallel requests, adaptive bounded concurrency as confirmed by real throughput. Use synchronous deterministic reducer commit order even when model proposals are concurrently generated.
+5. Inspect Stage A report/timeline and validate state change, delayed feedback, meaningful interactions, constitutional vote or honest no-change, attempted violations, rights, replay equivalence and probe separation. If gates pass, execute Stage B 12 agents × 30 ticks with multiple seeds, 0 vs 1 bad actor and governance treatment arms. Then Stage C staged 24/48/96 agents and 60/100/200 ticks only after formal G5/performance/validity gates, with uncertainty and strong independent review. Scale based on measured performance rather than assumed unlimited Qwen throughput.
+6. Keep per-tick progress, per-agent task coverage, parallel request metrics, judge disagreements, live event/probe trails, immutable snapshots at t0/t5/t9/t10 and subsequent assemblies; expose run checkpoint.json and human-readable timeline.md; let user inspect ongoing status without exposing secrets.
+7. After every tranche: source+test changes -> independent code/science reviews -> serial integration to dev -> CI and smoke -> record dev SHA/checkpoints/state/LESSONS -> dispatch next unblocked work. On errors capture the full reproduction evidence, add regression tests, recover from last passing checkpoint, never fabricate success or silence failures. If model credential access is unavailable, continue offline implementation, record BLOCKED for live only; do not claim execution.
+
+Begin by checking the **current** dev HEAD and latest GitHub CI, then proceed automatically as far as verified execution allows. Never alter or push main.
