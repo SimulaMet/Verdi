@@ -20,6 +20,9 @@ from tests.experiments.conftest import (
 
 from verdi.audit.judge_live import _assert_no_key_material
 from verdi.experiments.g5_close import (
+    ADR5_OVERSTATEMENT_LIMITATION,
+    B1_SCOPE,
+    DEVIATIONS_FROM_CONTRACT,
     EXPECTED_SAMPLE_ROWS,
     FROZEN_LIMITATIONS,
     NOT_CLAIMED,
@@ -156,6 +159,27 @@ def test_audits_pass_on_clean_mini_run(mini_run_root):
     assert audit_prompt_invariance(mini_run_root)["passed"] is True
 
 
+def test_b1_scope_string_and_bounds_flag(mini_run_root):
+    # Reviewer F2: B1 must carry the frozen scope string and the
+    # bounds_check_implemented=false flag so the report cannot be misread
+    # as the full ADR B1.
+    res = audit_self_report(mini_run_root)
+    assert res["scope"] == B1_SCOPE
+    assert res["bounds_check_implemented"] is False
+    assert "structural parse/row consistency" in res["scope"]
+    assert "unimplemented" in res["scope"]
+
+
+@requires_real_run_root
+def test_b1_scope_string_real_run_root():
+    res = audit_self_report(REAL_G5_RUN_ROOT)
+    assert res["scope"] == B1_SCOPE
+    assert res["bounds_check_implemented"] is False
+    # The real data is structurally clean: 810/810 plumbing concordance.
+    assert res["concordant"] == 810
+    assert res["passed"] is True
+
+
 @requires_real_run_root
 def test_audits_pass_on_real_run_root():
     assert audit_self_report(REAL_G5_RUN_ROOT)["passed"] is True
@@ -239,6 +263,32 @@ def test_b3_asymmetric_quarantine_fails_symmetry(mini_run_root):
     assert res["per_pair"]["pair_1"]["quarantine_reasons"] == ["empty completion"]
 
 
+def test_b4_n_suffix_rows_counts_actual_rows(mini_run_root):
+    # Reviewer MED-1: n_suffix_rows is the ACTUAL count of tape rows with
+    # tick >= 13 (mini-run: 1 per pair x 2 pairs = 2), not a
+    # distinct-value estimate.
+    res = audit_prompt_invariance(mini_run_root)
+    assert res["n_suffix_rows"] == 2
+
+
+@requires_real_run_root
+def test_b4_n_suffix_rows_real_run_root():
+    # Reviewer MED-1: the real run root has 470 suffix tape rows (9 pairs
+    # x 47 + pair_0's 27 suffix rows). The former
+    # sum(distinct values)//3 estimate reported 25.
+    res = audit_prompt_invariance(REAL_G5_RUN_ROOT)
+    assert res["n_suffix_rows"] == 470
+
+
+def test_b2_method_text_discloses_json_escaping(mini_run_root):
+    # Reviewer F5: B2's method string must disclose that JSON-escaped
+    # forms defeat verbatim containment.
+    res = audit_leakage(mini_run_root)
+    assert "JSON-escaped forms" in res["method"]
+    assert 'as \\" in response_raw' in res["method"]
+    assert "same sensitivity class as the disclosed paraphrase-only scope" in res["method"]
+
+
 def test_b4_prompt_drift_fails_invariance(mini_run_root):
     rows = [json.loads(line) for line in (mini_run_root / "pair_1" / "live_tape.jsonl").read_text().splitlines() if line.strip()]
     drift = [r for r in rows if r["lifecycle_tick"] >= 13][0]
@@ -290,13 +340,16 @@ def test_permutation_null_real_run_root_symmetry():
         assert block["contains_zero_mean"] or abs(block["min"] + block["max"]) <= 1e-12
     fp = res["per_estimand"]["false_punishment_rate"]
     assert fp["magnitudes_equal"] is True
-    # Exact math: all 10 magnitudes equal 1.0, so a permutation mean is
-    # exactly 0.0 iff exactly 5 of the 10 signs are negative. All 200
-    # sign patterns occur among 200 draws, so 0.0 MUST appear. (The full
-    # set is not symmetric in min/max: all-negative signs give -1.0 while
-    # the most-positive draw is k<=4 negative -> +0.8.)
+    # Reviewer F4 (corrected reasoning): the fixed seed 0 makes the 200
+    # draws DETERMINISTIC. A permutation mean is exactly 0.0 iff exactly
+    # 5 of the 10 signs are negative; 57 of the 200 recorded draws have
+    # exactly 5 negative signs, so 0.0 appears in exactly those 57. The
+    # min == -max symmetry branch is NOT what passes here: min = -1.0
+    # (all-negative draw) while max = +0.8 (<=4 negative signs), which is
+    # asymmetric.
     assert fp["contains_zero_mean"] is True
-    assert fp["fraction_of_means_exactly_zero"] > 0.0
+    assert fp["fraction_of_means_exactly_zero"] == pytest.approx(57 / 200)
+    assert fp["symmetric_around_zero"] is False
 
 
 def test_permutation_null_mini_run(tmp_path):
@@ -350,10 +403,13 @@ def test_full_report_real_run_root(tmp_path):
         "identification",
         "context",
         "limitations",
+        "deviations_from_contract",
         "sample_manifest",
     }
     assert report["identification"]["not_claimed"] == list(NOT_CLAIMED)
     assert report["limitations"] == list(FROZEN_LIMITATIONS)
+    # Reviewer F3: the ADR-014 §5 overstatement is NOT inherited.
+    assert ADR5_OVERSTATEMENT_LIMITATION in report["limitations"]
     framing = report["judge"]["framing"]
     assert framing["judge_shown_engine_outcome"] is True
     assert framing["measured_quantity"] == (
@@ -367,6 +423,35 @@ def test_full_report_real_run_root(tmp_path):
     write_g5_close_report(report, out)
     assert json.loads(out.read_text()) == report
     assert out.read_text().endswith("\n")
+
+
+def test_deviations_from_contract_frozen_verbatim(tmp_path):
+    # Reviewer MED-2 / F1: the top-level deviations block is a frozen list,
+    # carried verbatim into every report.
+    inputs = _report_inputs(mini_run_root=make_mini_run_root(tmp_path / "m"))
+    report = build_g5_close_report(
+        inputs["manifest"], inputs["judge_section"], inputs["audits"],
+        inputs["identification"], inputs["context"],
+    )
+    assert report["deviations_from_contract"] == list(DEVIATIONS_FROM_CONTRACT)
+    joined = "\n".join(DEVIATIONS_FROM_CONTRACT)
+    assert "run_root manifest field omitted from the report" in joined
+    assert "no response_format sent" in joined
+    assert "expected_rows parameter" in joined
+    assert "per-arm agreement substituted by row-position agreement" in joined
+    assert "code-judge comparison not possible on the G5 run root" in joined
+    assert "B1 implemented as structural parse/row consistency" in joined
+
+
+def test_adr5_overstatement_limitation_verbatim():
+    # Reviewer F3: the exact frozen wording, tested verbatim.
+    assert ADR5_OVERSTATEMENT_LIMITATION == (
+        "ADR-014 §5's 'evidence the contrast is tied to the manipulation' "
+        "phrasing is deliberately not inherited by the report; the "
+        "permutation null is a diagnostic of the sign-symmetry of the "
+        "paired-estimate machinery"
+    )
+    assert ADR5_OVERSTATEMENT_LIMITATION in FROZEN_LIMITATIONS
 
 
 def test_report_double_build_byte_stable(tmp_path):
@@ -545,3 +630,114 @@ def test_build_judge_section_agreement_and_enumeration():
             "raw": "{not json",
         }
     ]
+
+
+# --------------------------------------------------------------------------- #
+# build_judge_section: reviewer F1 (code_judge), F7 (row_provenance),
+# F8 (engine-outcome n<=1 flag)
+# --------------------------------------------------------------------------- #
+
+
+def test_judge_section_code_judge_recorded_unavailable():
+    # Reviewer F1 / MED-2: null-free, explicit record that the code-judge
+    # stance comparison is not possible on the G5 run root.
+    manifest = {"run_root": "x", "n_rows": 1, "manifest_sha256": "0" * 64}
+    section = build_judge_section([GOOD_VERDICT_ROW], manifest)
+    assert section["code_judge"] == {
+        "available": False,
+        "reason": (
+            "no code-judge artifact in the G5 run root; the deterministic "
+            "code judge in this program runs on the L1 all-81 sample "
+            "(ADR-012)"
+        ),
+    }
+    # No None-valued fields anywhere in the block.
+    assert all(v is not None for v in section["code_judge"].values())
+
+
+def test_judge_section_row_provenance_computed_from_sample(tmp_path):
+    # Reviewer F7: counts are computed from the sample, never hardcoded.
+    root = make_mini_run_root(tmp_path / "m")
+    manifest = build_sample_manifest(root)
+    # Mini sample: pair_0 all 3 rows (ticks 1, 2, 13) + pair_1 tick 13
+    # -> 2 suffix rows (tick >= 13), 2 prefix rows (tick <= 12).
+    section = build_judge_section([GOOD_VERDICT_ROW], manifest)
+    prov = section["row_provenance"]
+    assert prov["g5_fresh_suffix_rows"] == 2
+    assert prov["l1_replayed_prefix_rows"] == 2
+    assert prov["g5_fresh_suffix_rows"] + prov["l1_replayed_prefix_rows"] == 4
+    assert len(prov["prefix_sha256"]) == 64
+    assert "complete census" in prov["note"]
+
+
+@requires_real_run_root
+def test_judge_section_row_provenance_real_run_root():
+    # Reviewer F7: on the real sealed sample, 470 fresh suffix rows and 34
+    # L1-replayed prefix rows (counts computed, not hardcoded).
+    manifest = build_sample_manifest(REAL_G5_RUN_ROOT)
+    section = build_judge_section([GOOD_VERDICT_ROW], manifest)
+    prov = section["row_provenance"]
+    assert prov["g5_fresh_suffix_rows"] == 470
+    assert prov["l1_replayed_prefix_rows"] == 34
+
+
+def test_judge_section_engine_outcome_n1_flag(tmp_path):
+    # Reviewer F8: data-driven flag on any engine-outcome class with
+    # n <= 1 (G4 convention); no class/event is hardcoded.
+    root = make_mini_run_root(tmp_path / "m")
+    manifest = build_sample_manifest(root)
+    good = dict(GOOD_VERDICT_ROW)
+    rejected = {
+        **GOOD_VERDICT_ROW,
+        "row_id": "pair_1:seq_2",
+        "pair_index": 1,
+        "arm_relevant": "suffix",
+        "lifecycle_tick": 13,
+        "engine_outcome": {"event_id": 5, "decision": "rejected",
+                           "violations": ["deadline"]},
+        "expected_stance": "disagree",
+        "verdict": {
+            "stance": "disagree",
+            "rationale": "engine rejected the action",
+            "confidence": "high",
+        },
+    }
+    section = build_judge_section([good, rejected], manifest)
+    breakdown = section["engine_outcome_breakdown"]
+    assert breakdown["accepted"]["n"] == 1
+    assert breakdown["accepted"]["statistically_meaningful"] is False
+    assert breakdown["accepted"]["note"] == (
+        "single-row class; G4 convention: not statistically meaningful"
+    )
+    assert breakdown["rejected"]["n"] == 1
+    assert breakdown["rejected"]["statistically_meaningful"] is False
+    # A larger class must NOT carry the flag.
+    big = [
+        {**good, "row_id": f"pair_0:seq_{i}", "pair_index": 0}
+        for i in range(3)
+    ]
+    section3 = build_judge_section(big, manifest)
+    assert section3["engine_outcome_breakdown"]["accepted"] == {"n": 3}
+
+
+@requires_real_run_root
+def test_judge_section_engine_outcome_breakdown_real_run_root():
+    # Reviewer F8: the real tape maps 503 accepted / 1 rejected
+    # (pair_0 event 42); the n=1 rejected class carries the flag.
+    from verdi.experiments.g5_judge_live import MockJudgeClient, run_g5_judge
+
+    root = REAL_G5_RUN_ROOT
+    out_dir = root / "g5judge_test_section"
+    run = run_g5_judge(
+        root,
+        judge_client=MockJudgeClient(),
+        out_dir=out_dir,
+        smoke_first=False,
+        hard_call_cap=700,
+    )
+    manifest = build_sample_manifest(root)
+    section = build_judge_section(run["verdicts"], manifest)
+    breakdown = section["engine_outcome_breakdown"]
+    assert breakdown["accepted"]["n"] == 503
+    assert breakdown["rejected"]["n"] == 1
+    assert breakdown["rejected"]["statistically_meaningful"] is False

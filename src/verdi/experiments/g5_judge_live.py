@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import json
 import os
 import re
@@ -60,16 +61,12 @@ from verdi.experiments.g5_close import (
     build_sealed_sample,
 )
 
-#: ADR-014 §3: frozen judge verdict schema (stance / rationale / confidence).
-JUDGE_RESPONSE_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "stance": {"type": "string", "enum": ["agree", "disagree"]},
-        "rationale": {"type": "string", "maxLength": 400},
-        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-    },
-    "required": ["stance", "rationale", "confidence"],
-}
+# NOTE (reviewer MED-3): the former JUDGE_RESPONSE_SCHEMA constant was
+# deleted — no response_format is sent to the endpoint (smoke-verified:
+# clean JSON at temperature 0.1 / max_tokens 2048 without it), so the
+# schema was dead code. The verdict schema is enforced by the system
+# prompt (JUDGE_SYSTEM_PROMPT) plus the tolerant parser
+# (parse_g5_judge_verdict), with out-of-schema payloads quarantined.
 
 RATIONALE_MAX_CHARS = 400
 JUDGE_TEMPERATURE = 0.1
@@ -111,6 +108,30 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _write_cap_abort_meta(
+    out_dir: Path, *, n_calls: int, hard_call_cap: int
+) -> None:
+    """Best-effort cap-abort run meta (reviewer MED-4 / F6; ADR-014 §2).
+
+    ADR-014 §2 says cap exceedance is RECORDED in the run meta, but the
+    abort otherwise raises before any meta is written. This writes
+    ``g5judge_run_meta.json`` with ``status: "cap_aborted"`` before the
+    raise propagates. Best-effort: a write failure does not mask the
+    original abort.
+    """
+    try:
+        meta = {
+            "status": "cap_aborted",
+            "n_calls": n_calls,
+            "hard_call_cap": hard_call_cap,
+            "timestamp_utc": _utc_now_iso(),
+        }
+        meta_text = json.dumps(meta, sort_keys=True, indent=2) + "\n"
+        (Path(out_dir) / "g5judge_run_meta.json").write_text(meta_text)
+    except OSError:
+        pass
+
+
 # --------------------------------------------------------------------------- #
 # Endpoint configuration (env-only, no dotenv dependency)
 # --------------------------------------------------------------------------- #
@@ -148,7 +169,13 @@ def _resolve_endpoint_config() -> ModelEndpointConfig:
             "VERDI_VLLM_* endpoint not configured — source the env first "
             "(VERDI_VLLM_BASE_URL, VERDI_VLLM_MODEL, VERDI_VLLM_API_KEY)"
         )
-    return config
+    # HIGH-1 (reviewer): model_endpoint_from_env() carries
+    # max_retries=5 by default (VERDI_MAX_RETRIES). ModelClient retries
+    # 429/502/503 INTERNALLY, and those retries are real HTTP calls that
+    # would blow the ADR-014 §1 hard call cap (which counts logical
+    # judge calls). Force max_retries=0 so one logical call == one HTTP
+    # request.
+    return dataclasses.replace(config, max_retries=0)
 
 
 # --------------------------------------------------------------------------- #
@@ -270,6 +297,11 @@ def engine_outcome_for_row(run_root: Path, pidx: int, seq: int) -> dict[str, Any
 
 
 def _expected_stance(outcome: dict[str, Any]) -> str:
+    # Convention (reviewer F10): an engine outcome whose decision is NOT
+    # "accepted" — including any unmapped/unknown outcome value — counts
+    # as "disagree" for the judge-to-engine stance comparison. 0 rows
+    # are affected by the fallback on the current G5 run data (only
+    # "accepted" and "rejected" occur).
     return "agree" if outcome.get("decision") == "accepted" else "disagree"
 
 
@@ -469,6 +501,9 @@ def run_g5_judge(
 
     planned = (1 if smoke_first else 0) + len(sample)
     if planned > hard_call_cap:
+        # MED-4 / reviewer F6: ADR-014 §2 requires cap exceedance to be
+        # RECORDED in the run meta — best-effort write before raising.
+        _write_cap_abort_meta(out_dir, n_calls=0, hard_call_cap=hard_call_cap)
         raise G5JudgeError(
             f"planned judge calls {planned} exceed hard call cap "
             f"{hard_call_cap} (ADR-014 §2)"
@@ -565,7 +600,17 @@ def run_g5_judge(
             )
         return {"verdicts": verdicts, "smoke": smoke_evidence}
 
-    outcome_record = asyncio.run(_run_all())
+    try:
+        outcome_record = asyncio.run(_run_all())
+    except G5JudgeError as exc:
+        # MED-4 / reviewer F6: a mid-run cap abort still records the
+        # cap-abort meta before propagating (non-cap errors, e.g. smoke
+        # failure, propagate without the cap-abort artifact).
+        if "hard call cap" in str(exc):
+            _write_cap_abort_meta(
+                out_dir, n_calls=n_calls, hard_call_cap=hard_call_cap
+            )
+        raise
     verdicts: list[dict[str, Any]] = outcome_record["verdicts"]
     smoke_evidence = outcome_record["smoke"]
 
@@ -628,13 +673,11 @@ __all__ = [
     "DEFAULT_HARD_CALL_CAP",
     "G5JudgeError",
     "JUDGE_MAX_TOKENS",
-    "JUDGE_RESPONSE_SCHEMA",
     "JUDGE_SYSTEM_PROMPT",
     "JUDGE_TEMPERATURE",
     "MockJudgeClient",
     "build_judge_section",
     "engine_outcome_for_row",
     "parse_g5_judge_verdict",
-    "build_judge_section",
     "run_g5_judge",
 ]

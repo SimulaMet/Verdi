@@ -17,8 +17,8 @@ Implements the FROZEN contract in
   ``NOT_CLAIMED`` and the ADR-014 §5 framing).
 * :func:`build_g5_close_report` / :func:`causal_word_guard` /
   :func:`write_g5_close_report` — the single report with frozen sections
-  ``judge, bias_audits, identification, context, limitations`` and the
-  frozen causal-word guard.
+  ``judge, bias_audits, identification, context, limitations,
+  deviations_from_contract`` and the frozen causal-word guard.
 
 Framing (ADR-014 §3, carried verbatim into the report's ``judge.framing``):
 the judge is SHOWN the engine outcome; the measured quantity is
@@ -69,6 +69,13 @@ NOT_CLAIMED: tuple[str, ...] = (
 )
 
 #: ADR-014 §5: the frozen limitations block (report carries these verbatim).
+ADR5_OVERSTATEMENT_LIMITATION = (
+    "ADR-014 §5's 'evidence the contrast is tied to the manipulation' "
+    "phrasing is deliberately not inherited by the report; the permutation "
+    "null is a diagnostic of the sign-symmetry of the paired-estimate "
+    "machinery"
+)
+
 FROZEN_LIMITATIONS: tuple[str, ...] = (
     "paraphrase-level leak detection out of scope: the leakage audit is "
     "verbatim containment only",
@@ -77,6 +84,47 @@ FROZEN_LIMITATIONS: tuple[str, ...] = (
     "no randomization: deterministic single-manipulation design; the "
     "permutation null is a diagnostic, not randomization",
     "single pilot scenario",
+    ADR5_OVERSTATEMENT_LIMITATION,
+)
+
+#: Frozen, verbatim record of the contract deviations this module makes.
+#: The ADR-014 body is NOT edited; these are handled here, in the report's
+#: top-level ``deviations_from_contract`` block (reviewer MED-2 / F1).
+DEVIATIONS_FROM_CONTRACT: tuple[str, ...] = (
+    "run_root manifest field omitted from the report: the sealed manifest "
+    "carries an advisory run_root path field, deliberately excluded from "
+    "the report so a filesystem path can never interact with the frozen "
+    "causal-word guard",
+    "no response_format sent: the live smoke (2026-10-10) confirmed the "
+    "endpoint returns clean JSON at temperature 0.1 / max_tokens 2048 "
+    "without response_format, so the judge uses a JSON-only system prompt "
+    "plus a tolerant parser instead",
+    "expected_rows parameter added to run_g5_judge (default 504 = "
+    "production behavior) so synthetic mini-run tests can run offline "
+    "without weakening the frozen 504-row assert",
+    "per-arm agreement substituted by row-position agreement: the sealed "
+    "sample rows are the SHARED per-pair tape replayed into both arms, so "
+    "per-arm judge agreement is not separable from the sample; the report "
+    "reports prefix/suffix (row-position) agreement instead",
+    "code-judge comparison not possible on the G5 run root: no code-judge "
+    "artifact exists in the G5 run root; the deterministic code judge in "
+    "this program runs on the L1 all-81 sample (ADR-012)",
+    "B1 implemented as structural parse/row consistency: the policy parser "
+    "forces task_id/actor_id, so the 810/810 concordance measures "
+    "plumbing consistency rather than self-report-vs-behavior; the ADR "
+    "'declared values within bounds' limb is unimplemented "
+    "(bounds_check_implemented=false)",
+)
+
+#: B1 scope string (reviewer F2): states exactly what B1's task_id /
+#: action_kind clauses actually measure, so the report cannot be misread
+#: as the full ADR B1.
+B1_SCOPE = (
+    "structural parse/row consistency only: parse_and_validate_action "
+    "forces task_id/actor_id, so concordance measures plumbing "
+    "consistency, not self-report-vs-behavior; the 'declared values within "
+    "bounds' limb of ADR B1 is unimplemented (bounds_check_implemented "
+    "is false)"
 )
 
 # Frozen causal-word guard (ADR-014 §5): the word "causal" may appear at
@@ -234,6 +282,13 @@ def audit_self_report(run_root: str | Path) -> dict[str, Any]:
     must equal the ``action_type=<kind>`` token declared in the prompt.
     No self-report value is treated as ground truth. Reports per-pair and
     overall concordance counts plus the divergence list.
+
+    SCOPE (reviewer F2): the task_id / action_kind clauses are STRUCTURAL —
+    ``parse_and_validate_action`` already forces ``task_id`` / ``actor_id``
+    — so concordance measures plumbing consistency, not
+    self-report-vs-behavior. The returned dict carries the frozen
+    ``scope`` string (``B1_SCOPE``) and ``bounds_check_implemented:
+    False`` so the report cannot be misread as the full ADR B1.
     """
     per_pair: dict[str, Any] = {}
     divergences: list[dict[str, Any]] = []
@@ -277,6 +332,8 @@ def audit_self_report(run_root: str | Path) -> dict[str, Any]:
         "divergent": len(divergences),
         "per_pair": per_pair,
         "divergences": divergences,
+        "scope": B1_SCOPE,
+        "bounds_check_implemented": False,
     }
 
 
@@ -342,7 +399,12 @@ def audit_leakage(run_root: str | Path) -> dict[str, Any]:
     return {
         "audit": "B2_leakage",
         "passed": not (gt_hits or key_findings or ordering_leaks),
-        "method": "verbatim containment only (paraphrase-level out of scope)",
+        "method": (
+            "verbatim containment only (paraphrase-level out of scope); "
+            "JSON-escaped forms (e.g. leaked text containing quotes appears "
+            "as \\\" in response_raw) defeat verbatim containment \u2014 same "
+            "sensitivity class as the disclosed paraphrase-only scope"
+        ),
         "ground_truth_hits": gt_hits,
         "key_material_findings": key_findings,
         "ordering_leaks": ordering_leaks,
@@ -383,11 +445,13 @@ def audit_prompt_invariance(run_root: str | Path) -> dict[str, Any]:
     by_key: dict[tuple[Any, Any, Any], str] = {}
     per_field: dict[str, set[Any]] = {"actor_id": set(), "lifecycle_tick": set(), "task_id": set()}
     drifts: list[dict[str, Any]] = []
+    n_suffix_rows = 0
     for pdir in pair_dirs(run_root):
         pidx = pair_index(pdir)
         for row in pair_tape_rows(run_root, pdir):
             if int(row["lifecycle_tick"]) < SUFFIX_TICK_MIN:
                 continue
+            n_suffix_rows += 1
             per_field["actor_id"].add(row.get("actor_id"))
             per_field["lifecycle_tick"].add(int(row["lifecycle_tick"]))
             per_field["task_id"].add(row.get("task_id"))
@@ -410,7 +474,10 @@ def audit_prompt_invariance(run_root: str | Path) -> dict[str, Any]:
     return {
         "audit": "B4_prompt_invariance",
         "passed": not drifts,
-        "n_suffix_rows": sum(len(v) for v in per_field.values()) // 3,
+        # MED-1: actual count of tape rows with tick >= SUFFIX_TICK_MIN
+        # across all pairs (470 on the real run root), NOT a distinct-value
+        # estimate.
+        "n_suffix_rows": n_suffix_rows,
         "n_distinct_per_field": {k: len(v) for k, v in per_field.items()},
         "n_distinct_prompt_tuples": len(by_key),
         "drifts": drifts,
@@ -480,14 +547,19 @@ def permutation_null(run_root: str | Path) -> dict[str, Any]:
     of {s_p * d_p}. For any estimand whose per-pair delta MAGNITUDES are
     all equal (true in the production run: e.g. false_punishment_rate
     deltas are all +1.0), any sign assignment with exactly half the signs
-    negative yields a mean of EXACTLY 0.0. The required assertion: for
-    every estimand, either (a) all magnitudes are equal and at least one
-    permutation has exactly half-negative signs (=> its mean is exactly
-    0.0), or (b) the set of permutation means is symmetric around 0
-    (min == -max within 1e-12). When magnitudes differ, the fallback is
-    that the distribution contains a 0.0 mean (exactly-half-negative
-    assignment with paired +/- magnitudes); the assertion records which
-    branch held.
+    negative yields a mean of EXACTLY 0.0. The fixed seed 0 makes the 200
+    draws DETERMINISTIC, so whether 0.0 appears is a property of the
+    recorded draws, not of probability: in the recorded sequence 57 of the
+    200 draws have exactly 5 negative signs, so 0.0 appears in exactly
+    those 57 cases (it is the exactly-half-negative branch, NOT the
+    min == -max symmetry branch, that passes; e.g. min = -1.0, max =
+    +0.8 for false_punishment_rate, which is not symmetric). The required
+    assertion: for every estimand, either (a) all magnitudes are equal
+    and at least one permutation has exactly half-negative signs (=> its
+    mean is exactly 0.0), or (b) the set of permutation means is
+    symmetric around 0 (min == -max within 1e-12); the fallback when
+    magnitudes differ is that the distribution contains a 0.0 mean. The
+    per-estimand fields record which branch held.
     """
     pairs = _pair_estimates(Path(run_root))
     names = _estimand_names(next(iter(pairs.values()))[0])
@@ -590,6 +662,8 @@ def build_g5_close_report(
         "identification": id_block,
         "context": dict(context),
         "limitations": list(FROZEN_LIMITATIONS),
+        # MED-2 / reviewer F1: frozen, verbatim record of contract gaps.
+        "deviations_from_contract": list(DEVIATIONS_FROM_CONTRACT),
     }
     report.setdefault(
         "sample_manifest",
@@ -636,14 +710,75 @@ def causal_word_guard(report: Mapping[str, Any]) -> None:
 
 def write_g5_close_report(report: Mapping[str, Any], path: str | Path) -> None:
     """Write the report byte-stably: ``json.dumps(indent=2, sort_keys=True)``
-    + trailing newline, after asserting no key material and double-build
-    byte-stability (re-dumping the same inputs must be byte-identical)."""
+    + trailing newline, after asserting no key material and JSON
+    round-trip stability (reviewer LOW-1: the real on-disk property is
+    that a reload-and-redump of the written text is byte-identical; the
+    former same-dict re-dump assert was a tautology)."""
     text = json.dumps(report, indent=2, sort_keys=True) + "\n"
-    # Double-build byte-stability: canonical re-serialization of the same
-    # dict must be byte-identical (pure inputs, no embedded timestamps).
-    assert json.dumps(report, indent=2, sort_keys=True) + "\n" == text
+    # Round-trip stability: canonical re-serialization of the parsed text
+    # must be byte-identical (what a consumer reading the file sees).
+    assert json.dumps(json.loads(text), indent=2, sort_keys=True) + "\n" == text
     _assert_no_key_material(text, str(path))
     Path(path).write_text(text)
+
+
+def _row_provenance(sample_manifest: Mapping[str, Any]) -> dict[str, Any]:
+    """Row provenance (reviewer F7): computed from the sample, never hardcoded.
+
+    ``g5_fresh_suffix_rows`` = sample rows with ``lifecycle_tick >= 13``;
+    ``l1_replayed_prefix_rows`` = sample rows with
+    ``lifecycle_tick <= SUFFIX_TICK_MIN - 1``. The recorded ``prefix_sha256``
+    is the sha256 of the canonical serialization of the sample's prefix
+    rows (sample-derived, not the L1 event-ledger tape hash — see the
+    note and the ``deviations_from_contract`` record).
+    """
+    prefix_rows = [
+        r for r in (sample_manifest.get("rows") or ())
+        if int(r["lifecycle_tick"]) < SUFFIX_TICK_MIN
+    ]
+    suffix_rows = [
+        r for r in (sample_manifest.get("rows") or ())
+        if int(r["lifecycle_tick"]) >= SUFFIX_TICK_MIN
+    ]
+    return {
+        "g5_fresh_suffix_rows": len(suffix_rows),
+        "l1_replayed_prefix_rows": len(prefix_rows),
+        "prefix_sha256": _sha256_hex(json.dumps(prefix_rows, sort_keys=True)),
+        "note": (
+            "prefix rows are replayed verbatim from the L1 run (identical "
+            "across all 10 pairs); the sample is a complete census of all "
+            "unique G5 model-generated behavior. prefix_sha256 is the "
+            "sha256 of the sample's prefix rows (canonical JSON), NOT the "
+            "L1 event-ledger tape hash (which requires L1 artifacts this "
+            "pure function does not load)"
+        ),
+    }
+
+
+def _engine_outcome_breakdown(
+    judged: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Per-engine-outcome judged-row counts (reviewer F8).
+
+    Any outcome class with ``n <= 1`` gets the data-driven flag
+    ``{"n": <n>, "statistically_meaningful": False, "note": ...}`` (G4
+    convention); no class or event is hardcoded.
+    """
+    counts: dict[str, int] = {}
+    for r in judged:
+        decision = str((r.get("engine_outcome") or {}).get("decision"))
+        counts[decision] = counts.get(decision, 0) + 1
+    out: dict[str, Any] = {}
+    for decision in sorted(counts):
+        n = counts[decision]
+        entry: dict[str, Any] = {"n": n}
+        if n <= 1:
+            entry["statistically_meaningful"] = False
+            entry["note"] = (
+                "single-row class; G4 convention: not statistically meaningful"
+            )
+        out[decision] = entry
+    return out
 
 
 def _agreement_ci(n_agree: int, n_judged: int) -> dict[str, Any]:
@@ -702,6 +837,20 @@ def build_judge_section(
             pos: _agreement([r for r in judged if r.get("arm_relevant") == pos])
             for pos in ("prefix", "suffix")
         },
+        # Reviewer F1 / MED-2: explicit null-free record that the
+        # code-judge stance comparison is not possible on this run root.
+        "code_judge": {
+            "available": False,
+            "reason": (
+                "no code-judge artifact in the G5 run root; the "
+                "deterministic code judge in this program runs on the "
+                "L1 all-81 sample (ADR-012)"
+            ),
+        },
+        # Reviewer F7: row provenance, counts computed from the sample.
+        "row_provenance": _row_provenance(sample_manifest),
+        # Reviewer F8: per-engine-outcome breakdown, data-driven n<=1 flag.
+        "engine_outcome_breakdown": _engine_outcome_breakdown(judged),
         "disagreements": disagreements,
         "quarantined_judge_rows": [
             {
@@ -727,9 +876,12 @@ def build_judge_section(
 
 __all__ = [
     "ADJUDICATION_GROUND_TRUTH_STRINGS",
+    "ADR5_OVERSTATEMENT_LIMITATION",
+    "B1_SCOPE",
     "CAUSAL_WORD_ALLOWED_CONTEXTS",
     "CAUSAL_WORD_CONTEXT_WINDOW",
     "CAUSAL_WORD_MAX_OCCURRENCES",
+    "DEVIATIONS_FROM_CONTRACT",
     "EXPECTED_SAMPLE_ROWS",
     "FROZEN_LIMITATIONS",
     "NOT_CLAIMED",

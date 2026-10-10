@@ -142,21 +142,6 @@ def make_mini_run_root(root: Path) -> Path:
     return root
 
 
-def clone_run_root(src: Path, dst: Path) -> Path:
-    """Deep copy a run root's jsonl/json files into dst (for corruption tests)."""
-    for path in src.rglob("*"):
-        if path.is_file():
-            rel = path.relative_to(src)
-            out = dst / rel
-            out.parent.mkdir(parents=True, exist_ok=True)
-            if path.suffix == ".jsonl":
-                rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
-                write_jsonl(out, copy.deepcopy(rows))
-            else:
-                out.write_text(path.read_text())
-    return dst
-
-
 def mutate_tape(root: Path, pair: int, seq: int, **replacements) -> None:
     path = root / f"pair_{pair}" / "live_tape.jsonl"
     rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
@@ -165,8 +150,3 @@ def mutate_tape(root: Path, pair: int, seq: int, **replacements) -> None:
             r.update(copy.deepcopy(replacements))
             break
     write_jsonl(path, rows)
-
-
-def tape_rows(root: Path, pair: int) -> list[dict]:
-    path = root / f"pair_{pair}" / "live_tape.jsonl"
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]

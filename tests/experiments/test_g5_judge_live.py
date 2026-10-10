@@ -180,6 +180,65 @@ def test_run_g5_judge_cap_abort(mini_run_root):
         )
 
 
+def test_run_g5_judge_cap_abort_records_meta(mini_run_root):
+    # Reviewer MED-4 / F6: on cap breach the run meta is written best-effort
+    # with status "cap_aborted" BEFORE the abort raises.
+    out_dir = mini_run_root.parent / "judge_out_cap"
+    with pytest.raises(Exception, match="hard call cap"):
+        run_g5_judge(
+            mini_run_root,
+            judge_client=MockJudgeClient(),
+            out_dir=out_dir,
+            smoke_first=True,
+            hard_call_cap=2,  # planned 5 > 2
+            expected_rows=4,
+        )
+    meta = json.loads((out_dir / "g5judge_run_meta.json").read_text())
+    assert meta["status"] == "cap_aborted"
+    assert meta["hard_call_cap"] == 2
+    assert meta["n_calls"] == 0
+    assert "timestamp_utc" in meta
+
+
+def test_mock_client_max_calls_enforced():
+    # Reviewer MED-3: MockJudgeClient.max_calls is the tripwire that would
+    # have caught a client-internal double-call. The 1st call succeeds;
+    # the 2nd raises.
+    import asyncio
+
+    client = MockJudgeClient(max_calls=1)
+
+    async def _two_calls():
+        await client.generate_structured([{"role": "user", "content": "1"}])
+        try:
+            await client.generate_structured([{"role": "user", "content": "2"}])
+        except Exception as exc:  # noqa: BLE001 - the asserted tripwire
+            return exc
+        return None
+
+    exc = asyncio.run(_two_calls())
+    assert isinstance(exc, Exception)
+    assert "mock judge call cap" in str(exc)
+    assert len(client.calls) == 2
+
+
+def test_endpoint_config_zero_retries(monkeypatch):
+    # Reviewer HIGH-1: the effective endpoint config MUST carry
+    # max_retries=0 so client-internal retries cannot blow the hard cap.
+    from verdi.config import ModelEndpointConfig
+    from verdi.experiments.g5_judge_live import _resolve_endpoint_config
+
+    monkeypatch.setenv("VERDI_DOTENV_PATH", "/nonexistent/.env")
+    monkeypatch.setenv("VERDI_VLLM_BASE_URL", "http://localhost:9999/v1")
+    monkeypatch.setenv("VERDI_VLLM_MODEL", "Qwen3.8-27B")
+    monkeypatch.setenv("VERDI_VLLM_API_KEY", "sk-testfake123")
+    monkeypatch.setenv("VERDI_MAX_RETRIES", "5")  # default that would leak in
+
+    config = _resolve_endpoint_config()
+    assert isinstance(config, ModelEndpointConfig)
+    assert config.max_retries == 0
+
+
 def test_run_g5_judge_sample_count_assertion(mini_run_root):
     # The mini run has 4 sample rows, not the frozen production 504: the
     # default assert fires with a clear message (run_g5_judge is built for
