@@ -6,6 +6,7 @@ All network is mocked via :class:`MockJudgeClient` (ADR-012
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -252,3 +253,23 @@ def test_run_g5_judge_sample_count_assertion(mini_run_root):
             out_dir=mini_run_root.parent / "judge_out",
             smoke_first=False,
         )
+
+
+def test_load_dotenv_handles_export_prefix(tmp_path, monkeypatch):
+    """The program .env uses `export KEY="value"`; parser must accept it."""
+    fake_key = "sk-" + "test" + "-" + "fake123"  # built from parts; not a real key
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "export VERDI_TEST_BASE_URL=\"https://example/api/v1\"\n"
+        "export VERDI_TEST_MODEL=\"Model-1\"\n"
+        f'export VERDI_TEST_API_KEY="{fake_key}"\n'
+        "# comment line\n"
+    )
+    monkeypatch.delenv("VERDI_TEST_BASE_URL", raising=False)
+    monkeypatch.setenv("VERDI_DOTENV_PATH", str(env_file))
+    from verdi.experiments.g5_judge_live import _load_dotenv_into_environ
+
+    _load_dotenv_into_environ()
+    assert os.environ["VERDI_TEST_BASE_URL"] == "https://example/api/v1"
+    assert os.environ["VERDI_TEST_MODEL"] == "Model-1"
+    assert os.environ["VERDI_TEST_API_KEY"] == fake_key

@@ -156,9 +156,13 @@ def _load_dotenv_into_environ(repo_root: Path | None = None) -> None:
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
+        # The program's .env (repo convention) uses `export KEY="value"`.
+        if line.startswith("export "):
+            line = line[len("export ") :]
         key, _, value = line.partition("=")
         key, value = key.strip(), value.strip().strip("'\"")
-        os.environ.setdefault(key, value)
+        if key:
+            os.environ.setdefault(key, value)
 
 
 def _resolve_endpoint_config() -> ModelEndpointConfig:
