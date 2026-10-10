@@ -291,7 +291,7 @@ class TestDeterminism:
                 rng=random.Random(SEED),
             )
 
-            async def run_call():
+            async def run_call(client=client):
                 try:
                     await client.generate_structured([{"role": "user", "content": "hi"}])
                 finally:
