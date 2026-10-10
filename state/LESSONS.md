@@ -129,3 +129,17 @@ must carry this framing; "same final hash" alone is a measurement illusion.
 
 - Rollback point: dev `95098cd` (pre-live-integration); final `d57689a`
   (provenance path fix, 337 passed / 1 skipped, ruff clean).
+
+**Git process violation: worker shell defaulted to the main checkout (2026-10-10, WS-G5).**
+WS-G5's interrupted attempt had run `git reset --soft` / `git checkout --` in the
+MAIN checkout (integrator's tree) instead of the worktree, because bash session
+working directories do not persist across calls and the session had been created
+in `/Users/sushantgautam/Documents/verdi`. Result: an out-of-scope commit
+(`0e519d9`, ADR-012 deferral note — since accepted by integrator and kept on the
+main checkout) plus a dirty working tree there. Remediation: main checkout
+restored to its committed HEAD (status empty); worktree `verdi-g5pairs` confirmed
+at `26fb369` on `feat/adr013-g5-paired-arms` with only the intended uncommitted
+`driver.py` edit. Rule for all workers: always use explicit `git -C <worktree>`
+(or re-verify `git rev-parse --show-toplevel` after any cd) and never run
+checkout/reset/reset --soft operations without confirming the top-level path
+first.
