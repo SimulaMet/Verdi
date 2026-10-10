@@ -40,18 +40,23 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from verdi.agents.client import ModelClient, ModelResult
+from verdi.agents.client import ModelClient, ModelError, ModelResult
 from verdi.analysis.estimates import (
     ESTIMANDS,
     paired_estimates,
     run_estimand_values,
 )
-from verdi.analysis.report import build_g5_report, write_g5_report
+from verdi.analysis.report import (
+    _validate_arm_run_dict,
+    build_g5_report,
+    write_g5_report,
+)
 from verdi.config import ModelEndpointConfig, model_endpoint_from_env
 from verdi.pilot.driver import PilotDriver, PilotRun
 from verdi.pilot.live import LiveModelAdapter, TapeReplayCaller
@@ -88,6 +93,9 @@ POST_BRANCH_SNAPSHOT_TICKS: tuple[int, ...] = (17, 24, 29)
 N_PAIRS = 10
 HARD_CALL_CAP = 700
 EXPECTED_SUFFIX_CALLS = 47
+#: ADR-013 §5: bounded cross-pair retries on transient endpoint errors
+#: (on top of ModelClient's own per-request retry budget).
+_TRANSIENT_RETRY_LIMIT = 3
 #: Qwen3.8-27B is a reasoning model; propose() passes max_tokens=None and the
 #: completion can come back empty below ~1024 tokens. Force a floor on LIVE
 #: calls only (never replay), so taped rows stay byte-identical to L1 format.
@@ -727,8 +735,6 @@ def build_g5_paired_report(
     "causal" wording is introduced beyond the frozen framing (the frozen
     output contains exactly two negated "causal" occurrences).
     """
-    from verdi.analysis.report import _validate_arm_run_dict
-
     _validate_arm_run_dict("treatment", treatment_run)
     _validate_arm_run_dict("placebo", placebo_run)
     report = build_g5_report(
@@ -865,15 +871,98 @@ def run_g5_pairs(
     # GATE 1: mandatory placebo-inert null control, offline, before any live.
     null_evidence = null_control(l1, repo_root)
 
-    used_calls = 0
     quarantines: list[Any] = []
     pairs_results_pairs: list[tuple[dict[str, Any], dict[str, Any]]] = []
     exemplar_t: dict[str, Any] | None = None
-    exemplar_p: dict[str, Any] | None = None
+    exemplar_p: dict[str, Any] = None
+    used_calls = 0
+
+    def _generate_with_transient_retry(pair_dir: Path) -> list[Any]:
+        """ADR-013 §5: on transient endpoint errors (429/5xx), back off and
+        retry within a bounded budget; persistent failure raises
+        G5PipelineError (caller must STOP and report BLOCKED).
+
+        ModelClient already exhausts its own per-request retry budget
+        (config.max_retries) on 429/502/503 + transport errors before
+        raising ModelError; this layer adds the cross-pair backoff on top.
+        A partial (incomplete) pair dir from a failed attempt is removed
+        so a retry re-runs the pair cleanly (used_calls already reflects
+        calls spent in the failed attempt — conservative budget accounting).
+        """
+        nonlocal used_calls
+        import time
+
+        last: Exception | None = None
+        for attempt in range(1, _TRANSIENT_RETRY_LIMIT + 1):
+            try:
+                tape, used_calls = generate_pair_tape(l1, repo_root, pair_dir, config, used_calls)
+                return tape
+            except G5PipelineError:
+                raise
+            except ModelError as exc:
+                transient = exc.status_code in (429, 500, 502, 503, 504) or exc.status_code is None
+                if not transient:
+                    raise G5PipelineError(
+                        f"non-transient endpoint failure (HTTP "
+                        f"{exc.status_code}): {exc!r} — STOP per ADR-013 §5"
+                    ) from exc
+                last = exc
+                if attempt >= _TRANSIENT_RETRY_LIMIT:
+                    break
+                delay = min(120.0, 15.0 * (2 ** (attempt - 1)))
+                print(
+                    f"[g5-pairs] pair {pair} transient endpoint error "
+                    f"(status={exc.status_code}); backoff {delay:.0f}s "
+                    f"(attempt {attempt}/{_TRANSIENT_RETRY_LIMIT})",
+                    flush=True,
+                )
+                time.sleep(delay)
+            except (ConnectionError, TimeoutError, OSError) as exc:
+                last = exc
+                if attempt >= _TRANSIENT_RETRY_LIMIT:
+                    break
+                delay = min(120.0, 15.0 * (2 ** (attempt - 1)))
+                print(
+                    f"[g5-pairs] pair {pair} transport error "
+                    f"({type(exc).__name__}); backoff {delay:.0f}s "
+                    f"(attempt {attempt}/{_TRANSIENT_RETRY_LIMIT})",
+                    flush=True,
+                )
+                time.sleep(delay)
+        # Drop the partial pair dir so resume logic stays marker-based.
+        shutil.rmtree(pair_dir, ignore_errors=True)
+        raise G5PipelineError(
+            f"persistent endpoint failure on pair {pair} after "
+            f"{_TRANSIENT_RETRY_LIMIT} attempts: {last!r} — STOP per "
+            f"ADR-013 §5, report BLOCKED with this evidence"
+        )
 
     for pair in range(N_PAIRS):
         pair_dir = run_root / f"pair_{pair}"
-        pair_tape, used_calls = generate_pair_tape(l1, repo_root, pair_dir, config, used_calls)
+        pair_dir.mkdir(parents=True, exist_ok=True)
+        # Resume: a pair with both completion markers reuses its saved tape
+        # (byte-identical) instead of spending live calls; the arm folds are
+        # re-run offline below (cheap, deterministic) and re-written.
+        if (pair_dir / f"{TREATMENT_ARM}.done").exists() and (
+            pair_dir / f"{PLACEBO_ARM}.done"
+        ).exists():
+            tape_rows = [
+                json.loads(line)
+                for line in (pair_dir / "live_tape.jsonl").read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            ]
+            live_rows = [r for r in tape_rows if int(r["lifecycle_tick"]) >= SUFFIX_TICK_MIN]
+            if len(live_rows) != EXPECTED_SUFFIX_CALLS:
+                raise G5PipelineError(
+                    f"resume pair {pair}: saved tape has {len(live_rows)} suffix "
+                    f"rows, expected {EXPECTED_SUFFIX_CALLS}"
+                )
+            pair_tape = tape_rows
+            used_calls += len(live_rows)
+            print(f"[g5-pairs] pair {pair}: resume (markers present)", flush=True)
+        else:
+            pair_tape = _generate_with_transient_retry(pair_dir)
+            print(f"[g5-pairs] pair {pair}: live tape generated", flush=True)
         # pair identity check (matching invariants, experiments/pairs.py)
         matched_pair(l1, pair, context)
         t_run = run_arm(repo_root, pair_tape, TREATMENT_ARM, pair_dir / TREATMENT_ARM)
@@ -905,6 +994,9 @@ def run_g5_pairs(
         (pair_dir / PLACEBO_ARM / "event_log.jsonl").write_bytes(p_run.log.to_jsonl_bytes())
         quarantines.extend(f"pair_{pair}:{t}" for t, _ in t_run.quarantined)
         quarantines.extend(f"pair_{pair}:{t}" for t, _ in p_run.quarantined)
+        # Completion markers (both arms folded + persisted) → resumable.
+        (pair_dir / f"{TREATMENT_ARM}.done").write_text("ok\n", encoding="utf-8")
+        (pair_dir / f"{PLACEBO_ARM}.done").write_text("ok\n", encoding="utf-8")
 
     if exemplar_t is None or exemplar_p is None:
         raise G5PipelineError("no pairs completed")
