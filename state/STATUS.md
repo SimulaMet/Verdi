@@ -1,5 +1,7 @@
 # Execution state (integrator-owned)
 
+Update UTC: 2026-10-10 23:40 (post-Tranche 9: operator reviewed and approved the G5-close framework; operator will verify independently and run the other-family cross-judge later on a separately supplied endpoint; model policy confirmed — SimulaChat default Qwen only; dev pushed)
+
 Updated UTC: 2026-10-10 22:15 (Tranche 9: G5-close (ADR-014, Qwen-only) live Qwen judge pass over the G5 paired data + G5-depth bias/leakage audits + identification strategy; independent engineering+science reviews PASS after remediation; G6 public release SKIPPED per operator)
 Repository: SushantGautam/verdi
 Branch: dev (development) / main (public only)
