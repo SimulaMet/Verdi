@@ -289,6 +289,7 @@ class PilotDriver:
         live_capture_dir: str | Path | None = None,
         model_id: str | None = None,
         base_url: str | None = None,
+        appeal_adjudication: tuple[bool, str] | None = None,
     ) -> None:
         root = Path(repo_root) if repo_root else Path(__file__).resolve().parents[3]
         self.repo_root = root
@@ -299,6 +300,10 @@ class PilotDriver:
         self._model = model
         self._model_id = model_id
         self._base_url = base_url
+        # ADR-013: optional treatment-arm override for the tick-12 scripted
+        # appeal adjudication. None keeps the canonical (L1) dismissal
+        # byte-exact; (True, grounds) makes the engine uphold the appeal.
+        self._appeal_adjudication = appeal_adjudication
         # Live capture: one verbatim record per model call (ADR-010),
         # including quarantined proposals. Default dir when a live model is
         # injected but no dir given: runs/live/<UTC-stamp>/.
@@ -725,9 +730,12 @@ class PilotDriver:
                     )
                 )
                 emit_governance(outcome, lifecycle_tick)
+                upheld, grounds = self._appeal_adjudication or (
+                    False,
+                    "evidence from event log is dispositive",
+                )
                 for ev in governance.adjudicate_appeal(
-                    "ap-pilot-1", False, "evidence from event log is dispositive",
-                    lifecycle_tick,
+                    "ap-pilot-1", upheld, grounds, lifecycle_tick,
                 ):
                     emit_governance(ev, lifecycle_tick)
                 appeal_outcomes.extend(governance.appeals.outcomes)
