@@ -88,3 +88,44 @@ This is a *verified* failure record, not a place to invent successes. Integrator
 - Rollback point if regression: dev `d62565a` (pre-P2). Tranche 5 merged
   clean: 291 tests, ruff clean, 5 independent reviews (4 PASS, 1 FAIL
   remediated to PASS on re-review).
+
+## Tranche 6 (LIVE): provenance artifacts must never live in worker worktrees
+
+**What happened.** Two ADR-010 replay-provenance tests silently skipped after
+worker worktrees were cleaned up: they hardcoded ledger paths inside
+`verdi-L1/runs/live/`, a checkout that no longer exists. No test failed —
+the skip guard (skip-if-missing) was doing exactly what it was designed to
+do, hiding that the evidence the tests point at had moved out of existence.
+
+**Root cause.** Live-run provenance artifacts (event ledger) were produced in
+a transient worktree. The run dir in the main checkout (runs/live/<ts>/) was
+the durable home all along, but the original ledger only existed in the
+worktree until it was regenerated there.
+
+**Fix / rule.**
+- Run provenance artifacts belong in the main checkout under `runs/live/<ts>/`
+  (gitignored, durable), NEVER in a worktree path that a merge step deletes.
+- Tests referencing run artifacts must resolve the STABLE location first,
+  with legacy paths only as fallback, and the set of provenance tests should
+  be checked against `pytest -rs` (skip reasons) after any worktree cleanup —
+  a newly appearing skip in a provenance test is a red flag, not a green pass.
+- Regeneration path is proven: `run_pilot_from_live_tape` reproduces the
+  ledger byte-identical (event_hash 126/126), so a stable copy is verifiably
+  the same artifact, not a substitute.
+- Before deleting a worker worktree: `git -C <worktree> status --short`.
+  This session recovered two orphaned pre-existing worktrees (uncommitted
+  307-line test file on a branch merged as an empty no-op; unmerged scheduler
+  stress commits). Both recovered and merged — but only because the worktrees
+  had not yet been deleted.
+
+**Live-model measurement lesson (carried from L1 science review).**
+Qwen3.8-27B is a reasoning model: `reasoning_content` is a separate field
+and `max_tokens` < 1024 can yield empty content. More importantly, an
+identical final state hash across recorded/live/garbage-input runs is
+scaffold invariance (pilot_v1 action_kinds are non-mutating), NOT proof the
+model drove state. Model variance lives in the ledger chain (0/126 shared
+event_hash, 80/126 differing payloads). Any report citing the state hash
+must carry this framing; "same final hash" alone is a measurement illusion.
+
+- Rollback point: dev `95098cd` (pre-live-integration); final `d57689a`
+  (provenance path fix, 337 passed / 1 skipped, ruff clean).

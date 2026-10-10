@@ -1,17 +1,91 @@
 # Execution state (integrator-owned)
 
-Updated UTC: 2026-10-09 22:54 (Tranche 5: P2 counterfactual/treatments/statistics integrated + G5 pre-review remediated)
+Updated UTC: 2026-10-10 10:55 (Tranche 6: LIVE tranche L1+L2 integrated — first live-model run + G4 live SimpleAudit audit + P3 reliability)
 Repository: SushantGautam/verdi
 Branch: dev (development) / main (public only)
-Stage: P1 vertical slice COMPLETE (G3 independently signed off) + P2 counterfactual branching, controlled treatments, G5 statistics + report path integrated
+Stage: P1 vertical slice + P2 (counterfactual/treatments/statistics) + LIVE tranche: first real Qwen3.8-27B run (L1) with full capture + tape replay, G4 live SimpleAudit audit (L2), P3 reliability/scheduler stress
 Gates:
-- G0 (specs/contracts)      PASS — frozen v1 schemas, manifest, contract fixture, P2 preregistration (v1.0 + v1.1 operational addendum)
-- G1 (unit+schemas+format)  PASS — 291 tests, ruff clean
-- G2 (cross-component)      PASS — pilot wires all modules t0-t11; experiments/arms consume world+analysis
-- G3 (replay/invariants)    PASS — confirmed by INDEPENDENT re-review (Tranche 4) + P2 WS-1 re-verified: full 126-event replay byte-identical; branch replay from event 28 reproduces pilot final hash; B1-B5 guarantees tested
-- G4 (SimpleAudit/judge)    PARTIAL — offline remainder closed (Tranche 5/WS-5): absence path, span-name + event_id-correlation contract, judge contract pinned by tests; live SimpleAudit bridge still NOT run (package not installed; expected offline path)
-- G5 (statistical sanity)   PARTIAL — machinery closed: 6/6 preregistered estimands wired (4 exact, 2 via PREREG v1.1 operational addendum), matched-pair + bootstrap CI + null control over real differences, deterministic G5 report artifact; NOT closable offline: needs live randomized paired arms with n_pairs>=10 and non-inert treatment (see residual list)
+- G0 (specs/contracts)      PASS — frozen v1 schemas, manifest, P2 preregistration (v1.0 + v1.1), ADR-010 live-tranche contract (frozen pre-outcome), ADR-011 SimpleAudit
+- G1 (unit+schemas+format)  PASS — 337 tests, ruff clean
+- G2 (cross-component)      PASS — pilot wires all modules; experiments/arms consume world+analysis; live driver consumes agents+world+audit
+- G3 (replay/invariants)    PASS — full 126-event replay byte-identical (recorded AND live); L1 tape replay reproduces the model-driven ledger 126/126 (event_hash + payload); branch B1-B5
+- G4 (SimpleAudit/judge)    PARTIAL — LIVE bridge now RUN (L2): sealed-event_id correlation 81/81, no orphans/duplicates, never positional, SimpleAudit 0.4.0 used where it fits, byte-stable deterministic report. NOT closable for full PASS: fixed 10-sample all-accepted (sole rejection event 42 out-of-sample, 71 unjudged — disclosed), no independent live-judge-model with reported disagreement (needs new ADR + model-call budget), RunReport.simpleaudit_version populating is integrator follow-up
+- G5 (statistical sanity)   PARTIAL — machinery closed (Tranche 5); L1 is a SINGLE live run, adds no paired-arm evidence; residual list intact
 - G6 (public docs)          NOT RUN — P4
+
+## Tranche 6 (this update): LIVE tranche L1 + L2 + P3
+Live environment (credentials in gitignored .env, env vars only, NEVER in Git):
+endpoint OpenAI-compatible (simulachat), model Qwen3.8-27B, SimpleAudit 0.4.0
+installed in .venv. ADR-010 (live contract) + ADR-011 (SimpleAudit) frozen
+BEFORE the live outcome.
+
+L1 (2ba092f + dd70c4f fixes) — first live-model pilot run:
+- 81 real Qwen3.8-27B proposals (temp 0, JSON mode, concurrency 1), 126 ledger
+  events, 0 quarantined, call_count 81 <= 120 budget. Full verbatim capture
+  (prompt + response_raw + usage + reasoning + trace/request ids) to
+  runs/live/20261010T071750Z/ (gitignored). Key verified ABSENT from all
+  artifacts. Final state hash fa30e297...
+- CRITICAL HONEST FRAMING (from independent science review): the identical
+  final state hash is a SCAFFOLD-INVARIANCE property, NOT evidence the model
+  drove substantive state — every pilot_v1 action_kind is NON-mutating
+  (absent from reducer MUTATING_KINDS), so the canonical state hash is fully
+  determined by the deterministic scaffold (seed + scripted governance).
+  The model DID drive the LEDGER: live event_hash 0/126 shared with recorded,
+  80/126 action payloads differ, 70 distinct (action_kind,reason) pairs.
+  Report/STATUS must keep this framing; "reproduced the same final state
+  hash" alone would be a measurement illusion.
+- Reproducibility = reproducible-from-recorded-tape: run_pilot_from_live_tape
+  (TapeReplayCaller) replays the captured tape to a BYTE-IDENTICAL 126-event
+  ledger (event_hash 126/126, payload 126/126, hash fa30e297). Live endpoint
+  itself is not bit-reproducible (documented).
+- Review round: engineering PASS (1 minor: pooling limitation documented),
+  science PASS (1 major doc finding -> fixed). Recorded-path invariance proven
+  byte-identical (reviewer ran parent vs current driver, all outputs identical).
+- Deviation (mechanical, not contract): per-dispatch fresh ModelClient because
+  the driver runs asyncio.run() per dispatch (fresh loop); a single httpx pool
+  can't survive closed loops. Acceptable at concurrency-1/<=120 calls; pooling
+  needed for high throughput (documented).
+
+L2 (f852895 + fix) — G4 live SimpleAudit audit over the captured L1 run:
+- Sealed event_id correlation: 81 tape records <-> 81 dispatch events, 0
+  orphan spans, 0 missing events, 0 duplicates, never positional, ambiguity
+  -> LiveLedgerError (no silent mis-pick). (actor,task) uniqueness guard test
+  pins the pilot_v1 invariant.
+- Judge: SimpleAudit grade_choice_match + normalize_span + validate_decision
+  (code-only, 0 model calls); ModelAuditor/CrossJudge documented as not-fit
+  (need live Target + judge LLM). HONEST METRIC FRAMING (review): measures
+  closed-form compliance-form agreement, DETERMINISTIC on accepted rows, NOT
+  independent model validation. Sample: fixed 10 (first dispatch/tick) = ALL
+  ACCEPTED; sole engine rejection (event 42, tick 11) fell OUTSIDE sample;
+  71 unjudged — all disclosed in report with exact counts + judge_metric section.
+- Deterministic G4 report byte-stable: artifacts/live_audit/g4_live_audit_*.json.
+- Review: engineering PASS; science INCONCLUSIVE (not FAIL) -> F1/F2 disclosure
+  + metric-framing majors FIXED (5908cbb); G4 stays PARTIAL (see residual).
+
+P3 (recovered + new, offline):
+- P3 client retry/backoff soak (eb4a2a0): deterministic, no network, no real
+  sleeps (asyncio.sleep recorder), no credential leakage in errors.
+- P3 scheduler stress (WS-7, dc90d44): determinism at scale (4 signatures
+  incl. reversed input), tie-break reorder under different seeds, full-
+  collision total order, 1000-task permutation identity, causality (perturbed
+  agent moves only its own tasks). Review PASS.
+- P3 reliability soak (WS-6, 8e87597): RECOVERED from a dead worktree where the
+  file was uncommitted and the branch merged as an empty no-op; re-committed on
+  a fresh branch; ruff B023 + zip-strict fixed. 307-line deterministic soak.
+
+## G4 residual (what closes G4 full PASS)
+1. Independent LIVE judge-model pass over the sample (SimpleAudit
+   ModelAuditor/CrossJudge) with reported disagreement — needs a new ADR +
+   model-call budget (judge LLM calls), out of ADR-011 "no new model calls".
+2. A rejection row IN the judge sample (or a run that produces one in-sample)
+   so the compliance-form metric is non-tautological.
+3. RunReport.simpleaudit_version populated from the live audit (integrator
+   follow-up; pilot not modified this tranche).
+
+## G5 residual (unchanged by L1 — single live run adds no paired evidence)
+Live paired arms (non-inert treatment), n_pairs>=10, randomization/identification
+strategy, bias/leakage audits on live data, independent live judge, paraphrase
+leak detection. (See Tranche 5 residual list.)
 
 ## Tranche 5 (this update): P2 workstreams WS-1..WS-5 integrated
 - Frozen BEFORE outcomes (bc5266d): docs/PREREGISTRATION.md v1.0, docs/P2_CONTRACT.md
@@ -133,32 +207,39 @@ Gates:
 - [x] Tranche 3: review-findings remediation
 - [x] Tranche 5: P2 WS-1 branching, WS-2 treatments/pairs, WS-3 statistics,
       WS-4 estimand wiring + G5 report, WS-5 G4 offline remainder
+- [x] Tranche 6: L1 first live run + capture + replay; L2 G4 live SimpleAudit
+      audit; P3 client soak + reliability soak + scheduler stress
+- [ ] G4-close: independent LIVE judge-model pass (new ADR + model-call budget)
 - [ ] P2-live: live paired arms (n_pairs>=10, non-inert treatment) to close G5
-- [ ] P3 GPU performance, reliability, judge validation (needs endpoint)
 - [ ] P4 Curated public release (human-only approval)
 
 ## Rollback point
-Last good checkpoint before this tranche: dev `d62565a`.
-Current: dev `298b75e`.
+Last good checkpoint before this tranche: dev `95098cd` (P2/P3, all tests pass).
+Current: dev `d57689a` (provenance path fix after worktree cleanup).
 
 ## Risks/blockers
-- No authenticated Qwen/vLLM endpoint + SimpleAudit not installed in this env:
-  all model calls are recorded-tape stand-ins; live G4 bridge and G5 need a real
-  endpoint. Credentials from env vars only; none in Git.
+- Live endpoint + SimpleAudit ARE now available (credentials in gitignored
+  .env, env vars only, never in Git). L1 done once (81 calls); further live
+  budget is operator-gated per ADR-010.
+- G4 full PASS and G5 full PASS both require LIVE model-judge / paired-arm
+  budget that is out of scope without a new ADR + operator go-ahead.
+- Qwen3.8-27B is a reasoning model (separate reasoning_content field, 50-900
+  reasoning tokens); max_tokens must be >=1024 or content can be empty.
 - Leak guard is verbatim-containment only; paraphrased leakage out of scope
   (documented in code + tests).
 - Scientific novelty must be re-assessed against emerging research.
 
 ## Next 3 actions
-1. P2-live (blocked offline): stand up live paired arms against an
-   authenticated Qwen/vLLM endpoint with a non-inert treatment, n_pairs >= 10,
-   then close G5 per the residual list above (requires credentials/env the
-   operator must supply).
-2. G4-live (blocked offline): install SimpleAudit on PYTHONPATH (or
-   VERDI_SIMPLEAUDIT_PATH), run the live bridge + independent live judge,
-   report disagreement — then flip G4 to PASS.
-3. P3 prep (offline-doable): reliability/retry soak on the agent client +
-   deterministic scheduler stress fixture, in preparation for GPU runs.
+1. G4-close (operator budget needed): write ADR for an independent LIVE
+   judge-model pass (SimpleAudit ModelAuditor/CrossJudge) over a sample that
+   includes at least one engine-rejected row, run it, report disagreement,
+   then flip G4 to PASS. Requires user approval for judge-LLM model spend.
+2. G5-close (operator budget + non-inert treatment): stand up live paired arms
+   against a tape/scenario that contains an upheld appeal / rights_restored
+   (pilot_v1 appeal is dismissed -> rights_restoration treatment is inert),
+   n_pairs >= 10, then close G5 per the residual list.
+3. RunReport.simpleaudit_version integrator follow-up: populate the field from
+   the live audit so the public report carries the SimpleAudit version.
 
 ## Update discipline
 Append per integrated tranche: date/time UTC, exact dev SHA, workers/branches,
