@@ -50,7 +50,9 @@ from verdi.experiments.g5_pairs import (
 from verdi.experiments.pairs import make_matched_pair, tape_hash
 from verdi.world.reducer import WorldReducer
 
-WORKTREE = Path("/Users/sushantgautam/Documents/verdi-g5pairs")
+# Repo root of the checkout this test file belongs to (works in the main
+# checkout and in any worktree; the null control only needs a git repo).
+WORKTREE = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.skipif(
     not L1_TAPE_PATH.is_file() or not L1_EVENT_LOG_PATH.is_file(),
     reason="L1 live run artifacts not present (run artifacts, not repo assets)",
