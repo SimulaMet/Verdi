@@ -17,7 +17,7 @@ from verdi.world.log import EventLog
 from verdi.world.reducer import WorldReducer
 from verdi.world.replay import TapeStep, replay
 
-REPO_ROOT = Path("/Users/sushantgautam/Documents/verdi")
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 _GOVERNANCE_EVENT = {
     "kind": "amendment_enacted",

@@ -30,7 +30,7 @@ from verdi.world.branch import BranchSpec, branch_from_snapshot, manifest_for_br
 from verdi.world.reducer import WorldReducer
 from verdi.world.replay import replay_in_memory
 
-REPO_ROOT = Path("/Users/sushantgautam/Documents/verdi")
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _branch_point():
