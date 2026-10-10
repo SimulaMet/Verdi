@@ -177,3 +177,36 @@ number without these four disclosures is a measurement illusion.
 
 - Rollback point: dev `26fb369` (pre-G4-merge); current `02a4f20`
   (G4 merged, 358 passed / 1 skipped, ruff clean).
+
+**Tranche 8 lessons (G5 paired arms, dev a1357e8, 2026-10-10).**
+
+**Process (re-applied by integrator; originally written by the WS-G5 worker in
+65c2902, reverted by the worker in bf8c4e8 because state/* is integrator-owned —
+the lesson itself is valid and re-recorded here as an integrator entry).**
+Worker shell session working directories do not persist across bash calls, and
+the session had been created in the MAIN checkout, so a worker `git reset
+--soft`/`git checkout --` landed in the integrator's tree instead of the
+worktree. Rule for all workers: always `git -C <worktree>` (or re-verify
+`git rev-parse --show-toplevel` after any cd); never run
+checkout/reset/reset --soft without first confirming the top-level path; the
+main checkout is integrator-owned and read-only to workers.
+
+**Scientific (the G5 FAIL→PASS core).** A null control that compares two
+artifacts produced by DIFFERENT code versions (L1@eb4a2a0 vs G5@c455958) can
+never be byte-identical — 75/76 suffix hashes and 27/76 payloads differ purely
+from code drift, so the "byte-identical" standard was false-positive-prone AND
+its "catch divergence" test was mis-specified (it corrupted the shared input
+symmetrically, which RELATIVE arm-vs-arm invariants correctly do not flag).
+Lesson: a null control must compare artifacts produced by THE SAME code
+version (same-code invariants over the treatment/placebo arms), and any
+cross-version comparison must disclose the version drift rather than claim
+byte-identity. A "catch divergence" test must inject ASYMMETRIC corruption
+(one arm only) to be a valid trip-wire; add the symmetric-corruption case as
+an explicit NON-divergence regression to pin the false-positive class.
+
+**Process (agent-death recovery).** The G5 worker instance died 6 times on host
+infra errors (503 No renderer connection) at various completion points.
+Recovery was always a pure function of the worktree git state
+(`git -C <worktree> log`/`status`/`diff`), never of agent memory. Keep a
+durable per-task state note in the session files/ dir (commit list, run root,
+report sha, regen recipe) so any successor integrator can finish from disk.

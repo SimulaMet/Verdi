@@ -1,17 +1,95 @@
 # Execution state (integrator-owned)
 
-Updated UTC: 2026-10-10 14:45 (Tranche 7: G4 live-judge pass (ADR-012) integrated + remediated — G5 paired arms (ADR-013) IN FLIGHT)
+Updated UTC: 2026-10-10 19:15 (Tranche 8: G5 paired arms (ADR-013) live run integrated + same-code null control + ADR-013 Addendum A1; G5 closure re-review PASS)
 Repository: SushantGautam/verdi
 Branch: dev (development) / main (public only)
-Stage: P1 vertical slice + P2 + LIVE tranche (L1/L2/P3) + G4 live-judge pass (ADR-012, integrated); G5 live paired arms (ADR-013) in flight
+Stage: P1 vertical slice + P2 + LIVE tranche (L1/L2/P3) + G4 live-judge pass (ADR-012, integrated) + G5 live paired arms (ADR-013, integrated)
 Gates:
-- G0 (specs/contracts)      PASS — frozen v1 schemas, manifest, P2 preregistration (v1.0 + v1.1), ADR-010, ADR-011, ADR-012 (+ Addendum A1, A1-1 DEFERRED by operator), ADR-013
-- G1 (unit+schemas+format)  PASS — 358 tests, ruff clean
+- G0 (specs/contracts)      PASS — frozen v1 schemas, manifest, P2 preregistration (v1.0 + v1.1 + v1.2 erratum), ADR-010, ADR-011, ADR-012 (+ Addendum A1, A1-1 DEFERRED by operator), ADR-013 (+ Addendum A1, A1 frozen pre-merge)
+- G1 (unit+schemas+format)  PASS — 380 tests, ruff clean
 - G2 (cross-component)      PASS — pilot wires all modules; experiments/arms consume world+analysis; live driver + judge_live consume agents+world+audit
-- G3 (replay/invariants)    PASS — full 126-event replay byte-identical (recorded AND live); L1 tape replay 126/126; branch B1-B5
+- G3 (replay/invariants)    PASS — full 126-event replay byte-identical (recorded AND live); L1 tape replay 126/126; branch B1-B5; G5 same-code chain integrity invariants hold (both arms verify)
 - G4 (SimpleAudit/judge)    PARTIAL — live-judge pass RUN (ADR-012): sealed all-81 sample (sole DISPATCH rejection event 42 in-sample), sealed-event_id correlation 81/81, 81 judge calls ≤96 budget, 80/81 agreement (Wilson 95% CI 0.9333–0.9978; per-class CIs, n=1 class flagged), single disagreement (event 42) enumerated as a STRUCTURAL artifact of the code-judge closed-form rule; measured quantity is JUDGE-TO-ENGINE SELF-CONSISTENCY (judge shown engine outcome; blinding satisfied by code judge only), same-family self-judgment disclosed, judge advisor-only, report byte-stable from tape (sha256 2296dcb4…, artifacts/live_audit/g4_judge_20261010T132817Z.json). NOT closable for full PASS: A1-1 independent different-family cross-judge pass DEFERRED by operator — independent-judge evidence pending an operator-supplied endpoint/model
-- G5 (statistical sanity)   PARTIAL — machinery closed (Tranche 5); ADR-013 live paired arms (n_pairs=10) IN FLIGHT (worker on feat/adr013-g5-paired-arms)
+- G5 (statistical sanity)   PARTIAL — machinery closed (Tranche 5) + ADR-013 live paired arms (n_pairs=10, 470 calls, 0 quarantines) INTEGRATED (merge a1357e8): per-pair shared R_p replayed byte-identically into treatment (rights_restored) vs placebo (dismissed); treatment−placebo contrast over all 10 PREREG v1.0/v1.1 estimands (paired, n_pairs=10): exactly ONE estimand changes — false_punishment_rate 0.0→+1.0 (CI [1.0, 1.0], zero-variance by construction, the DESIGNED effect of the upheld appeal under the PREREG v1.1 operational definition); the other five are 0.0 (time_under_deprivation 0.0 is restoration-blind by construction, ADR-013 A1.3) — same-code null control (sealed prefix / aligned suffix / folded finals / chain integrity) PASSES with L1@eb4a2a0 vs G5@c455958 version drift disclosed; scaffold invariance final_state_hash fa30e297… held on all 10 pairs; report byte-stable (sha256 fbc1fe13…). Independent science closure re-review PASS (2026-10-10). Residuals: see "G5 residual" below (no randomization → no causal claims; no live judge on paired data; single scenario)
 - G6 (public docs)          NOT RUN — P4
+
+## Tranche 8 (this update): G5 paired arms (ADR-013) integrated — dev a1357e8
+G5 live paired-arms run (ADR-013) merged to dev serially (merge commit
+a1357e8, 2026-10-10), after independent engineering review PASS + science
+review FAIL → remediation → science closure re-review PASS. Worker
+feat/adr013-g5-paired-arms (branch base 26fb369; final branch commits
+0600a62 + f48f4ae). Merge topology verified safe: G5 branch touched only
+4 files, none also changed by dev → zero conflicts; G5-side state/ net
+zero → dev's state and the ADR-012 DEFERRED version preserved verbatim.
+
+Live run (runs/live/g5_pairs/20261010T162928Z/, gitignored): 10 pairs,
+470 live Qwen3.8-27B calls (10 × 47 shared R_p), 0 quarantines, under
+HARD_CALL_CAP 700. After sealed L1 event 49 (appeal_filed),
+one shared R_p response tape (47 calls) is replayed BYTE-IDENTICALLY into
+both arms; arms diverge at exactly one event — treatment: engine-sourced
+appeal_upheld + rights_restored (frozen adjudication override, grounds
+frozen pre-run); placebo: verbatim L1 appeal_dismissed. Scaffold
+invariance (restoration is a state change, not a scaffold change) held on
+ALL 10 pairs: identical final_state_hash
+fa30e29786877c6534013a2f6a2683a6d19e1cb136a66830d35cd9a8defdd582, 127
+treatment vs 126 placebo events (the +1 is rights_restored).
+
+Scientific results (treatment − placebo, paired, n_pairs=10): exactly ONE of
+the six PREREG estimands changes —
+false_punishment_rate 0.0→+1.0 (CI [1.0, 1.0], zero-variance by
+construction: an upheld appeal classifies the sanction as false under the
+PREREG v1.1 operational definition, so +1.0 is the DESIGNED effect of a
+functioning restoration path, ADR-013 A1.2). The other five are all
+0.0 across arms (time_under_deprivation 3.0==3.0, welfare_mean_food
+5.0==5.0, safety_rate, inequality_gini_food, sustained_recovery all
+unchanged — including #6, whose 0.0 delta is restoration-blind by
+construction, ADR-013 A1.3). Honest reading: the manipulation's observable
+effect is confined to the ledger's sanction-status classification;
+welfare/inequality/safety/food metrics are unaffected by the adjudication
+outcome in this scenario.
+
+Null control (the FAIL→PASS core fix): the cross-version byte-identity
+standard (L1@eb4a2a0 vs G5@c455958, 4 driver commits: 2ba092f, dd70c4f,
+b48beab, 1c62a2e) was RETIRED — 75/76 suffix hashes and 27/76 payloads
+necessarily differ across code versions, so byte-identity could never hold
+(and its "catch divergence" test was mis-specified to symmetric
+corruption of RELATIVE invariants). Re-founded on same-code invariants
+over the two arms (both computed at G5 code): (a) sealed prefix
+events 0..49 byte-identical across T/P/L1; (b) aligned suffix (L1 50..125
+vs P 50..125, T 50..126) identical except adjudication events + the 5
+chain bookkeeping fields; (c) equal folded finals T==P==L1 (fa30e297…);
+(d) both hash chains verify. version_drift disclosed in the report; no
+cross-version byte-identity claimed. New regression tests: asymmetric
+divergence still caught; symmetric input corruption NOT flagged as
+divergence (the false-positive class the retired standard produced).
+
+ADR-013 Addendum A1 (frozen pre-merge, commit f48f4ae): A1.1
+null-control standard retirement + re-founding; A1.2
+false_punishment_rate direction + restoration-blindness; A1.3 #6
+deprivation_duration restoration-blindness; A1.4 report corrections
+(relabelling, stale-limitation removal, numeric cross-pair replication
+spread 0.0 over 10 distinct R_p tapes, causal guard 3); A1.5 residual
+honesty.
+
+Report: artifacts/g5/g5_paired_report_pilot_v1.json (gitignored),
+regenerated OFFLINE from live tapes (pure replay, no network; double-build
+byte-stable) — sha256
+fbc1fe134c1167d2fafe51e77ec43fde605f76a690d5f89f7d469c4df72c5eb6.
+
+Verification (post-merge, dev a1357e8, main checkout): pytest →
+380 passed, 1 skipped (8.20s); ruff check . → All checks passed. driver.py
+merge verified minimal (optional appeal_adjudication param, default None
+= canonical L1 dismissal byte-exact → L1/replay behavior unchanged).
+Closure re-review (independent, 2026-10-10): all 7 FAIL findings RESOLVED
+with line-level evidence; NF-1 (PREREG:101 erratum) addressed by
+PREREG v1.2 erratum below; NF-2 informational (relabelled block retains
+frozen values, now semantically coherent).
+
+Operator model policy (absolute, restated): ONLY Qwen3.8-27B on the
+simulachat endpoint (key in gitignored .env). glm-5-2-fp8 BANNED
+(unverified); cross-judge (ADR-012 A1-1) DEFERRED pending an
+operator-supplied different endpoint — ADR-012 on dev unchanged by this
+merge (verified: no diff vs 622fe80, no active GLM instruction).
 
 ## Tranche 7 (this update): G4 live-judge pass (ADR-012) + A1-2 remediation
 Operator granted unlimited budget on the simulachat endpoint (Qwen3.8-27B)
@@ -132,10 +210,22 @@ P3 (recovered + new, offline):
 3. RunReport.simpleaudit_version populated from the live audit (integrator
    follow-up; pilot not modified this tranche).
 
-## G5 residual (unchanged by L1 — single live run adds no paired evidence)
-Live paired arms (non-inert treatment), n_pairs>=10, randomization/identification
-strategy, bias/leakage audits on live data, independent live judge, paraphrase
-leak detection. (See Tranche 5 residual list.)
+## G5 residual (updated by Tranche 8 — live paired arms now run)
+CLOSED by Tranche 8 (dev a1357e8): live paired arms with a non-inert
+treatment (appeal_upheld + rights_restored), n_pairs=10, real per-estimand
+paired differences (false_punishment_rate +1.0, CI [1.0, 1.0] by
+construction; other five 0.0), same-code null control (invariants a–d)
+PASSES with version drift disclosed, scaffold invariance on all 10 pairs.
+STILL OPEN (honest residuals; see G5 residual list below): (3)
+randomization/identification — the single scripted adjudication is a
+DETERMINISTIC manipulation, not randomized, so results support a
+within-pair T−P contrast, NOT a causal claim (report guard: "causal"
+appears 3×, all negated); (4) bias/leakage audits at G5 depth on the
+paired data not run; (5) no live model-judge pass over the paired data
+(judge is G4/ADR-012, on the L1 sample; G4 cross-family judge still
+DEFERRED); (6) paraphrase leak detection out of scope (verbatim
+containment only); single scenario (pilot, 3 agents, 1 appeal). G5
+therefore remains PARTIAL, honestly framed.
 
 ## Tranche 5 (this update): P2 workstreams WS-1..WS-5 integrated
 - Frozen BEFORE outcomes (bc5266d): docs/PREREGISTRATION.md v1.0, docs/P2_CONTRACT.md
@@ -179,14 +269,19 @@ leak detection. (See Tranche 5 residual list.)
   estimands, randomized=false, null_control passed=true; gitignored by design).
 
 ## G5 residual list (what evidence closes G5) — from independent review
-1. Live paired arms (real model, not recorded tape) with a non-inert treatment.
-2. n_pairs >= 10 per estimand so real CIs are computed (currently 1 pair, CIs
-   withheld by design).
-3. Randomization or an explicit identification strategy for the treatment effect.
-4. Bias/leakage audits on live data (self-report vs observed behavior probes).
-5. Independent judge running on live probes (not the offline rubric only).
-6. Paraphrase-level leak detection (verbatim containment only today).
-7. G4 live SimpleAudit bridge (same blocker: package + endpoint absent).
+1. [CLOSED Tranche 8] Live paired arms (real model) with a non-inert treatment.
+2. [CLOSED Tranche 8] n_pairs >= 10 per estimand with real per-pair 95% CIs.
+3. [OPEN] Randomization or an explicit identification strategy for the
+   treatment effect (Tranche 8 used a deterministic scripted manipulation —
+   within-pair T−P contrast only, no causal claim).
+4. [OPEN] Bias/leakage audits on live data (self-report vs observed behavior
+   probes) at G5 depth on the paired data.
+5. [OPEN] Independent judge running on live probes — no live model-judge pass
+   over the PAIRED data (G4/ADR-012 judge ran on the L1 sample only; G4
+   cross-family judge DEFERRED, operator endpoint pending).
+6. [OPEN] Paraphrase-level leak detection (verbatim containment only today).
+7. [CLOSED Tranche 6] G4 live SimpleAudit bridge (SimpleAudit 0.4.0 installed;
+   endpoint available).
 
 ## Tranche 4 (this update): independent re-review + follow-up fixes
 - Both independent re-reviews of Tranche 3 (engineering + science) returned
@@ -260,14 +355,20 @@ leak detection. (See Tranche 5 residual list.)
 - [x] Tranche 6: L1 first live run + capture + replay; L2 G4 live SimpleAudit
       audit; P3 client soak + reliability soak + scheduler stress
 - [x] Tranche 7: G4 live-judge pass (ADR-012) implemented + remediated + merged
+- [x] Tranche 8: G5 live paired arms (ADR-013, n_pairs=10) live run + same-code
+      null control + ADR-013 Addendum A1, merged (dev a1357e8); G5 PARTIAL with
+      honest residuals
 - [ ] G4-close REMAINING: independent different-family cross-judge pass
       (ADR-012 A1-1, DEFERRED — pending operator-supplied endpoint/model)
-- [ ] P2-live: G5 live paired arms (ADR-013, IN FLIGHT, n_pairs=10) to close G5
+- [ ] G5-close REMAINING: randomization/identification strategy + live
+      bias/leakage audits at G5 depth + live model-judge over paired data
+      (operator-gated; needs new ADR + budget)
 - [ ] P4 Curated public release (human-only approval)
 
 ## Rollback point
-Last good checkpoint before this tranche: dev `26fb369` (ADR-012 A1 addendum; all tests pass).
-Current: dev `02a4f20` (G4 live-judge pass + A1-2 remediation merged, 358 tests pass, ruff clean).
+Last good checkpoint before this tranche: dev `622fe80` (Tranche 7 state; G4 live-judge pass merged; all tests pass).
+Current: dev `a1357e8` (Tranche 8: G5 paired arms (ADR-013) merged + same-code null control + ADR-013 Addendum A1; 380 tests pass, ruff clean).
+To roll back this tranche: `git reset --hard 622fe80` (removes only the G5 merge; G4 + everything prior intact).
 
 ## Risks/blockers
 - Live endpoint + SimpleAudit ARE now available (credentials in gitignored
@@ -282,17 +383,22 @@ Current: dev `02a4f20` (G4 live-judge pass + A1-2 remediation merged, 358 tests 
 - Scientific novelty must be re-assessed against emerging research.
 
 ## Next 3 actions
-1. G5-close (IN FLIGHT, operator budget granted): finish the ADR-013 live
-   paired-arms run (n_pairs=10, treatment=engine-sourced appeal_upheld +
-   rights_restoration vs placebo=dismissed) on feat/adr013-g5-paired-arms,
-   pass independent engineering+science review, serial-merge to dev, then
-   evaluate G5 against the residual list.
+1. G5-close REMAINING (operator-gated, new ADR + budget): add a
+   randomization/identification strategy (e.g. randomized treatment arm or
+   explicit identification argument), live bias/leakage audits at G5 depth
+   on the paired data, and a live model-judge pass over the paired sample.
+   Tranche 8 delivered the deterministic within-pair T−P contrast (n_pairs=10;
+   only false_punishment_rate moved, +1.0 by construction) with an honest
+   no-causal-claim framing — it is real experimental evidence but not causal.
 2. G4-close REMAINING (operator endpoint needed): ADR-012 A1-1 independent
    different-family cross-judge pass — DEFERRED; operator will supply a
    different endpoint/model. On receipt, run the A1-1 pass (contract frozen)
-   and flip G4 to PASS with the cross-family agreement evidence.
-3. RunReport.simpleaudit_version: DONE (Tranche 6 follow-up, commit b48beab);
-   carried into Tranche 7 via the judge_live report's simpleaudit_version.
+   and flip G4 to PASS with the cross-family agreement evidence. Only
+   Qwen3.8-27B/simulachat may be used until then (glm-5-2-fp8 banned).
+3. G6 public release (human-only): curated dev→main release (excludes
+   AGENTS.md, .github/agents|prompts|skills, internal docs/*, state/*) after
+   human review. RunReport.simpleaudit_version carried through all live
+   reports (Tranche 6 b48beab → G4 → G5).
 
 ## Update discipline
 Append per integrated tranche: date/time UTC, exact dev SHA, workers/branches,
