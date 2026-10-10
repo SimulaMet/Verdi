@@ -97,9 +97,12 @@ EXPECTED_SUFFIX_CALLS = 47
 #: (on top of ModelClient's own per-request retry budget).
 _TRANSIENT_RETRY_LIMIT = 3
 #: Qwen3.8-27B is a reasoning model; propose() passes max_tokens=None and the
-#: completion can come back empty below ~1024 tokens. Force a floor on LIVE
-#: calls only (never replay), so taped rows stay byte-identical to L1 format.
-LIVE_MAX_TOKENS = 2048
+#: completion can come back empty when the budget runs out inside reasoning.
+#: Force a floor on LIVE calls only (never replay), so taped rows stay
+#: byte-identical to L1 format. L1's own completions reached 6307 tokens
+#: (reasoning-dominated); pair_0 at 2048 truncated 12/47 calls to
+#: text_tokens=0, so the floor is 8192 (headroom over L1's observed max).
+LIVE_MAX_TOKENS = 8192
 
 TREATMENT_GROUNDS = "upheld-appeal treatment arm"
 TREATMENT_ARM = "treatment"
@@ -308,11 +311,12 @@ def generate_pair_tape(
 ) -> tuple[list[dict[str, Any]], int]:
     """Generate ONE shared R_p live (pair tape = 34 replayed + 47 live rows).
 
-    Returns ``(pair_tape_rows, used_calls_after)``. Cost: exactly
+    Returns ``(pair_tape_rows, used_calls_after, quarantined)``. Cost: exactly
     ``EXPECTED_SUFFIX_CALLS`` live endpoint calls; bounded retries on
     429/5xx are inside ModelClient. Budget is enforced by the caller via
     ``used_calls`` and the ``HARD_CALL_CAP``. Persistent endpoint failure
     propagates and must be handled per ADR-013 §5 (STOP + evidence).
+    Quarantined (unparseable) proposals are returned, not raised.
     """
     if used_calls + EXPECTED_SUFFIX_CALLS > HARD_CALL_CAP:
         raise G5PipelineError(
@@ -329,9 +333,7 @@ def generate_pair_tape(
         base_url=config.base_url,
         live_capture_dir=pair_dir,
     )
-    run = driver.run()
-    if run.quarantined:
-        raise G5PipelineError(f"R_p generation produced quarantined proposals: {run.quarantined}")
+    driver.run()
     pair_tape = [
         json.loads(line)
         for line in (pair_dir / "live_tape.jsonl").read_text(encoding="utf-8").splitlines()
@@ -346,7 +348,13 @@ def generate_pair_tape(
         raise G5PipelineError(
             f"live caller made {caller.live_call_count} calls, expected {EXPECTED_SUFFIX_CALLS}"
         )
-    return pair_tape, used_calls + caller.live_call_count
+    # Quarantined (unparseable) proposals are recorded model behavior, NOT a
+    # pipeline bug: L1 format tolerates them (its own ledger folds rejected
+    # actions). They are surfaced as audit evidence, not a hard stop.
+    quarantined = [
+        (r.get("task_id"), r.get("quarantine_reason")) for r in live_rows if r.get("quarantined")
+    ]
+    return pair_tape, used_calls + caller.live_call_count, quarantined
 
 
 # --------------------------------------------------------------------------- #
@@ -870,7 +878,7 @@ def run_g5_pairs(
     exemplar_p: dict[str, Any] = None
     used_calls = 0
 
-    def _generate_with_transient_retry(pair_dir: Path) -> list[Any]:
+    def _generate_with_transient_retry(pair_dir: Path) -> tuple[list[Any], list[tuple[Any, Any]]]:
         """ADR-013 §5: on transient endpoint errors (429/5xx), back off and
         retry within a bounded budget; persistent failure raises
         G5PipelineError (caller must STOP and report BLOCKED).
@@ -888,8 +896,10 @@ def run_g5_pairs(
         last: Exception | None = None
         for attempt in range(1, _TRANSIENT_RETRY_LIMIT + 1):
             try:
-                tape, used_calls = generate_pair_tape(l1, repo_root, pair_dir, config, used_calls)
-                return tape
+                tape, used_calls, quar = generate_pair_tape(
+                    l1, repo_root, pair_dir, config, used_calls
+                )
+                return tape, quar
             except G5PipelineError:
                 raise
             except ModelError as exc:
@@ -954,8 +964,12 @@ def run_g5_pairs(
             used_calls += len(live_rows)
             print(f"[g5-pairs] pair {pair}: resume (markers present)", flush=True)
         else:
-            pair_tape = _generate_with_transient_retry(pair_dir)
-            print(f"[g5-pairs] pair {pair}: live tape generated", flush=True)
+            pair_tape, tape_quarantined = _generate_with_transient_retry(pair_dir)
+            print(
+                f"[g5-pairs] pair {pair}: live tape generated "
+                f"({len(tape_quarantined)} quarantined)",
+                flush=True,
+            )
         # pair identity check (matching invariants, experiments/pairs.py)
         matched_pair(l1, pair, context)
         t_run = run_arm(repo_root, pair_tape, TREATMENT_ARM, pair_dir / TREATMENT_ARM)
@@ -987,6 +1001,8 @@ def run_g5_pairs(
         (pair_dir / PLACEBO_ARM / "event_log.jsonl").write_bytes(p_run.log.to_jsonl_bytes())
         quarantines.extend(f"pair_{pair}:{t}" for t, _ in t_run.quarantined)
         quarantines.extend(f"pair_{pair}:{t}" for t, _ in p_run.quarantined)
+        quarantines.extend(f"pair_{pair}:R_p:{task}" for task, _ in tape_quarantined)
+        quarantines = sorted(set(quarantines))
         # Completion markers (both arms folded + persisted) → resumable.
         (pair_dir / f"{TREATMENT_ARM}.done").write_text("ok\n", encoding="utf-8")
         (pair_dir / f"{PLACEBO_ARM}.done").write_text("ok\n", encoding="utf-8")
