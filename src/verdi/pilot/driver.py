@@ -21,10 +21,11 @@ import asyncio
 import hashlib
 import json
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from verdi.agents.policy import AgentPolicy
+from verdi.agents.policy import AgentPolicy, ModelCaller
 from verdi.agents.recorded import RecordedModel
 from verdi.analysis.metrics import (
     attempted_vs_executed_violations,
@@ -269,29 +270,48 @@ class PilotRun:
 
 
 class PilotDriver:
-    """Drives one deterministic recorded-output pilot run over pilot_v1."""
+    """Drives one pilot run over pilot_v1 (recorded output, or a live model)."""
 
-    def __init__(self, repo_root: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        repo_root: str | Path | None = None,
+        *,
+        model: ModelCaller | None = None,
+        live_capture_dir: str | Path | None = None,
+        model_id: str | None = None,
+        base_url: str | None = None,
+    ) -> None:
         root = Path(repo_root) if repo_root else Path(__file__).resolve().parents[3]
         self.repo_root = root
         self.loader = ScenarioLoader(
             root / "experiments" / "scenarios" / "pilot_v1.json",
             root / "experiments" / "task_tape" / "pilot_v1.json",
         )
+        self._model = model
+        self._model_id = model_id
+        self._base_url = base_url
+        # Live capture: one verbatim record per model call (ADR-010),
+        # including quarantined proposals. Default dir when a live model is
+        # injected but no dir given: runs/live/<UTC-stamp>/.
+        if live_capture_dir is None and model is not None:
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+            live_capture_dir = root / "runs" / "live" / stamp
+        self._live_capture_dir = Path(live_capture_dir) if live_capture_dir else None
 
     # ------------------------------------------------------------------ #
     def run(self, out_dir: str | Path | None = None) -> PilotRun:
         loaded = self.loader.load()
         seed = loaded.t0_state.seed
         agent_ids = sorted(loaded.t0_state.agents)
+        live = self._model is not None
         manifest = ExperimentManifest(
             schema_version=1,
             experiment_id=EXPERIMENT_ID,
             world_id=loaded.t0_state.world_id,
             run_seed=seed,
             branch_origin=None,
-            model_endpoint_alias="recorded-tape",
-            model_fingerprint="recorded-tape/agent-policy-prompt/1",
+            model_endpoint_alias="live" if live else "recorded-tape",
+            model_fingerprint="live-agent-policy-prompt/1" if live else "recorded-tape/agent-policy-prompt/1",
             sampling={"temperature": 0.0},
             framework_versions={"verdi": "0.0.1"},
             treatment_seed=seed,
@@ -344,7 +364,109 @@ class PilotDriver:
             t.task_id: t for tick_tasks in loaded.tape for t in tick_tasks
         }
         tape_outputs = [model_output_for(tasks_by_id[tid].action_type) for _, tid, _ in dispatch]
-        model = RecordedModel(tape_outputs)
+        model = self._model if live else RecordedModel(tape_outputs)
+
+        # --- Live capture (ADR-010) ------------------------------------- #
+        # One verbatim JSON object per model call, including quarantined
+        # proposals, appended to {live_capture_dir}/live_tape.jsonl.
+        live_tape_path = None
+        live_meta_path = None
+        live_quarantined_calls = 0
+        live_start_utc = datetime.now(timezone.utc).isoformat()
+        if live and self._live_capture_dir is not None:
+            self._live_capture_dir.mkdir(parents=True, exist_ok=True)
+            live_tape_path = self._live_capture_dir / "live_tape.jsonl"
+            live_meta_path = self._live_capture_dir / "live_run_meta.json"
+            live_tape_path.touch()
+
+        def capture_live_call(
+            *,
+            prompt: str,
+            result: Any,
+            parsed_action: Any,
+            quarantined: bool,
+            quarantine_reason: str | None,
+            task_id: str,
+            actor_id: str,
+            lifecycle_tick: int,
+        ) -> None:
+            nonlocal live_quarantined_calls
+            if live_tape_path is None:
+                return
+            if quarantined:
+                live_quarantined_calls += 1
+            record = {
+                "seq": len(live_tape_path.read_text().splitlines()),
+                "lifecycle_tick": lifecycle_tick,
+                "task_id": task_id,
+                "actor_id": actor_id,
+                "prompt": prompt,
+                "response_raw": result.content,
+                "parsed_action": (
+                    parsed_action.model_dump() if parsed_action is not None else None
+                ),
+                "quarantined": quarantined,
+                "quarantine_reason": quarantine_reason,
+                "request_id": result.request_id,
+                "trace_id": result.trace_id,
+                "model": result.model,
+                "usage": result.usage,
+                "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+            }
+            with live_tape_path.open("a", encoding="utf-8") as fh:
+                fh.write(json.dumps(record, sort_keys=True) + "\n")
+
+        def write_live_meta() -> None:
+            if live_meta_path is None or live_tape_path is None:
+                return
+            git_sha = None
+            try:
+                import subprocess
+
+                git_sha = subprocess.run(
+                    ["git", "-C", str(self.repo_root), "rev-parse", "HEAD"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                ).stdout.strip() or None
+            except (OSError, subprocess.SubprocessError):
+                git_sha = None
+            simpleaudit_version = None
+            try:
+                import importlib.metadata
+
+                simpleaudit_version = importlib.metadata.version("simpleaudit")
+            except importlib.metadata.PackageNotFoundError:
+                simpleaudit_version = None
+            import os
+
+            meta = {
+                "model_id": self._model_id or "injected-model-caller",
+                "base_url": self._base_url,
+                "base_url_env_var": "VERDI_VLLM_BASE_URL",
+                "endpoint_env_vars": sorted(
+                    name
+                    for name in (
+                        "VERDI_VLLM_BASE_URL",
+                        "VERDI_VLLM_MODEL",
+                        "VERDI_VLLM_API_KEY",
+                        "VERDI_MAX_CONCURRENCY",
+                        "VERDI_REQUEST_TIMEOUT",
+                        "VERDI_MAX_RETRIES",
+                    )
+                    if os.environ.get(name)
+                ),
+                "temperature": 0.0,
+                "start_utc": live_start_utc,
+                "end_utc": datetime.now(timezone.utc).isoformat(),
+                "call_count": len(live_tape_path.read_text().splitlines()),
+                "quarantined_count": live_quarantined_calls,
+                "git_dev_sha": git_sha,
+                "simpleaudit_version": simpleaudit_version,
+            }
+            live_meta_path.write_text(
+                json.dumps(meta, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+            )
 
         state = loaded.t0_state
         # Scripted attempted violation: the first dispatch step of _SANCTION_TICK
@@ -442,12 +564,38 @@ class PilotDriver:
                 task = tasks_by_id[task_id]
                 agent = state.agents[actor_id]
                 policy = AgentPolicy(model, actor_id)
+                prompt = (
+                    policy.build_prompt(
+                        task,
+                        role=agent.role,
+                        persona_summary=agent.persona_summary,
+                        tick=lifecycle_tick,
+                    )
+                    if live
+                    else None
+                )
                 result = asyncio.run(
                     policy.propose(
                         task, role=agent.role, persona_summary=agent.persona_summary,
                         tick=lifecycle_tick,
                     )
                 )
+                if live:
+                    raw = getattr(model, "last_result", None)
+                    if raw is None:
+                        raise RuntimeError(
+                            "live model caller must expose last_result after each call"
+                        )
+                    capture_live_call(
+                        prompt=getattr(model, "last_prompt", prompt) or prompt,
+                        result=raw,
+                        parsed_action=result.action,
+                        quarantined=result.quarantine_reason is not None,
+                        quarantine_reason=result.quarantine_reason,
+                        task_id=task.task_id,
+                        actor_id=actor_id,
+                        lifecycle_tick=lifecycle_tick,
+                    )
                 if result.quarantine_reason is not None:
                     quarantined.append((task.task_id, result.quarantine_reason))
                     action = ProposedAction(
@@ -611,6 +759,20 @@ class PilotDriver:
                 governance.sanctions.history, loaded.meta.total_ticks - 1
             ),
         }
+        limitations = (
+            [
+                "live pilot: endpoint nondeterminism acknowledged; "
+                "reproducible from recorded live tape (ADR-010)",
+            ]
+            if live
+            else [
+                "recorded-output pilot: no live Qwen/vLLM interaction was measured",
+            ]
+        ) + [
+            "probe responses are deterministic stand-ins, not LLM behavior",
+            "single run: no replication, no uncertainty estimate for drift",
+            "gini uses agent-held food only; world resources excluded",
+        ]
         report = RunReport(
             manifest=manifest,
             lifecycle_ticks={
@@ -628,18 +790,15 @@ class PilotDriver:
                 "quarantined_actions": [t for t, _ in quarantined],
                 "skipped_tasks": skipped,
             },
-            limitations=[
-                "recorded-output pilot: no live Qwen/vLLM interaction was measured",
-                "probe responses are deterministic stand-ins, not LLM behavior",
-                "single run: no replication, no uncertainty estimate for drift",
-                "gini uses agent-held food only; world resources excluded",
-            ],
+            limitations=limitations,
         )
         if out_dir is not None:
             out = Path(out_dir)
             out.mkdir(parents=True, exist_ok=True)
             report.write(out / "pilot_report.json")
             (out / "event_log.jsonl").write_bytes(log.to_jsonl_bytes())
+
+        write_live_meta()
 
         return PilotRun(
             loaded=loaded,
