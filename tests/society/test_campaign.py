@@ -634,3 +634,77 @@ def test_artifacts_written_and_manifest_sealed(scenario, tmp_path):
     health = json.loads((tmp_path / "health.json").read_text(encoding="utf-8"))
     assert health["model_calls"] == len(res.model_calls)
     assert health["log_verify"] is True
+
+
+def test_parallel_assembly_does_not_change_outcomes(scenario, tmp_path, monkeypatch):
+    """Tranche 12f: running the same scripted campaign with the sequential
+    batch runner (legacy path) vs the bounded-parallel runner must yield the
+    same final state hash and byte-identical ledger — only
+    model_calls.jsonl row order may differ (telemetry, not state). Also
+    asserts the parallel path actually overlaps model calls."""
+    import copy
+
+    from verdi.governance.assembled import _run_sequential
+    from verdi.society import campaign as campaign_module
+
+    class ConcurrencyProbeCaller(ScriptedCaller):
+        def __init__(self, *a, **kw) -> None:
+            super().__init__(*a, **kw)
+            self._inflight: dict[str, int] = {}
+            self.max_inflight: dict[str, int] = {}
+
+        async def generate_structured(self, messages, **kwargs):
+            content = messages[0]["content"]
+            if "[assembly:" in content:
+                purpose = "assembly"
+            elif "verdi.reflection" in content:
+                purpose = "reflection"
+            else:
+                purpose = "other"
+            # Count, then suspend across several event-loop turns (while
+            # still counted) so a genuinely parallel batch has the other
+            # coroutines start before this one finishes. A fake with no real
+            # suspension point would otherwise serialize under any runner.
+            self._inflight[purpose] = self._inflight.get(purpose, 0) + 1
+            self.max_inflight[purpose] = max(
+                self.max_inflight.get(purpose, 0), self._inflight[purpose]
+            )
+            for _ in range(3):
+                await asyncio.sleep(0)
+            try:
+                return await super().generate_structured(messages, **kwargs)
+            finally:
+                self._inflight[purpose] -= 1
+
+    def run(parallel: bool) -> tuple[Any, dict[str, int]]:
+        caller = ConcurrencyProbeCaller(enact=True)
+        campaign = SocietyCampaign(
+            scenario=copy.deepcopy(scenario),
+            run_dir=tmp_path / ("par" if parallel else "seq"),
+            caller=caller, run_seed=20261011, concurrency=10,
+        )
+        if not parallel:
+            # force the legacy sequential assembly/reflection path
+            monkeypatch.setattr(campaign_module, "_run_bounded", _run_sequential)
+        res = asyncio.run(campaign.run())
+        return res, caller.max_inflight
+
+    res_seq, max_seq = run(parallel=False)
+    # undo the forced-sequential patch so the parallel run genuinely uses
+    # _run_bounded (monkeypatch holds it for the whole test otherwise)
+    monkeypatch.undo()
+    res_par, max_par = run(parallel=True)
+    assert res_seq.final_state_hash == res_par.final_state_hash
+    assert res_seq.state.model_dump() == res_par.state.model_dump()
+    seq_ledger = (tmp_path / "seq" / "events.jsonl").read_bytes()
+    par_ledger = (tmp_path / "par" / "events.jsonl").read_bytes()
+    assert seq_ledger == par_ledger
+    assert res_par.replay_matches is True
+    assert res_par.replay_log_identical is True
+    # the parallel path must genuinely overlap assembly model calls; the
+    # forced sequential path must not (action-tick calls run in their own
+    # TaskPool in both paths and are not what's under test)
+    assert max_par.get("assembly", 0) > 1
+    assert max_seq.get("assembly", 0) == 1
+    assert max_par.get("reflection", 0) > 1
+    assert max_seq.get("reflection", 0) == 1

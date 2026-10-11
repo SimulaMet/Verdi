@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -42,6 +43,42 @@ class ProposalDraft:
     submitted_by: str
     change_summary: str
     payload: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class _DelibCallResult:
+    """Raw outcome of ONE voter's deliberation model call (no engine mutation).
+
+    Exactly one of the three states: abstained, error (quarantine), or a
+    candidate proposal (summary/payload may still fail schema checks later).
+    """
+
+    summary: Any = None
+    payload: Any = None
+    abstained: bool = False
+    error: str | None = None
+
+
+@dataclass(frozen=True)
+class _VoteCallResult:
+    """Raw outcome of ONE voter's vote model call (no engine mutation)."""
+
+    choice: str = "abstain"
+    reason: str | None = None
+
+
+async def _run_sequential(concurrency: int, coros: list) -> list:
+    """Default batch runner: await each coroutine in input order, ignoring
+    ``concurrency`` (sequential is the legacy behavior).
+
+    The society layer may inject a bounded-concurrency runner (asyncio lives
+    in verdi.society, never here — see
+    tests/governance/test_determinism.py) to run model calls in parallel.
+    Results are always returned in INPUT order so the caller's post-pass
+    applies engine mutations deterministically regardless of completion
+    order.
+    """
+    return [await coro for coro in coros]
 
 
 class AssemblyOutcome(BaseModel):
@@ -106,6 +143,11 @@ class Assembly:
         self.quarantined: list[dict[str, str]] = []
         #: Voters whose deliberation call returned an explicit abstention.
         self.deliberation_abstentions: list[str] = []
+        #: Batch runner for model calls: (concurrency, coroutines) in,
+        #: results in INPUT order. Sequential by default; the society layer
+        #: injects a bounded concurrency runner
+        #: (``verdi.society.campaign._run_bounded``).
+        self.run_batch: Callable[[int, list], Awaitable[list]] = _run_sequential
 
     # -- prompts ---------------------------------------------------------------
 
@@ -153,37 +195,43 @@ class Assembly:
     # -- deliberation ------------------------------------------------------------
 
     async def run_deliberation(
-        self, state: WorldState, caller, *, context: list[dict[str, Any]], tick: int
+        self, state: WorldState, caller, *, context: list[dict[str, Any]], tick: int,
     ) -> list[ProposalDraft]:
         """ONE structured call per eligible voter (rights.voting); proposals are
         registered on the engine via ``GovernanceEngine.propose``. Malformed or
-        invalid output is quarantined, never raised."""
+        invalid output is quarantined, never raised.
+
+        Model calls are dispatched through the injected ``run_batch`` runner
+        (sequential by default; the society layer injects a bounded
+        concurrency runner). Determinism: engine mutations (propose),
+        quarantine records, abstention records and proposal order are ALL
+        produced in the same sorted-voter order as the sequential path, so
+        outcomes and ledger events are identical for identical model outputs
+        — only the wall-clock duration differs (and, via the recording
+        wrapper, the row order of model_calls.jsonl, which is telemetry, not
+        state).
+        """
         self._state = state
         self._world_id = state.world_id
         voters = sorted(aid for aid, agent in state.agents.items() if agent.rights.voting)
+        results = await self.run_batch(
+            1,
+            [self._deliberation_call(caller, voter, tick, context) for voter in voters],
+        )
         proposals: list[ProposalDraft] = []
         seen: set[str] = set()
-        for voter in voters:
-            attempt_id = _attempt_id(state.world_id, "delib", voter, tick)
-            messages = [
-                {"role": "user", "content": self._deliberation_prompt(voter, tick, context)}
-            ]
-            try:
-                result = await caller.generate_structured(
-                    messages, response_format_json=True, temperature=0.0
-                )
-                data = _parse_json_object(result.content)
-            except (ValueError, AttributeError, TypeError) as exc:
-                self.quarantined.append(
-                    {"phase": "deliberation", "voter_id": voter,
-                     "attempt_id": attempt_id, "reason": str(exc)}
-                )
-                continue
-            if data.get("abstain"):
+        for voter, data in zip(voters, results, strict=True):
+            if data.abstained:
                 self.deliberation_abstentions.append(voter)
                 continue
-            summary = data.get("change_summary")
-            payload = data.get("payload")
+            if data.error is not None:
+                self.quarantined.append(
+                    {"phase": "deliberation", "voter_id": voter,
+                     "attempt_id": _attempt_id(state.world_id, "delib", voter, tick),
+                     "reason": data.error}
+                )
+                continue
+            summary, payload = data.summary, data.payload
             if (
                 not isinstance(summary, str)
                 or not summary.strip()
@@ -191,14 +239,16 @@ class Assembly:
             ):
                 self.quarantined.append(
                     {"phase": "deliberation", "voter_id": voter,
-                     "attempt_id": attempt_id, "reason": "invalid proposal schema"}
+                     "attempt_id": _attempt_id(state.world_id, "delib", voter, tick),
+                     "reason": "invalid proposal schema"}
                 )
                 continue
             proposal_id = f"asm-{voter}-{tick}"
             if proposal_id in seen:
                 self.quarantined.append(
                     {"phase": "deliberation", "voter_id": voter,
-                     "attempt_id": attempt_id, "reason": "duplicate proposal_id, kept first"}
+                     "attempt_id": _attempt_id(state.world_id, "delib", voter, tick),
+                     "reason": "duplicate proposal_id, kept first"}
                 )
                 continue
             seen.add(proposal_id)
@@ -207,7 +257,8 @@ class Assembly:
             except ValueError as exc:
                 self.quarantined.append(
                     {"phase": "deliberation", "voter_id": voter,
-                     "attempt_id": attempt_id, "reason": f"propose failed: {exc}"}
+                     "attempt_id": _attempt_id(state.world_id, "delib", voter, tick),
+                     "reason": f"propose failed: {exc}"}
                 )
                 continue
             proposals.append(
@@ -221,6 +272,23 @@ class Assembly:
         self._proposal_order.extend(p.proposal_id for p in proposals)
         return proposals
 
+    async def _deliberation_call(self, caller, voter: str, tick: int,
+                                 context: list[dict[str, Any]]) -> _DelibCallResult:
+        """One voter's deliberation model call + parse only. Engine mutations
+        are deferred to the post-pass in ``run_deliberation`` so the parallel
+        path applies them in exactly the sequential (sorted-voter) order."""
+        try:
+            result = await caller.generate_structured(
+                [{"role": "user", "content": self._deliberation_prompt(voter, tick, context)}],
+                response_format_json=True, temperature=0.0,
+            )
+            data = _parse_json_object(result.content)
+        except (ValueError, AttributeError, TypeError) as exc:
+            return _DelibCallResult(error=str(exc))
+        if data.get("abstain"):
+            return _DelibCallResult(abstained=True)
+        return _DelibCallResult(summary=data.get("change_summary"), payload=data.get("payload"))
+
     # -- voting ---------------------------------------------------------------------
 
     async def run_voting(
@@ -233,44 +301,55 @@ class Assembly:
     ) -> list[VoteRecord]:
         """For each (proposal, voter) one structured vote; the deterministic
         engine records every vote via ``GovernanceEngine.cast_vote``. Invalid
-        choices and malformed output are quarantined and cast as abstain."""
+        choices and malformed output are quarantined and cast as abstain.
+
+        Model calls run through the injected ``run_batch`` runner; engine
+        cast_vote mutations, quarantine records and the returned record list
+        are produced in the same (proposal-order, sorted-voter) order as the
+        sequential path, so ``finalize`` outcomes are identical for identical
+        model outputs."""
+        pairs = [(draft, voter) for draft in proposals for voter in sorted(voters)]
+        results = await self.run_batch(
+            1,
+            [self._vote_call(caller, draft, voter, tick) for draft, voter in pairs],
+        )
         records: list[VoteRecord] = []
-        for draft in proposals:
-            for voter in sorted(voters):
-                attempt_id = _attempt_id(self._world_id, draft.proposal_id, voter, tick)
-                messages = [
-                    {"role": "user", "content": self._voting_prompt(draft, voter, tick)}
-                ]
-                choice = "abstain"
-                reason: str | None = None
-                try:
-                    result = await caller.generate_structured(
-                        messages, response_format_json=True, temperature=0.0
-                    )
-                    data = _parse_json_object(result.content)
-                    raw = data.get("choice")
-                    if raw in _VALID_VOTE_CHOICES:
-                        choice = raw
-                    else:
-                        reason = f"invalid choice: {raw!r}"
-                except (ValueError, AttributeError, TypeError) as exc:
-                    reason = str(exc)
-                if reason is not None:
-                    self.quarantined.append(
-                        {"phase": "voting", "voter_id": voter,
-                         "attempt_id": attempt_id, "reason": reason}
-                    )
-                vote = VoteRecord(
-                    vote_id=f"vote-{draft.proposal_id}-{voter}",
-                    proposal_id=draft.proposal_id,
-                    voter_id=voter,
-                    tick=tick,
-                    choice=choice,
+        for (draft, voter), res in zip(pairs, results, strict=True):
+            attempt_id = _attempt_id(self._world_id, draft.proposal_id, voter, tick)
+            choice, reason = res.choice, res.reason
+            if reason is not None:
+                self.quarantined.append(
+                    {"phase": "voting", "voter_id": voter,
+                     "attempt_id": attempt_id, "reason": reason}
                 )
-                self._engine.cast_vote(vote)
-                self._vote_attempt[vote.vote_id] = attempt_id
-                records.append(vote)
+            vote = VoteRecord(
+                vote_id=f"vote-{draft.proposal_id}-{voter}",
+                proposal_id=draft.proposal_id,
+                voter_id=voter,
+                tick=tick,
+                choice=choice,
+            )
+            self._engine.cast_vote(vote)
+            self._vote_attempt[vote.vote_id] = attempt_id
+            records.append(vote)
         return records
+
+    async def _vote_call(self, caller, draft: ProposalDraft, voter: str, tick: int) -> _VoteCallResult:
+        """One voter's vote model call + parse only. The engine cast is
+        deferred to the post-pass in ``run_voting`` so the parallel path
+        applies engine mutations in deterministic order."""
+        try:
+            result = await caller.generate_structured(
+                [{"role": "user", "content": self._voting_prompt(draft, voter, tick)}],
+                response_format_json=True, temperature=0.0,
+            )
+            data = _parse_json_object(result.content)
+            raw = data.get("choice")
+            if raw in _VALID_VOTE_CHOICES:
+                return _VoteCallResult(choice=raw)
+            return _VoteCallResult(choice="abstain", reason=f"invalid choice: {raw!r}")
+        except (ValueError, AttributeError, TypeError) as exc:
+            return _VoteCallResult(choice="abstain", reason=str(exc))
 
     # -- finalize --------------------------------------------------------------------
 

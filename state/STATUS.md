@@ -1,6 +1,6 @@
 # Execution state (integrator-owned)
 
-Update UTC: 2026-10-11 14:15 (Tranche 12 — Society V2 Stage C-1 scale-jump on feat/society-v2-stage-c: F1-F4 fixes (58c33f3) + doc corrections (bc9cd64), two independent reviews SHIP-WITH-NITS; attempt 4 VALIDATED THE F1 FIX LIVE (passed t15 + t20, t30 amendment enacted at 735 events) then lapsed at 13:05:01Z (hypothesis: local-environment event; LESSONS Tranche 12e); attempt 5 relaunched 14:10:16Z (PID 17325, seed 20261014). All four prior partials preserved. 521 passed, 1 skipped, ruff clean. `main` untouched.)
+Update UTC: 2026-10-11 17:45 (Tranche 12f — PARALLEL ASSEMBLY batch runner on feat/society-v2-stage-c: assembly deliberation/vote + reflection model calls now run through an injected bounded-concurrency runner (asyncio stays out of verdi.governance per its determinism guard test); determinism contract = engine mutations in the same sorted input order, so identical model outputs → identical ledger/state, only wall-clock + model_calls.jsonl row order differ. Attempt 5 (sequential, concurrency 6) preserved at 639 events / past t20 / amendment #1 enacted as stageC1-20261014-attempt5-partial. Attempt 6 LIVE on the parallel code, concurrency 10, same seed 20261014 (PID 45753, smoke OK). Full suite + ruff clean. `main` untouched.)
 
 Prior: Update UTC: 2026-10-12 18:05 (Tranche 11 — Society V2 Stage B COMPLETE and merged to dev @ f116387: review BLOCK N1-N4 remediated (7ccabcf); LIVE crash root-caused + fixed (09080dc, deposit invariant + generalized sanction gate); two review fix sets (bae0e8f mixed-assembly ledgering + fresh-Assembly-per-meeting; 00fee2c per-meeting quarantine auditability + cross-assembly regression test). Three LIVE runs all complete + replay-identical: seed-1 fix2 (concurrency 4), seed-1 repeat (concurrency 6), TRUE seed-2 20261013 (concurrency 6). Both live runs surfaced a REAL mixed assembly (b05 stale-base proposal rejected threshold_not_met 5:7) correctly ledgered — live proof of the Finding-1 fix. 512 passed, 1 skipped, ruff clean on dev. `main` untouched.)
 
@@ -369,15 +369,57 @@ Pre-registration: docs/STAGE_C_PREREGISTRATION.md (committed BEFORE live outcome
   Smoke OK. Monitor: beat rate per check (lapse detection, not just
   mtime).
 
+### 12f. Parallel assembly batch runner (this update) + attempt 5 partial + attempt 6 launch
+- Why: user-reported the SimulaChat endpoint sustains ~10 concurrent calls;
+  the live bottleneck was the SEQUENTIAL assembly model calls (24-voter
+  deliberation + proposals×voters voting, ~2-3h per assembly pair at
+  concurrency 6), not action ticks (already parallel via TaskPool).
+- Change: split each assembly call into call+parse (parallelizable) and
+  engine mutation (deterministic post-pass in sorted input order).
+  `Assembly.run_batch` is an injected runner (default sequential
+  `_run_sequential`); the campaign injects `_run_bounded` (asyncio
+  Semaphore, size = run concurrency) per assembly. Governance stays
+  asyncio-free (its determinism-guard import test blocked the direct
+  import and drove the injected design). Reflection parallelized too;
+  probes stay sequential (smaller cost; stateful subject_provider).
+- Determinism contract: engine mutations / quarantine / proposal_order /
+  vote records in the SAME order as the old loops → identical model outputs
+  give identical ledger/state; only wall-clock and model_calls.jsonl row
+  order (telemetry) differ. Replay re-folds the tape with zero model calls,
+  so call order cannot affect replay hashes.
+- Evidence: new tests (a) assembly-level seq-vs-concurrency-8 equivalence
+  (proposals, votes, quarantine, abstentions, outcome, engine version all
+  equal) and (b) full-campaign seq-vs-parallel equivalence — identical
+  final_state_hash, identical state model_dump, byte-identical
+  events.jsonl, replay True/True — PLUS a mechanical proof that the two
+  paths differ (probe caller: max in-flight assembly calls >1 parallel,
+  ==1 when sequential forced; the equivalence-only version of this test
+  silently ran both paths sequentially due to monkeypatch lifetime and
+  proved nothing — see LESSONS Tranche 12f). Full suite green, ruff clean.
+- Attempt 5 (sequential code, concurrency 6) reached 639 events, past t20,
+  amendment #1 enacted, healthy beat rate — then its run dir was renamed to
+  `stageC1-20261014-attempt5-partial` to hand the path to attempt 6; the
+  process survived the rename briefly (re-opened its beat file on the new
+  path) and died on the next atomic run_meta write (stale tmp path —
+  expected failure mode of the rename trick, no run data lost).
+- Attempt 6 LIVE: same seed 20261014, same scenario, concurrency 10,
+  parallel assembly code, PID 45753, 17:4x UTC, smoke OK (trace
+  7c14362b). First-assembly passage (t15) is the gate for the parallel
+  path; 429 throttling, if any, shows as quarantine spike + retries, not
+  a crash (VERDI_MAX_RETRIES=5).
+
 ### Next 3 actions (Stage C)
-1. Monitor attempt 5 (PID 17325, 14:10:16Z start) to completion with
-   per-check beat-rate sampling (lapse detection); verify replay True/True,
-   24/24 agent denominator, 3 assemblies, endpoint health, final hash;
-   record evidence in 12d/12e.
-2. On C-1 pass: merge feat/society-v2-stage-c to dev (serial), then C-2
-   (48x100) live launch (gated on C-1 scale-jump gate).
-3. Concurrency 6 -> 8 only after a dedicated zero-retry soak; multi-seed /
-   topology / adversary-prevalence effect study stays on C-2/C-3 and is NOT
+1. Monitor attempt 6 (PID 45753, concurrency 10, parallel assembly) to
+   completion with per-check beat-rate sampling; the t15 assembly is the
+   parallel-path gate (wall-clock should drop from ~2h to ~15-30 min);
+   verify replay True/True, 24/24 agent denominator, 3 assemblies,
+   endpoint health, final hash; record evidence in 12f.
+2. On C-1 pass: independent review of the parallel-runner commit, then
+   merge feat/society-v2-stage-c to dev (serial), then C-2 (48x100) live
+   launch (gated on C-1 scale-jump gate).
+3. Throughput measurements on attempt 6 (beats/sec per tick class) inform
+   the C-3 (96 agents) concurrency choice; multi-seed / topology /
+   adversary-prevalence effect study stays on C-2/C-3 and is NOT
    claimable until independently reviewed.
 
 ## Tranche 10 (prior): Society V2 Stage A (live society campaign) — dev 55a6c5d
