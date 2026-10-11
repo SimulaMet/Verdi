@@ -94,6 +94,9 @@ class AssemblyOutcome(BaseModel):
     # Per-proposal engine enact event dicts, in submitted order. Lets the
     # campaign ledger every rejection, not just the last one (Tranche 11).
     enact_events: list[dict[str, Any]] = Field(default_factory=list)
+    # Full proposal texts for review/plotting (Tranche 12h): each entry has
+    # proposal_id, submitted_by, change_summary, payload.
+    proposal_details: list[dict[str, Any]] = Field(default_factory=list)
 
 
 def _attempt_id(world_id: str, proposal_id: str | None, voter_id: str, tick: int) -> str:
@@ -138,6 +141,7 @@ class Assembly:
         self._world_id: str = ""
         self._state: WorldState | None = None
         self._proposal_order: list[str] = []
+        self._proposals: list[ProposalDraft] = []
         self._vote_attempt: dict[str, str] = {}
         #: Quarantine log: {phase, voter_id, attempt_id, reason} per bad completion.
         self.quarantined: list[dict[str, str]] = []
@@ -397,4 +401,13 @@ class Assembly:
             ],
             abstentions=sum(1 for vote in votes if vote.choice == "abstain"),
             enact_events=enact_events,
+            proposal_details=[
+                {
+                    "proposal_id": p.proposal_id,
+                    "submitted_by": p.submitted_by,
+                    "change_summary": p.change_summary,
+                    "payload": p.payload,
+                }
+                for p in self._proposals
+            ],
         )
