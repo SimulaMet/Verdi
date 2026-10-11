@@ -236,7 +236,6 @@ class SocietyCampaign:
         log = EventLog(path=run_dir / "events.jsonl")
         bank = ProbeBank(self._bank_version, "verdi.social-instrument/1", rubric_id="verdi.social", pool_size=4)
         recorder = ProbeRecorder(bank, rubric_id="verdi.social", seed=self._run_seed, judge_note="same_family")
-        assembly = Assembly(governance)
 
         memory = {aid: AgentMemory(max_entries=self._memory_capacity) for aid in agent_ids}
         state: WorldState = initial_state
@@ -345,7 +344,14 @@ class SocietyCampaign:
                 await self._reflect(tick, state, memory, fingerprint)
 
             if tick in self._assembly_ticks:
-                state = await self._assemble(tick, state, agent_ids, assembly, log, reducer)
+                # A FRESH Assembly per constitutional meeting: an Assembly is
+                # designed for "one full deliberation + voting per run", so its
+                # _proposal_order/_vote_attempt/quarantined bookkeeping must not
+                # leak across assemblies (otherwise each assembly re-enacts prior
+                # proposals, which fail as retroactive_amendment and pollute the
+                # ledger). The GovernanceEngine (constitution state) is shared.
+                fresh_assembly = Assembly(governance)
+                state = await self._assemble(tick, state, agent_ids, fresh_assembly, log, reducer)
                 self._constitution_versions.append(governance.constitution.current.version)
 
             # sanction each newly-attempted violation (next tick, pre-registered).
@@ -558,39 +564,42 @@ class SocietyCampaign:
             event = event.model_copy(update={"prev_hash": log.last_hash()})
             log.append(event)
             self._tape.append(TapeStep(action=action, validation=validation, kind="governance", governance=gen_event))
-        if outcome.outcome != "amendment_enacted":
-            # Tranche 11: every REJECTED proposal is ledgered — including
-            # the ones shadowed in a mixed assembly that also enacted some.
-            # The deterministic engine's rejection (law invariant, quorum,
-            # threshold, stale base version) is an observable governance
-            # outcome, and tape replay must reproduce the ledger the live
-            # run produced (G3). The reducer's governance branch applies
-            # rule-version bookkeeping only when accepted — a rejected step
-            # advances tick/event_cursor and leaves content untouched,
-            # exactly mirroring the live run.
-            for gen_event in outcome.enact_events:
-                if gen_event.get("decision") != "rejected":
-                    continue
-                reasons = gen_event.get("invalid_reasons") or []
-                action = ProposedAction(
-                    actor_id="governance",
-                    task_id=f"governance-amendment_rejected-{state.event_cursor}",
-                    action_kind="governance",
-                    arguments={"proposal_id": gen_event.get("proposal_id")},
-                )
-                validation = ValidationResult(
-                    accepted=False,
-                    blocked_by="law:amendment_invalid",
-                    attempted_violation_codes=list(reasons),
-                    details="deterministic engine rejected the amendment: "
-                            + ("; ".join(str(r) for r in reasons) or "no reasons recorded"),
-                )
-                before = state
-                state = reducer.apply(before, action, validation)
-                event = self._build_governance_ledger_event(before, state, action, validation, gen_event)
-                event = event.model_copy(update={"prev_hash": log.last_hash()})
-                log.append(event)
-                self._tape.append(TapeStep(action=action, validation=validation, kind="governance", governance=gen_event))
+        # Tranche 11: every REJECTED proposal is ledgered — INCLUDING the ones
+        # shadowed in a mixed assembly that also enacted some. This loop runs
+        # unconditionally (not gated on ``outcome``) and filters to rejected
+        # proposals itself, so the enacted-amendment block above (which ledgeres
+        # the accepted proposal) and this block (rejections) never double-write:
+        # in a mixed assembly the accepted proposal is handled above and each
+        # rejected sibling is handled here. The deterministic engine's rejection
+        # (law invariant, quorum, threshold, stale base version) is an observable
+        # governance outcome, and tape replay must reproduce the ledger the live
+        # run produced (G3). The reducer's governance branch applies rule-version
+        # bookkeeping only when accepted — a rejected step advances
+        # tick/event_cursor and leaves content untouched, exactly mirroring the
+        # live run.
+        for gen_event in outcome.enact_events:
+            if gen_event.get("decision") != "rejected":
+                continue
+            reasons = gen_event.get("invalid_reasons") or []
+            action = ProposedAction(
+                actor_id="governance",
+                task_id=f"governance-amendment_rejected-{state.event_cursor}",
+                action_kind="governance",
+                arguments={"proposal_id": gen_event.get("proposal_id")},
+            )
+            validation = ValidationResult(
+                accepted=False,
+                blocked_by="law:amendment_invalid",
+                attempted_violation_codes=list(reasons),
+                details="deterministic engine rejected the amendment: "
+                        + ("; ".join(str(r) for r in reasons) or "no reasons recorded"),
+            )
+            before = state
+            state = reducer.apply(before, action, validation)
+            event = self._build_governance_ledger_event(before, state, action, validation, gen_event)
+            event = event.model_copy(update={"prev_hash": log.last_hash()})
+            log.append(event)
+            self._tape.append(TapeStep(action=action, validation=validation, kind="governance", governance=gen_event))
         return state
 
     # ------------------------------------------------------------------ #

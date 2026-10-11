@@ -235,6 +235,65 @@ def test_overdeposit_substantive_violation_sanctioned(scenario, tmp_path):
     assert res.sanction_events[0].get("decision") == "accepted"
 
 
+class _MixedAssemblyCaller(ScriptedCaller):
+    """Mixed assembly (Finding 1 regression): exactly two agents propose, and the
+    votes make ONE proposal pass (unanimously FOR -> accepted, enacting an
+    amendment) while the sibling fails (unanimously AGAINST -> rejected,
+    threshold_not_met). Because at least one proposal is accepted the assembly
+    outcome is ``amendment_enacted``; before the fix the rejection-ledgering loop
+    was gated on ``outcome != "amendment_enacted"`` and silently dropped the
+    rejected sibling from the tape/ledger."""
+
+    _PROPOSERS = ("s01", "s02")
+    _ACCEPTED_SUBMITTER = "s01"  # proposals by this submitter get voted "for"
+
+    async def generate_structured(self, messages, **kw):
+        self.n += 1
+        content = messages[0]["content"]
+        if "assembly:deliberation" in content:
+            voter = content.split('agent "')[1].split('"')[0]
+            if voter in self._PROPOSERS:
+                payload = {"change_summary": f"Fairness rule proposed by {voter}",
+                           "payload": {"rationing_rule": f"max_delta_{voter}_units", "effective_from_tick": 10}}
+            else:
+                payload = {"abstain": True}
+            return ModelResult(content=json.dumps(payload), request_id=f"r{self.n}", model="fake",
+                               trace_id=f"trace-{self.n}")
+        if "assembly:vote" in content:
+            submitted_by = content.split("submitted by ")[1].split(")")[0].strip()
+            choice = "for" if submitted_by == self._ACCEPTED_SUBMITTER else "against"
+            return ModelResult(content=json.dumps({"choice": choice}), request_id=f"r{self.n}", model="fake",
+                               trace_id=f"trace-{self.n}")
+        return await super().generate_structured(messages, **kw)
+
+
+def test_mixed_assembly_ledgers_rejected_sibling_and_replays(scenario, tmp_path):
+    """Finding 1: a mixed assembly must ledger BOTH the enacted amendment AND the
+    deterministic rejection of the sibling proposal (with its invalid_reasons),
+    and full replay must stay byte-identical. Pre-fix the rejection was dropped
+    because the ledgering loop was gated on outcome != "amendment_enacted"."""
+    campaign = SocietyCampaign(scenario=scenario, run_dir=tmp_path,
+                               caller=_MixedAssemblyCaller(), run_seed=20261011, concurrency=4)
+    res = asyncio.run(campaign.run())
+    assert res.assembly_outcome["outcome"] == "amendment_enacted"
+    # one enacted + one rejected sibling = two governance tape steps.
+    gov = [s for s in res.tape if s.kind == "governance"]
+    assert len(gov) == 2
+    assert sorted(s.governance["decision"] for s in gov) == ["accepted", "rejected"]
+    # the ledger carries exactly one enacted and one rejected amendment event.
+    enacted = [e for e in res.events if e.kind == "amendment_enacted"]
+    rejected = [e for e in res.events if e.kind == "amendment_rejected"]
+    assert len(enacted) == 1
+    assert len(rejected) == 1
+    assert rejected[0].decision == "rejected"
+    assert rejected[0].payload.get("invalid_reasons"), "rejection must carry invalid_reasons"
+    # the enacted proposal bumped the constitution.
+    assert res.state.constitution_version != res.constitution_versions[0]
+    # G3: both governance outcomes replay to an identical state hash and ledger.
+    assert res.replay_matches is True
+    assert res.replay_log_identical is True
+
+
 class _MalformedTransferCaller(ScriptedCaller):
     """The adversary's transfer uses the LEGACY arg key ``amount`` instead of
     ``units`` — a pure format/contract failure, not a substantive violation."""

@@ -83,6 +83,38 @@ This is a *verified* failure record, not a place to invent successes. Integrator
   way the reviewer considers in-scope (it only ADDS sanctions for previously
   un-sanctioned substantive deposit/withdraw breaches).
 
+## 2026-10-12 / branch feat/society-v2-stage-b-fix1 / Reused Assembly re-enacts prior proposals + mixed-assembly ledgering gap (Tranche 11d review)
+- Independent review (verdi-reviewer, SHIP-WITH-NITS) flagged that a mixed
+  assembly (one proposal enacted, another rejected) only ledgered the accepted
+  proposal — the `if outcome != "amendment_enacted"` guard skipped the
+  rejection loop entirely, silently dropping rejected siblings from the ledger
+  and the SimpleAudit tape. Fixed: the rejection loop is now unconditional; the
+  already-accepted proposals are simply filtered out (no double-ledgering).
+- Fixing that EXPOSED a deeper pre-existing bug: the campaign constructed ONE
+  `Assembly` instance and reused it for all three constitutional meetings. An
+  `Assembly` is designed for one run — its `_proposal_order`/`_vote_attempt`
+  accumulate, so meeting #2 re-enacted meeting #1's proposals (now failing as
+  `retroactive_amendment`) and meeting #3 re-enacted both. Each meeting's
+  `finalize` returns `amendment_enacted` if ANY proposal passes, so these
+  spurious rejections were previously invisible (the guard swallowed them).
+  A multi-assembly experiment would therefore log 3 phantom rejections with no
+  observable symptom until you instrumented it.
+- Fix: construct a fresh `Assembly(governance)` per meeting in the campaign;
+  the shared `GovernanceEngine` (constitution state) persists, the Assembly
+  wrapper's per-meeting bookkeeping does not. Regression tests:
+  `tests/society/test_campaign.py::test_mixed_assembly_ledgers_rejected_sibling_and_replays`
+  (mixed outcome → both enacted+rejected ledgered, no duplication, replay clean)
+  and `tests/society/test_stageB.py` (3 meetings → exactly 3 enactments, no
+  cross-assembly re-enaction).
+- Rules: (1) An object with per-run bookkeeping is NOT safe to reuse across
+  runs just because it holds a reference to a shared engine — inspect whether
+  its own state accumulates. (2) A guard like `if outcome == X: skip the else`
+  can silently mask a whole class of events (here, every rejection in a
+  mixed assembly); prefer unconditional processing + explicit filtering.
+  (3) A "silent" behavior change (spurious rejections appearing) is the
+  signal a fix worked — when a previously-invisible count changes after a
+  ledgering fix, treat it as a NEW finding, not a regression to revert.
+
 ## 2026-10-09 / dev `9798907` / P1 review-findings remediation (Tranche 3)
 - Observed symptom: independent Engineering review = FAIL, Science review = INCONCLUSIVE
   (G3-blocking). Repro of the two blocking defects before the fix:

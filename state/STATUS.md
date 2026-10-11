@@ -77,6 +77,40 @@ would have been logged but NOT sanctioned.
   Smoke OK; events committing. Awaiting completion → replay/assembly/probe
   verification → independent re-review.
 
+### 11e — Independent review remediation (verdi-reviewer, verdict SHIP-WITH-NITS)
+- Reviewer (agent 55eef6bd) independently reproduced the crash root cause,
+  verified the deposit fix closes the invariant for all 4 property-moving
+  kinds, and confirmed the sanction boundary is exactly right (format/under-
+  sanction/unknown-actor rejections are not sanctions; substantive
+  overdraft/insufficient_world/unknown_recipient are). Two findings:
+- **Finding 1 (MEDIUM, FIXED):** mixed assembly (1 enacted + 1 rejected)
+  silently dropped the rejected sibling from the ledger + SimpleAudit tape
+  (guard `if outcome != "amendment_enacted"` skipped the rejection loop).
+  Fixed in `campaign.py::_assemble`: the rejection loop is now unconditional
+  and the already-accepted proposals are filtered out (no double-ledgering).
+  Regression: `tests/society/test_campaign.py::
+  test_mixed_assembly_ledgers_rejected_sibling_and_replays` (RED on old code,
+  GREEN on fix; 2 governance steps, 1 enactment + 1 rejection event, replay
+  clean).
+- **Finding 2 (LOW, FIXED by the deeper fix below):** no mixed-assembly test.
+  (The test above now covers it.)
+- **Deeper pre-existing bug EXPOSED by the Finding-1 fix (MEDIUM, FIXED):** the
+  campaign reused ONE `Assembly` instance across all 3 constitutional
+  meetings. An `Assembly` is designed for one run; its `_proposal_order` /
+  `_vote_attempt` accumulate, so meeting #2 re-enacted meeting #1's proposals
+  (now failing as `retroactive_amendment`) and meeting #3 re-enacted both —
+  3 spurious rejections with NO observable symptom until instrumented
+  (each `finalize` returns `amendment_enacted` because a sibling still passes).
+  Fix: construct a **fresh `Assembly(governance)` per meeting** in
+  `campaign.py`; the shared `GovernanceEngine` (constitution state) persists,
+  the per-meeting bookkeeping does not. Regression: `tests/society/
+  test_stageB.py::test_stageB_offline_run_completes_and_replays` asserts 3
+  meetings → exactly 3 enactments (no cross-assembly re-enaction).
+- Protocol updated (`docs/SOCIETY_V2_PROTOCOL.md` §1.2): "one Assembly per
+  meeting" invariant + "mixed assemblies must ledger every proposal" rule.
+- Verification: python -m pytest = 512 passed, 1 skipped; ruff clean. Both new
+  tests RED→GREEN.
+
 ## Tranche 10 (prior): Society V2 Stage A (live society campaign) — dev 55a6c5d
 
 ## Tranche 10 (this update): Society V2 Stage A (live society campaign) — dev 55a6c5d

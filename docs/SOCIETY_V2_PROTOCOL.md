@@ -115,6 +115,26 @@ Probe bank version, instrument version, and rotation seed are frozen in
    the world ledger (`GOVERNANCE_EVENT_KINDS`,
    `src/verdi/governance/engine.py:37`).
 
+**Assembly lifecycle — one Assembly instance per meeting.** An
+`Assembly` object is designed for *one* deliberation+voting run: its
+`_proposal_order`, `_vote_attempt`, and `quarantined` bookkeeping must
+not leak across meetings. The campaign therefore constructs a **fresh
+`Assembly(governance)` for each constitutional meeting**
+(`src/verdi/society/campaign.py`). Reusing a single instance causes each
+assembly to re-enact every prior proposal, which then fails as
+`retroactive_amendment` and pollutes the ledger with spurious
+rejections. The shared `GovernanceEngine` (and its constitution
+state) is what persists across meetings — not the Assembly wrapper.
+
+**Mixed assemblies must ledger every proposal.** An assembly may enact
+one proposal while rejecting another (mixed outcome). The campaign must
+record the ledger + SimpleAudit tape step for **every** proposal whose
+`enact` returned a rejection, regardless of whether a sibling was
+enacted; only genuinely-accepted proposals skip the rejection branch
+(duplication guard). Silently dropping rejected siblings makes the
+audit tape incomplete and the assembly's own commentary claim a
+"clean enactment" that the world does not reflect.
+
 ### 1.3 Deterministic commit-order rule (frozen)
 
 Stage A uses **concurrent-generation / sequential-commit** mode. This mode
