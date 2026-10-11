@@ -1,6 +1,83 @@
 # Execution state (integrator-owned)
 
-Update UTC: 2026-10-11 01:30 (Tranche 10 — Society V2 Stage A integrated on dev 55a6c5d: campaign orchestrator + live entrypoint + 6-lane packages; independent code review BLOCK (4 findings F1-F4) fully remediated and re-reviewed SHIP; LIVE Stage A re-run with fixed code passed (replay True/True, 90 probes, 6 sanctions / 6 appeals / 6 restorations, amendment enacted, 604s wall at concurrency 4); full suite + ruff green on dev; dev pushed)
+Update UTC: 2026-10-12 16:30 (Tranche 11 — Society V2 Stage B: independent review BLOCK (N1-N4) remediated on feat/society-v2-stage-b-fix1 @ 7ccabcf; LIVE seed-1 (fix1) re-run CRASHED at tick 230 on a genuine reducer invariant breach (negative balance b01 credits -2.0); root-caused to a validator/reducer DEPOSIT invariant gap and a transfer-only sanction gate; fixed on 09080dc (validator now rejects over-deposits with law:no_double_spend/overdraft; sanction gate generalized to all substantive rejections); 510 passed + ruff clean; LIVE seed-1 fix2 re-run in progress @ concurrency 4)
+
+## Tranche 11 (this update): Society V2 Stage B BLOCK remediation + deposit-invariant crash fix
+Campaign: docs/LIVE_SOCIETY_CAMPAIGN.md (Stage B: 12 agents b01-b12, 30 ticks, 3 assemblies, honest+adversarial).
+Base: dev @ 305198c. Worker branch: feat/society-v2-stage-b-fix1 (commits 7ccabcf, 09080dc). `main` untouched.
+
+### 11a. Independent Stage B review: BLOCK (4 findings N1-N4) — remediated on 7ccabcf
+- N1 (HIGH): per-call accounting was missing for assembly deliberation/vote +
+  probe model calls (model_calls.jsonl under-recorded). Added _RecordingCaller
+  wrapper in campaign.py that times every wrapped call and appends a _ModelCall
+  row (assembly subject from the `agent "X"` prompt anchor; probe subject from
+  the known agent×channel order). Vote prompt retains the anchor.
+- N2 (MEDIUM): the sanctioned scope recorded as ["speaking"] did not match the
+  actual world effect (tape suspension + transfer/deposit blocking). Documented
+  in _impose_sanction docstring + protocol §1.4 (scope string vs world effect).
+- N3 (HIGH): a deterministically REJECTED constitutional proposal was not
+  ledgered, so tape replay diverged from the live ledger. Assembly.finalize now
+  returns engine enact_events; campaign _assemble ledgeres every rejected
+  proposal (governance tape step + amendment_rejected ledger event with
+  invalid_reasons); reducer applies governance bookkeeping only on acceptance.
+- N4 (LOW): seed-2 scenario_id collided with seed-1 (world_id uniqueness).
+  Renamed to society_v2_stageB_seed2.
+- Also fixed a pre-existing crash in prompting.py: the prompt template had an
+  {arg_schema} placeholder that format() never supplied (KeyError on every
+  prompt build). Now passes arg_schema=_ACTION_ARG_SCHEMA.get(action_type).
+
+### 11b. LIVE Stage B seed-1 (fix1) run — CRASH (failure evidence preserved)
+- Run dir: runs/society-v2/stageB-20261012-seed1-fix1 (run_meta status=failed).
+- Real Qwen3.8-27B interactions, ~5.5s/call at concurrency 4, ~20 min.
+- Committed 229 events before crashing at tick 230 (225 action_accepted,
+  2 amendment_enacted @ ticks 109/206, 2 action_rejected @ 191/222).
+- Ledger hash chain verifies OK (EventLog.verify) and matches the live
+  snapshot after_tick16.json (tick 206, hash 616905571678e0ac) — the LIVE
+  committed state is ground truth.
+- Crash: InvariantViolationError: negative balance: agent=b01 resource=credits
+  value=-2.0, raised by reducer._assert_nonnegative at tick 230.
+
+### 11c. Root cause (reproduced with a failing unit test before fixing)
+A `deposit` was being validated WITHOUT the agent's held-balance check that
+`transfer` already had. The deposit/withdraw branch only checked the WORLD pool
+(on `withdraw`); on `deposit` it accepted any positive amount regardless of what
+the agent held. An over-deposit (amount > held) passed validate_action, then the
+reducer applied agent -= amount and its final non-negative assertion tripped.
+Crash math is exact: b01 was held down to 0.0 by committed outflows; a 2.0-credit
+over-deposit → -2.0 (the crash value). My first offline replay was UNFAITHFUL
+(it omitted rights_change sanction flips that are part of the canonical hash),
+so its "b01 = 0.0" reading was from the wrong state — the live snapshot confirms
+b01 credits = 0.0 at tick 206 with b05 under_sanction.
+
+Secondary gap found while fixing: the sanction gate fed the queue only for
+`action_kind == "transfer"`, so a substantive over-deposit/over-withdraw breach
+would have been logged but NOT sanctioned.
+
+### 11d. Fix — 09080dc (validator/reducer agree; substantive gate is kind-agnostic)
+- validate.py: deposit now requires held >= amount (rejects over-deposit with
+  law:no_double_spend, code overdraft), mirroring transfer. Reducer/validator
+  now agree; InvariantViolationError can no longer be reached via over-deposit.
+- campaign.py: sanction gate generalized from transfer-only to all substantive
+  rejections (overdraft / insufficient_world / unknown_recipient). Format codes
+  (missing_argument, empty_signal, non_positive_amount, unknown_kind), already-
+  sanctioned actors (under_sanction) and unknown actors remain excluded — the
+  SUBSTANTIVE_VIOLATION_CODES set is the single source of truth.
+- tests/world/test_validate.py (new): deposit invariant incl. boundary; verified
+  RED on the old code (accepted the over-deposit), GREEN on the fix.
+- tests/society/test_campaign.py: over-deposit sanctioning regression; verified
+  RED on the old transfer-only gate (0 sanctions), GREEN on the fix.
+- protocol §1.4: documents the deposit invariant + crash provenance.
+
+### Verification (worker branch @ 09080dc, not yet merged)
+- python -m pytest: 510 passed, 1 skipped.
+- ruff check src tests: clean.
+- 2 new regression tests confirmed RED→GREEN (bug reproduction, not just green).
+- 2026-10-12 16:20 UTC LIVE seed-1 FIX2 re-run STARTED (runs/society-v2/
+  stageB-20261012-seed1-fix2, SimulaChat default Qwen3.8-27B, concurrency 4).
+  Smoke OK; events committing. Awaiting completion → replay/assembly/probe
+  verification → independent re-review.
+
+## Tranche 10 (prior): Society V2 Stage A (live society campaign) — dev 55a6c5d
 
 ## Tranche 10 (this update): Society V2 Stage A (live society campaign) — dev 55a6c5d
 Campaign: docs/LIVE_SOCIETY_CAMPAIGN.md + docs/SOCIETY_V2_PROTOCOL.md (frozen Stage A protocol, G0).

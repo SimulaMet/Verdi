@@ -22,6 +22,67 @@ This is a *verified* failure record, not a place to invent successes. Integrator
 - Logs that record only allowed actions hide attempted violations.
 - Attempting a normal dev-to-main merge leaks internal agent instructions into public releases.
 
+## 2026-10-12 / dev `305198c` (branch feat/society-v2-stage-b-fix1) / LIVE Stage B seed-1 crash + fix (Tranche 11b/11d)
+- Observed symptom with reproduction: LIVE Stage B seed-1 (fix1) run
+  (runs/society-v2/stageB-20261012-seed1-fix1) committed 229 events then crashed
+  at tick 230 with `InvariantViolationError: negative balance: agent=b01
+  resource=credits value=-2.0` (reducer._assert_nonnegative). Repro command
+  (deterministic, offline): `pytest tests/world/test_validate.py::test_deposit_
+  exceeding_balance_is_rejected_overdraft` — RED on the pre-fix code (validator
+  accepted a 2.0 deposit from an agent holding 0.0), GREEN after the fix.
+- Expected vs actual: the deterministic validator and the reducer must AGREE that
+  a proposed action is safely applicable, so the reducer's final non-negative
+  invariant is unreachable for validated actions. Actually, `deposit` was
+  validated WITHOUT the agent held-balance check that `transfer` already had, so
+  an over-deposit was accepted and only the reducer's end-of-apply assertion caught
+  it — by raising an invariant breach instead of a clean rejection.
+- Root cause (CONFIRMED, unit-test reproduced): `validate_action`'s
+  deposit/withdraw branch checked only the WORLD pool (on `withdraw`); on
+  `deposit` it accepted any positive `amount` regardless of the agent's held
+  balance. b01 was held to 0.0 credits by committed outflows (live snapshot
+  after_tick16 @ tick 206 confirms b01 credits=0.0, b05 under_sanction); a 2.0
+  over-deposit → -2.0 (exact crash value). SECONDARY gap (confirmed by a RED
+  test): the sanction gate only fed the queue for `action_kind == "transfer"`, so
+  a substantive over-deposit/over-withdraw breach would have been logged but NOT
+  sanctioned.
+- What was attempted and why it did/didn't work: First offline replay was
+  UNFAITHFUL — it replayed only action/amendment events and OMITTED the
+  `rights_change` sanction flips, which ARE part of `canonical_state_hash`, so it
+  diverged from the live ledger at event 206 (b05 flag) and its "b01 = 0.0"
+  reading was initially from the wrong state. Recovery: verified the LIVE snapshot
+  hash chain (EventLog.verify + after_tick16.json state_hash) to establish ground
+  truth before drawing conclusions. Fix: mirror the transfer held-balance check on
+  `deposit` (reject over-deposit → law:no_double_spend / overdraft) so validator
+  and reducer agree; generalize the sanction gate to all substantive rejections.
+- Minimal regression test: `tests/world/test_validate.py` (over-deposit rejected
+  + boundary + within-balance applies cleanly) and
+  `tests/society/test_campaign.py::test_overdeposit_substantive_violation_
+  sanctioned` (over-deposit feeds sanction queue even though kind=deposit).
+  Both verified RED on the old code, GREEN on the fix.
+- Corrective action / rollback checkpoint: fix on 09080dc. Rollback point if
+  regression: 7ccabcf (Tranche 11 N1-N4) / dev 305198c.
+- Verification evidence: `python -m pytest` -> 510 passed, 1 skipped; `ruff check
+  src tests` clean. LIVE seed-1 FIX2 re-run started 2026-10-12 16:20 UTC
+  (SimulaChat default Qwen3.8-27B, concurrency 4); pending replay/assembly/probe
+  verification + independent re-review.
+- Generalizable prevention rule: (1) For EVERY property-moving action kind, the
+  validator must enforce the SAME source-balance invariant the reducer applies —
+  a new action kind that debits an agent WITHOUT a matching `held >= amount` check
+  WILL eventually trip the reducer's non-negative assertion; add a unit test that
+  proposes an over-debit and asserts rejection. (2) A "sanction only X" gate that
+  is keyed on a specific action_kind (transfer) will silently drop substantive
+  breaches of the OTHER property-moving kinds — gate on the violation-CODE set
+  (SUBSTANTIVE_VIOLATION_CODES), not the action kind. (3) When reconstructing an
+  offline replay to diagnose a live crash, include EVERY tape step (including
+  rights_change flips) because flags are part of the canonical hash; otherwise the
+  diagnosis state is wrong. Cross-check any conclusion against a live snapshot's
+  verified hash before acting on it.
+- Unresolved risk / follow-up: await the fix2 live run; if it completes with
+  replay True/True + 3 assemblies + no invariant breach, re-review and merge to
+  dev. Watch whether the generalized sanction gate changes sanction counts in a
+  way the reviewer considers in-scope (it only ADDS sanctions for previously
+  un-sanctioned substantive deposit/withdraw breaches).
+
 ## 2026-10-09 / dev `9798907` / P1 review-findings remediation (Tranche 3)
 - Observed symptom: independent Engineering review = FAIL, Science review = INCONCLUSIVE
   (G3-blocking). Repro of the two blocking defects before the fix:
