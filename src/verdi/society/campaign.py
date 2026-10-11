@@ -179,7 +179,10 @@ class SocietyCampaign:
         self._constitution_versions: list[str] = []
         self._checkpoints: dict[str, Any] = {}
         self._assembly_outcome: dict[str, Any] | None = None
-        self._sanctioned: set[str] = set()
+        # Appeals are deferred off the sanction's own tick (pre-registered
+        # file tick = violation+2) so the "timely" adjudication is a real
+        # condition against the deadline and the dismissal path is reachable.
+        self._pending_appeals: list[dict[str, Any]] = []
 
     # ------------------------------------------------------------------ #
     # public entrypoint
@@ -251,12 +254,20 @@ class SocietyCampaign:
 
         for tick in range(total_ticks):
             # Deterministic sanction expiry is recorded as governance metadata
-            # (rights decay by duration). Deliberately metadata-only: mutating
-            # agent flags here would break tape-replay (G3); the full rights
-            # flow is audited via the governance engine's event stream.
+            # (rights decay by duration). The world-state flag mirrors it at
+            # the same deterministic commit points as the live run (see
+            # _replay_fill), so tape replay reproduces it exactly.
             if tick > 0:
                 for ev in governance.advance_tick(tick):
                     self._restoration_events.append({"tick": tick, **ev})
+                    # F2: duration-expired sanctions clear the world-state flag
+                    # at loop-top, before this tick's snapshot/tape, so the
+                    # restored agent is eligible again from this tick on. (An
+                    # upheld appeal expires the sanction earlier, so this only
+                    # fires when no appeal pre-empted the expiry.)
+                    state = self._commit_rights_change(
+                        state, ev.get("actor", ""), False
+                    )
 
             snapshot = state  # frozen start-of-tick state (concurrency base)
 
@@ -267,12 +278,20 @@ class SocietyCampaign:
             results = await TaskPool(self._concurrency).run_all(self._make_worker(snapshot, tick, memory), tape)
 
             # deterministic-order commit (single reducer, sequential).
+            # Proposals were *generated* against the frozen start-of-tick
+            # snapshot (concurrency base), but the reducer applies against the
+            # *evolving* state, so each proposal is re-validated against the
+            # current state immediately before commit — this closes the
+            # double-spend window where two same-tick withdraws/deposits on one
+            # resource would both pass snapshot validation. The reducer itself
+            # stays the single source of truth (an accepted action it cannot
+            # apply raises InvariantViolationError).
             for task in sorted(tape, key=lambda t: (t.task_id, t.actor_id)):
                 pr = results[task.task_id]
                 if pr.action is None:
                     self._quarantined.append((tick, task.task_id, pr.quarantine_reason or "unparseable"))
                     continue
-                validation = validate_action(snapshot, pr.action)
+                validation = validate_action(state, pr.action)
                 before = state
                 state = reducer.apply(before, pr.action, validation)
                 sealed = self._commit_action(log, before, state, pr.action, validation)
@@ -303,6 +322,21 @@ class SocietyCampaign:
                 sanction_ev = self._impose_sanction(v, governance, tick)
                 if sanction_ev.get("decision") == "accepted":
                     sanctioned_already.add(v["actor_id"])
+                    # F2: the sanction now has a real effect on world state.
+                    # Flip under_sanction=True (state-only, no ledger event) so
+                    # the deterministic validator (validate.py) and the tape
+                    # eligibility filter both see it from the next tick on.
+                    state = self._commit_rights_change(state, v["actor_id"], True)
+
+            # file + adjudicate pre-registered appeals that come due this tick
+            # (violation+2, strictly before the violation+4 deadline).
+            for p in list(self._pending_appeals):
+                if p["file_tick"] == tick:
+                    upheld = self._file_and_adjudicate_appeal(p, governance, tick)
+                    if upheld:
+                        # F2: an upheld appeal restores rights immediately, so
+                        # clear the world-state flag this tick.
+                        state = self._commit_rights_change(state, p["subject_id"], False)
 
             if tick in (5, 9, total_ticks - 1) or tick in self._assembly_ticks:
                 # The reducer advances state.tick per ACTION (pilot_v1 semantics),
@@ -346,6 +380,47 @@ class SocietyCampaign:
         sealed = log.append(event)
         self._tape.append(TapeStep(action=action, validation=validation, kind="action"))
         return sealed
+
+    # ------------------------------------------------------------------ #
+    # rights change (world-state sanction flag)
+    # ------------------------------------------------------------------ #
+    @staticmethod
+    def _flip_under_sanction(state: WorldState, aid: str, value: bool) -> WorldState:
+        """Return a NEW WorldState with one agent's ``under_sanction`` flag set.
+
+        This is a deterministic, state-only flip: it advances neither
+        ``tick`` nor ``event_cursor`` and appends no ledger event, so the
+        recorded state hash (which includes ``under_sanction``) stays in lockstep
+        between the live run and a tape replay that applies the same flip at the
+        same position. ``tick``/``event_cursor`` remain ledger bookkeeping
+        (excluded from ``canonical_state_hash``) while the flag is substantive
+        content (included), so the flip changes the canonical hash and both
+        paths recompute it identically.
+        """
+        if aid not in state.agents:
+            raise KeyError(f"agent {aid!r} not in world state")
+        new_agents = {
+            k: (v.model_copy(update={"under_sanction": value}) if k == aid else v)
+            for k, v in state.agents.items()
+        }
+        nxt = state.model_copy(update={"agents": new_agents})
+        return WorldReducer()._with_hash(nxt)
+
+    def _commit_rights_change(self, state: WorldState, aid: str, value: bool) -> WorldState:
+        """Flip ``under_sanction`` on the world state AND record it on the tape.
+
+        The recorded :class:`TapeStep` (``kind="rights_change"``) carries the
+        exact (agent, value) so replay reproduces the flip deterministically at
+        the same position.
+        """
+        state = self._flip_under_sanction(state, aid, value)
+        self._tape.append(TapeStep(
+            action=None,  # type: ignore[arg-type]
+            validation=ValidationResult(accepted=True),
+            kind="rights_change",
+            rights={"agent_id": aid, "value": bool(value)},
+        ))
+        return state
 
     # ------------------------------------------------------------------ #
     # phases
@@ -468,28 +543,56 @@ class SocietyCampaign:
         )
         ev = governance.impose_sanction(sanction)
         self._sanction_events.append({"tick": tick, **ev})
+        # The appeal is NOT filed on the sanction's own tick: it is deferred to
+        # the pre-registered tick (violation+2) so the "timely" rule is a real
+        # condition against the deadline (violation+4) and the out-of-time /
+        # dismissal path is reachable (see _file_and_adjudicate_appeal).
         if self._enable_appeals and ev.get("decision") == "accepted":
+            self._pending_appeals.append({
+                "subject_id": v["actor_id"],
+                "sanction_id": sanction.sanction_id,
+                "appeal_id": f"appeal-{v['actor_id']}-{sanction.sanction_id}",
+                "file_tick": v["tick"] + 2,   # one tick after the sanction tick
+                "deadline_tick": sanction.appeal_deadline_tick or (v["tick"] + 4),
+                "filed": False,
+            })
+        return ev
+
+    def _file_and_adjudicate_appeal(
+        self, p: dict[str, Any], governance: GovernanceEngine, tick: int
+    ) -> bool:
+        """File (if not yet filed) and adjudicate a pre-registered appeal.
+
+        Returns True when the adjudication upheld the appeal (rights restored
+        this tick), so the caller can flip the world-state ``under_sanction``
+        flag off. The dismissal path is reachable whenever the appeal is first
+        filed past its deadline (``file_appeal`` returns ``rejected`` /
+        ``out_of_time``), which the pre-registered rule makes possible.
+        """
+        if not p["filed"]:
             appeal = Appeal(
-                appeal_id=f"appeal-{v['actor_id']}-{sanction.sanction_id}",
-                sanction_id=sanction.sanction_id,
-                appellant_id=v["actor_id"],
+                appeal_id=p["appeal_id"],
+                sanction_id=p["sanction_id"],
+                appellant_id=p["subject_id"],
                 tick=tick,
                 grounds="rights restricted without permanent cause; request restoration",
                 status="filed",
             )
             filed = governance.file_appeal(appeal)
             self._appeal_events.append({"tick": tick, "phase": "filed", **filed})
-            if filed.get("decision") == "accepted":
-                timely = tick <= (sanction.appeal_deadline_tick or tick + 3)
-                grounds = ("timely appeal on a reversible, evidence-scoped sanction"
-                           if timely else "appeal past deadline")
-                adj_events = governance.adjudicate_appeal(appeal.appeal_id, upheld=timely, grounds=grounds, tick=tick)
-                for e in adj_events:
-                    if e.get("kind") in ("appeal_upheld", "appeal_dismissed"):
-                        self._appeal_events.append({"tick": tick, "phase": "adjudicated", **e})
-                    if e.get("kind") == "rights_restored":
-                        self._restoration_events.append({"tick": tick, **e})
-        return ev
+            p["filed"] = True
+            if filed.get("decision") != "accepted":
+                return False
+        timely = tick <= p["deadline_tick"]
+        grounds = ("timely appeal on a reversible, evidence-scoped sanction"
+                   if timely else "appeal past deadline")
+        adj_events = governance.adjudicate_appeal(p["appeal_id"], upheld=timely, grounds=grounds, tick=tick)
+        for e in adj_events:
+            if e.get("kind") in ("appeal_upheld", "appeal_dismissed"):
+                self._appeal_events.append({"tick": tick, "phase": "adjudicated", **e})
+            if e.get("kind") == "rights_restored":
+                self._restoration_events.append({"tick": tick, **e})
+        return timely
 
     # ------------------------------------------------------------------ #
     # invariants + replay
@@ -521,6 +624,15 @@ class SocietyCampaign:
         state = initial_state
         try:
             for step in result.tape:
+                # rights_change steps are state-only flips (no action, no ledger
+                # event, no tick advance) recorded between the surrounding
+                # action/governance steps; apply them in place so the state hash
+                # tracks the live run exactly.
+                if step.kind == "rights_change" and step.rights is not None:
+                    state = self._flip_under_sanction(
+                        state, step.rights["agent_id"], bool(step.rights["value"])
+                    )
+                    continue
                 before = state
                 state = reducer.apply(before, step.action, step.validation)
                 if step.kind == "governance" and step.governance is not None:

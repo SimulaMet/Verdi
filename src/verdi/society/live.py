@@ -102,12 +102,20 @@ async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency
             run_seed=seed,
             concurrency=concurrency,
         )
-        result = await campaign.run()
+        try:
+            result = await campaign.run()
+        except Exception:
+            _write_run_meta(run_dir, {
+                "status": "failed",
+                "failed_at_utc": datetime.now(timezone.utc).isoformat(),
+            })
+            raise
 
     # Hard guard: no key material may reach the artifact tree.
     _guard_artifacts_clean(run_dir)
 
     _write_run_meta(run_dir, {
+        "status": "complete",
         "finished_at_utc": datetime.now(timezone.utc).isoformat(),
         "final_state_hash": result.final_state_hash,
         "replay_matches": result.replay_matches,

@@ -108,10 +108,18 @@ def _run(scenario: dict[str, Any], tmp_path: Path, *, enact: bool = False) -> An
 # --------------------------------------------------------------------------- #
 def test_full_offline_run_completes_and_replays(scenario, tmp_path):
     res = _run(scenario, tmp_path)
-    # The reducer advances state.tick per attempted action (6 agents x 12 ticks
-    # = 72 committed steps, matching pilot_v1 semantics).
+    # The reducer advances state.tick per attempted action. 6 agents x 12 ticks
+    # would be 72, EXCEPT the sanctioned adversary is suspended from the tape
+    # for exactly one tick (the under_sanction flag now has a real world-state
+    # effect, read by the tape's eligibility filter), so one fewer action is
+    # committed. Cross-check the tick against the recorded advancing tape steps
+    # (action + governance advance tick; rights_change flips do not).
     n_agents = len(scenario["agents"])
-    assert res.state.tick == n_agents * scenario["total_ticks"]
+    n_advancing = sum(1 for s in res.tape if s.kind in ("action", "governance"))
+    assert res.state.tick == n_advancing
+    assert res.state.tick == n_agents * scenario["total_ticks"] - 1
+    # the suspension is recorded as real rights_change flips on the tape.
+    assert any(s.kind == "rights_change" for s in res.tape)
     assert len(res.events) > 0
     assert res.final_state_hash and len(res.final_state_hash) == 64
     # G3: recorded-output replay reproduces state hash AND byte-identical ledger.
@@ -161,9 +169,114 @@ def test_adversary_violation_sanctioned_and_appealed(scenario, tmp_path):
     # an appeal was filed and adjudicated (pre-registered timely rule).
     assert any(a.get("phase") == "filed" for a in res.appeal_events)
     assert any(a.get("phase") == "adjudicated" for a in res.appeal_events)
+    # F2/F4: the sanction has a REAL world-state effect. Checkpoints only exist
+    # at ticks 5, 9, total-1 and assembly, so the flag's lifecycle is verified
+    # from the tape: exactly one ON flip (sanction tick) recorded before the
+    # first OFF flip (upheld appeal), and the final checkpoint shows s05's
+    # rights restored.
+    rights_flips = [s for s in res.tape if s.kind == "rights_change"]
+    on = [s for s in rights_flips if s.rights["agent_id"] == "s05" and s.rights["value"]]
+    off = [s for s in rights_flips if s.rights["agent_id"] == "s05" and not s.rights["value"]]
+    assert len(on) == 1 and len(off) >= 1
+    # the ON flip is recorded before any OFF flip (sanction precedes restoration)
+    on_pos = res.tape.index(on[0])
+    assert all(res.tape.index(s) > on_pos for s in off)
+    # by the final tick the rights are restored (upheld appeal + duration expiry).
+    final = res.checkpoints[f"t{scenario['total_ticks'] - 1:02d}"]
+    assert final.agents["s05"].under_sanction is False
     # timeline records the rights flow.
     timeline = (tmp_path / "timeline.md").read_text(encoding="utf-8")
     assert "sanction tick=" in timeline and "appeal tick=" in timeline
+
+
+def test_two_same_tick_withdraws_do_not_double_spend():
+    """F1 regression: two same-tick actions on one world resource must not both
+    pass validation. Proposals are re-validated against the *evolving* state
+    right before the reducer applies, so the second withdraw is rejected
+    (insufficient_world) instead of driving the reducer to a negative pool /
+    raising InvariantViolationError.
+
+    This mirrors the campaign's commit order exactly: both proposals are valid
+    against the start-of-tick snapshot (5.0 available, 4.0 each), but the
+    second is re-validated after the first is committed (1.0 left).
+    """
+    from verdi.analysis.scenario import build_t0_state
+    from verdi.world.reducer import WorldReducer
+
+    sc = {
+        "scenario_id": "t", "world_id": "t", "run_seed": 1,
+        "law_version": "l", "constitution_version": "c", "total_ticks": 1,
+        "world_resources": {"credits": 5.0},
+        "agents": [
+            {"agent_id": "a1", "role": "citizen", "persona_summary": "p",
+             "declared_values": {"integrity": 0.5, "fairness": 0.5, "cooperation": 0.5,
+                                 "autonomy": 0.5, "solidarity": 0.5},
+             "resources": {"credits": 0.0}},
+            {"agent_id": "a2", "role": "citizen", "persona_summary": "p",
+             "declared_values": {"integrity": 0.5, "fairness": 0.5, "cooperation": 0.5,
+                                 "autonomy": 0.5, "solidarity": 0.5},
+             "resources": {"credits": 0.0}},
+        ],
+    }
+    state = build_t0_state(sc)
+    reducer = WorldReducer()
+
+    def withdraw(actor: str, amount: float) -> ProposedAction:
+        return ProposedAction(
+            actor_id=actor, task_id=f"t-{actor}", action_kind="withdraw",
+            arguments={"resource": "credits", "amount": amount}, reason="x",
+        )
+
+    a1, a2 = withdraw("a1", 4.0), withdraw("a2", 4.0)
+    # Both pass against the frozen start-of-tick snapshot...
+    assert validate_action(state, a1).accepted
+    assert validate_action(state, a2).accepted
+
+    # ...but the campaign re-validates against the evolving state before each
+    # commit, so a2 is rejected once a1 has drained the pool to 1.0.
+    state = reducer.apply(state, a1, validate_action(state, a1))
+    v2 = validate_action(state, a2)
+    assert v2.accepted is False
+    assert v2.attempted_violation_codes == ["insufficient_world"]
+    # applying the rejected action is a no-op (no crash, no negative pool).
+    state = reducer.apply(state, a2, v2)
+    assert state.world_resources["credits"] == 1.0
+
+
+def test_rights_change_flips_world_state_and_blocks_sanctioned_agent():
+    """F2: the under_sanction flag flip is a state-only change (no tick /
+    event_cursor advance, but it DOES change the canonical hash) and the
+    validator + task-tape eligibility actually see it.
+    """
+    from verdi.analysis.scenario import build_t0_state
+    from verdi.world.reducer import WorldReducer
+
+    sc = {
+        "scenario_id": "t", "world_id": "t", "run_seed": 1,
+        "law_version": "l", "constitution_version": "c", "total_ticks": 1,
+        "world_resources": {"credits": 0.0},
+        "agents": [{"agent_id": "s05", "role": "citizen", "persona_summary": "p",
+                    "declared_values": {"integrity": 0.5, "fairness": 0.5, "cooperation": 0.5,
+                                        "autonomy": 0.5, "solidarity": 0.5},
+                    "resources": {"credits": 10.0}}],
+    }
+    state = build_t0_state(sc)
+    flip = SocietyCampaign._flip_under_sanction
+
+    base_hash = WorldReducer.canonical_state_hash(state)
+    flagged = flip(state, "s05", True)
+    assert flagged.agents["s05"].under_sanction is True
+    assert flagged.tick == state.tick and flagged.event_cursor == state.event_cursor
+    # the flip changes substantive content, so the canonical hash changes.
+    assert WorldReducer.canonical_state_hash(flagged) != base_hash
+
+    # the validator now blocks a sanctioned agent's transfer.
+    blocked = validate_action(flagged, ProposedAction(
+        actor_id="s05", task_id="t", action_kind="transfer",
+        arguments={"to": "s05", "resource": "credits", "units": 1.0}, reason="x",
+    ))
+    assert blocked.accepted is False
+    assert blocked.attempted_violation_codes == ["under_sanction"]
 
 
 def test_assembly_really_deliberates_and_votes_no_change(scenario, tmp_path):

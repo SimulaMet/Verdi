@@ -23,12 +23,20 @@ class TapeStep:
     ``kind`` defaults to the action semantics; steps produced by the
     governance engine carry ``kind="governance"`` so the reducer only
     applies the rule-version bookkeeping (no resource mutation).
+
+    ``kind="rights_change"`` carries a deterministic world-state
+    ``under_sanction`` flag flip (``rights``: ``{"agent_id": ..., "value":
+    bool}``) that takes no action, advances no ledger event, and does not
+    advance ``tick``/``event_cursor`` — so a live run and a replay both
+    apply it at the same recorded position and the state hash still
+    matches.
     """
 
     action: ProposedAction
     validation: ValidationResult
     kind: str = "action"
     governance: dict | None = None
+    rights: dict | None = None
 
 
 def replay(

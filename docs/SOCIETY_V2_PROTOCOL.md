@@ -163,6 +163,27 @@ tick); no agent reads state after its own tick-start snapshot
 (no intra-tick future leakage); `S_t` never contains an event with
 `event_id` committed after the tick start.
 
+### 1.4 Sanction and appeal world-state semantics
+
+* An accepted sanction deterministically flips the subject's
+  `under_sanction` flag in the world state (the same tick as the
+  sanction event) and is recorded on the tape as a `kind="rights_change"`
+  step so replay reproduces the flag change. While flagged, the agent is
+  suspended from the tape (no task generation) and the deterministic
+  validator blocks `transfer`/`deposit` actions with code
+  `under_sanction`.
+* A sanction **does not** file and adjudicate its appeal in the same
+  tick. The appeal is filed at `violation_tick + 2` and adjudicated
+  against a pre-registered deadline (`violation_tick + 4`); an upheld
+  appeal flips the flag back off and is likewise recorded as a
+  `rights_change` step. Rights restored by duration expiry
+  (`GovernanceEngine.advance_tick`) are flipped off at the top of the
+  affected tick.
+* Commit-loop validation runs against the **current** committed state,
+  not the tick-start snapshot, so a later proposal in the same tick sees
+  the resource effects of earlier ones (double-spend rejected as
+  `insufficient_world` without ever corrupting state).
+
 ## 2. Interface-contract appendix (6 fleet lanes)
 
 Contract only: signatures + invariants, no implementation. `[TO BUILD —
