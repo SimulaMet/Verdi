@@ -21,6 +21,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -31,6 +32,57 @@ from verdi.experiments.g5_judge_live import _load_dotenv_into_environ
 from verdi.society.campaign import PROTOCOL_VERSION, SocietyCampaign
 
 DEFAULT_CONCURRENCY = 4
+DEFAULT_STALL_TIMEOUT_SECONDS = 600
+_HEARTBEAT_INTERVAL_SECONDS = 20
+
+
+def _event_line_count(run_dir: Path) -> int:
+    path = run_dir / "events.jsonl"
+    if not path.exists():
+        return 0
+    with path.open("r", encoding="utf-8") as fh:
+        return sum(1 for _ in fh)
+
+
+async def _stall_watchdog(run_dir: Path, stall_timeout_seconds: float) -> None:
+    """Independent liveness task for a live run.
+
+    A hung endpoint can hold a socket open without ever responding, which
+    parks the whole campaign on one in-flight call while httpx's timeout
+    (which only fires on read activity) never triggers (Tranche 12a lesson).
+    This watchdog watches wall-clock event progress: it writes a
+    ``heartbeat.json`` on a short interval, and if the event count does not
+    grow for ``stall_timeout_seconds`` it writes ``stall.json`` (the audit
+    record) and exits the process with code 3 so a partial run is preserved.
+    It runs as a SEPARATE asyncio task so it survives a hung in-flight call.
+    """
+    deadline = time.monotonic() + stall_timeout_seconds
+    last_count = _event_line_count(run_dir)
+    while True:
+        await asyncio.sleep(_HEARTBEAT_INTERVAL_SECONDS)
+        now = time.monotonic()
+        count = _event_line_count(run_dir)
+        _write_run_meta(run_dir, {
+            "heartbeat_utc": datetime.now(timezone.utc).isoformat(),
+            "events_logged": count,
+        })
+        if count > last_count:
+            last_count = count
+            deadline = now + stall_timeout_seconds
+            continue
+        if now >= deadline:
+            _write_run_meta(run_dir, {
+                "status": "stalled",
+                "stalled_at_utc": datetime.now(timezone.utc).isoformat(),
+                "stall_timeout_seconds": stall_timeout_seconds,
+                "events_logged": count,
+            })
+            print(
+                f"STALL: no new events for {stall_timeout_seconds:.0f}s "
+                f"(last count {count}); preserving run dir and exiting (code 3).",
+                file=sys.stderr, flush=True,
+            )
+            os._exit(3)
 
 
 def resolve_endpoint_config() -> ModelEndpointConfig:
@@ -65,7 +117,8 @@ async def smoke_call(client: ModelClient) -> dict:
     }
 
 
-async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency: int | None) -> int:
+async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency: int | None,
+               stall_timeout_seconds: float | None = None) -> int:
     config = resolve_endpoint_config()
     scenario = json.loads(scenario_path.read_text(encoding="utf-8"))
     seed = int(seed if seed is not None else scenario["run_seed"])
@@ -102,14 +155,20 @@ async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency
             run_seed=seed,
             concurrency=concurrency,
         )
+        stall_timeout = (stall_timeout_seconds if stall_timeout_seconds is not None
+                         else DEFAULT_STALL_TIMEOUT_SECONDS)
+        watchdog = asyncio.create_task(_stall_watchdog(run_dir, stall_timeout))
         try:
             result = await campaign.run()
         except Exception:
+            watchdog.cancel()
             _write_run_meta(run_dir, {
                 "status": "failed",
                 "failed_at_utc": datetime.now(timezone.utc).isoformat(),
             })
             raise
+        finally:
+            watchdog.cancel()
 
     # Hard guard: no key material may reach the artifact tree.
     _guard_artifacts_clean(run_dir)
@@ -162,8 +221,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=None, help="run seed (default: scenario run_seed)")
     parser.add_argument("--concurrency", type=int, default=None,
                         help="proposal concurrency (default: VERDI_MAX_CONCURRENCY or 4)")
+    parser.add_argument("--stall-timeout", type=float, default=None,
+                        help="abort if no new events for this many seconds "
+                             "(default 600; guards against hung endpoint sockets)")
     args = parser.parse_args(argv)
-    return asyncio.run(_run(args.scenario, args.run_dir, args.seed, args.concurrency))
+    return asyncio.run(_run(args.scenario, args.run_dir, args.seed, args.concurrency,
+                            args.stall_timeout))
 
 
 if __name__ == "__main__":

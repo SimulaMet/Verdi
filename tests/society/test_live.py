@@ -145,3 +145,59 @@ def test_main_fails_cleanly_without_endpoint(tmp_path: Path, monkeypatch: pytest
     with pytest.raises(SystemExit) as excinfo:
         live_module.main(["--scenario", str(SCENARIO), "--run-dir", str(tmp_path)])
     assert "not configured" in str(excinfo.value)
+
+
+def test_stall_watchdog_writes_heartbeat_and_survives_progress(tmp_path: Path):
+    """Heartbeat is written on an interval, and progress resets the deadline
+    (no stall recorded while events keep growing)."""
+    import asyncio
+    import time as _t
+
+    (tmp_path / "events.jsonl").write_text("")
+    live_module._HEARTBEAT_INTERVAL_SECONDS = 0.05  # fast for test
+
+    async def scenario():
+        watchdog = asyncio.create_task(live_module._stall_watchdog(tmp_path, 0.2))
+        deadline = _t.monotonic() + 0.5
+        with (tmp_path / "events.jsonl").open("a") as fh:
+            while _t.monotonic() < deadline:
+                fh.write('{"kind": "action_accepted"}\n')
+                fh.flush()
+                await asyncio.sleep(0.05)
+        watchdog.cancel()
+    asyncio.run(scenario())
+
+    meta = json.loads((tmp_path / "run_meta.json").read_text())
+    assert "heartbeat_utc" in meta, "heartbeat never written"
+    assert meta["events_logged"] > 0
+    assert meta.get("status") != "stalled"
+
+
+def test_stall_watchdog_aborts_on_hung_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """No event growth past the window -> stall.json in run_meta and hard exit
+    code 3 (the Tranche 12a hung-socket recovery path)."""
+    import asyncio
+
+    (tmp_path / "events.jsonl").write_text('{"kind": "action_accepted"}\n')
+    monkeypatch.setattr(live_module, "_HEARTBEAT_INTERVAL_SECONDS", 0.05)
+    exited = {}
+
+    def fake_exit(code: int) -> None:
+        exited["code"] = code
+        raise SystemExit(code)
+
+    monkeypatch.setattr("os._exit", fake_exit)
+
+    async def scenario():
+        watchdog = asyncio.create_task(live_module._stall_watchdog(tmp_path, 0.2))
+        try:
+            await asyncio.sleep(0.5)
+        finally:
+            watchdog.cancel()
+
+    with pytest.raises(SystemExit):
+        asyncio.run(scenario())
+    assert exited.get("code") == 3, f"expected exit code 3, got {exited}"
+    meta = json.loads((tmp_path / "run_meta.json").read_text())
+    assert meta["status"] == "stalled"
+    assert meta["events_logged"] == 1
