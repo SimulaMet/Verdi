@@ -142,6 +142,37 @@ would have been logged but NOT sanctioned.
 - Concurrency decision: at 4, mean 3.36 s / p95 8.9 s / zero retries →
   endpoint has headroom; seed 2 launched at concurrency 6 per campaign plan.
 
+### 11h — Second independent review of `bae0e8f` + nit remediation
+- Fresh verdi-reviewer (agent a9bf5251) re-reviewed the remediation commits.
+  Verdict **SHIP-WITH-NITS**: both fixes correct and verified (reproduced
+  pre-fix behavior in a throwaway worktree). Findings and dispositions:
+  - NIT-1 (MEDIUM-low, ADDRESSED): test_stageB guards bug 2 only
+    post-bug-1-fix, not on the original dual-bug baseline. Added
+    `test_multi_meeting_no_cross_assembly_reenaction`: 2 meetings, one
+    proposer per meeting, all-for votes → asserts exactly 2 enactments,
+    ZERO amendment_rejected events (shared Assembly would produce a
+    retroactive_amendment rejection at meeting 2, visible on the clean
+    baseline), and byte-identical replay.
+  - NIT-2 (LOW, ADDRESSED): timeline.md "## Assembly" section now labelled
+    "final meeting" (last-meeting-only struct kept as-is, documented).
+  - NIT-3 (LOW, ADDRESSED): per-meeting Assembly quarantine is now lifted
+    into `SocietyResult.assembly_quarantined` (tick-keyed), counted in
+    metrics.json `assembly_quarantined`, and rendered in timeline.md when
+    non-empty — assembly quarantine is auditable at run level again.
+  - NIT-4 (LOW, documented, out of scope): an assembly enacting 2+
+    amendments in one meeting writes one enacted ledger step (keyed to the
+    final enacted version). Shipped scenarios enact ≤1 per meeting;
+    recorded as a known limitation.
+  - NIT-5 (COSMETIC, CONFIRMED — my off-by-one): the `bae0e8f` commit
+    message claims "512 passed, 1 skipped" but the suite at that tree
+    actually reports 511 passed, 1 skipped (reviewer re-ran and confirmed;
+    no test added/removed between `bae0e8f` and `972dd15`). I recorded the
+    total (512 collected) instead of the passed count. No missing tests;
+    the NIT-1 test added in this nit-remediation commit is what brings the
+    suite to 512 passed, 1 skipped as of now.
+- Verification: python -m pytest tests = 512 passed, 1 skipped (30.9 s);
+  ruff check src tests = clean.
+
 ### 11g — LIVE Stage B seed-2 (fix1) IN PROGRESS
 - run: `runs/society-v2/stageB-20261012-seed2-fix1`, seed 20261012,
   concurrency **6**, worker branch HEAD `bae0e8f` (includes fresh-Assembly

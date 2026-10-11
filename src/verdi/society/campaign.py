@@ -115,6 +115,7 @@ class SocietyResult:
     model_calls: list[_ModelCall] = field(default_factory=list)
     probes: list[ProbeResult] = field(default_factory=list)
     assembly_outcome: dict[str, Any] | None = None
+    assembly_quarantined: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     sanction_events: list[dict[str, Any]] = field(default_factory=list)
     appeal_events: list[dict[str, Any]] = field(default_factory=list)
     restoration_events: list[dict[str, Any]] = field(default_factory=list)
@@ -193,6 +194,11 @@ class SocietyCampaign:
         self._constitution_versions: list[str] = []
         self._checkpoints: dict[str, Any] = {}
         self._assembly_outcome: dict[str, Any] | None = None
+        # Per-meeting assembly quarantine, accumulated across meetings (each
+        # meeting uses a fresh Assembly instance, so its quarantine records
+        # must be lifted before the instance is dropped — otherwise assembly
+        # quarantine is unauditable at run level).
+        self._assembly_quarantined: dict[str, list[dict[str, Any]]] = {}
         # Appeals are deferred off the sanction's own tick (pre-registered
         # file tick = violation+2) so the "timely" adjudication is a real
         # condition against the deadline and the dismissal path is reachable.
@@ -391,6 +397,7 @@ class SocietyCampaign:
             model_calls=self._model_calls,
             probes=self._probes,
             assembly_outcome=self._assembly_outcome,
+            assembly_quarantined=self._assembly_quarantined,
             sanction_events=self._sanction_events,
             appeal_events=self._appeal_events,
             restoration_events=self._restoration_events,
@@ -536,12 +543,17 @@ class SocietyCampaign:
         votes = await assembly.run_voting(drafts, rec, voters=voter_ids, tick=tick)
         engine = governance_of(assembly)
         outcome = assembly.finalize(engine, votes, tick=tick)
+        # Lift this meeting's quarantine records before the fresh Assembly
+        # instance is dropped (the campaign re-creates it per meeting, so the
+        # run-level report would otherwise never see assembly quarantine).
+        self._assembly_quarantined[f"tick-{tick}"] = list(assembly.quarantined)
         self._assembly_outcome = {
             "outcome": outcome.outcome,
             "enacted_version": outcome.enacted_version,
             "proposal_ids": list(outcome.proposals),
             "votes": outcome.votes,
             "abstentions": outcome.abstentions,
+            "quarantined": list(assembly.quarantined),
         }
         if outcome.outcome == "amendment_enacted" and outcome.enacted_version:
             gen_event = {
@@ -914,6 +926,9 @@ def _compute_metrics(result: SocietyResult, events: list[WorldEvent]) -> dict[st
         "probe_points_by_phase": {ph: len(pts) for ph, pts in channel_trajectories(result.probes).items()},
         "constitution_versions": result.constitution_versions,
         "quarantined_proposals": len(result.quarantined),
+        "assembly_quarantined": {
+            k: len(v) for k, v in sorted(result.assembly_quarantined.items())
+        },
         "assembly_outcome": (result.assembly_outcome or {}).get("outcome"),
         "sanctions": len(result.sanction_events),
         "appeals": len(result.appeal_events),
@@ -1004,10 +1019,16 @@ def write_timeline(run_dir: Path, result: SocietyResult) -> None:
     for ev in result.events:
         lines.append(f"- event {ev.event_id} tick={ev.tick} kind={ev.kind}")
     if result.assembly_outcome:
-        lines += ["", "## Assembly", f"- outcome: {result.assembly_outcome.get('outcome')}"]
+        lines += ["", "## Assembly (final meeting)", f"- outcome: {result.assembly_outcome.get('outcome')}"]
         votes = result.assembly_outcome.get("votes")
         if isinstance(votes, list):
             lines += [f"  - {json.dumps(v, sort_keys=True)}" for v in votes]
+    if result.assembly_quarantined:
+        lines += ["", "## Assembly quarantine (per meeting)"]
+        for meeting in sorted(result.assembly_quarantined):
+            recs = result.assembly_quarantined[meeting]
+            if recs:
+                lines += [f"- {meeting}: {json.dumps(r, sort_keys=True)}" for r in recs]
     if result.sanction_events or result.appeal_events:
         lines += ["", "## Sanctions & appeals"]
         for s in result.sanction_events:

@@ -9,6 +9,7 @@ about the live model's output distribution.
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 from pathlib import Path
 from typing import Any
@@ -290,6 +291,70 @@ def test_mixed_assembly_ledgers_rejected_sibling_and_replays(scenario, tmp_path)
     # the enacted proposal bumped the constitution.
     assert res.state.constitution_version != res.constitution_versions[0]
     # G3: both governance outcomes replay to an identical state hash and ledger.
+    assert res.replay_matches is True
+    assert res.replay_log_identical is True
+
+
+class _TwoMeetingProposerCaller(ScriptedCaller):
+    """NIT-1 regression: a SINGLE proposer proposes in EVERY assembly and all
+    voters vote "for", so every meeting enacts exactly one amendment. This
+    pins the bug-2 signature on a clean baseline: with a fresh Assembly per
+    meeting, meeting 2 must NOT re-enact meeting 1's proposal (which would now
+    be deterministically rejected as retroactive_amendment because its
+    effective_from_tick is in the past). Old behavior (shared Assembly) yields
+    exactly 1 extra retroactive rejection at meeting 2 — and on the ORIGINAL
+    dual-bug code the mixed-assembly gate silently swallowed that rejection,
+    which is why this test does not depend on bug 1 ever being fixed."""
+
+    _PROPOSER = "s01"
+
+    async def generate_structured(self, messages, **kw):
+        self.n += 1
+        content = messages[0]["content"]
+        if "assembly:deliberation" in content:
+            voter = content.split('agent "')[1].split('"')[0]
+            if voter == self._PROPOSER:
+                tick = int(content.split("at tick ")[1].split(".")[0])
+                payload = {"change_summary": f"Meeting rule for tick {tick}",
+                           "payload": {"rationing_rule": f"max_delta_{tick}_units",
+                                       "effective_from_tick": tick}}
+            else:
+                payload = {"abstain": True}
+            return ModelResult(content=json.dumps(payload), request_id=f"r{self.n}", model="fake",
+                               trace_id=f"trace-{self.n}")
+        if "assembly:vote" in content:
+            return ModelResult(content=json.dumps({"choice": "for"}), request_id=f"r{self.n}", model="fake",
+                               trace_id=f"trace-{self.n}")
+        return await super().generate_structured(messages, **kw)
+
+
+def test_multi_meeting_no_cross_assembly_reenaction(scenario, tmp_path):
+    """NIT-1: every meeting enacts exactly its own proposal; no
+    retroactive_amendment rejections leak across meetings. This test catches
+    the shared-Assembly regression on the clean (bug-1-fixed) baseline: a
+    shared Assembly makes meeting 2 re-enact meeting 1's proposal, which the
+    deterministic engine rejects as retroactive_amendment and the unconditional
+    rejection loop then ledgeres as an amendment_rejected event."""
+    two_meetings = copy.deepcopy(scenario)
+    two_meetings["assemblies"] = [6, 10]
+    campaign = SocietyCampaign(scenario=two_meetings, run_dir=tmp_path,
+                               caller=_TwoMeetingProposerCaller(), run_seed=20261011, concurrency=4)
+    res = asyncio.run(campaign.run())
+    enacted = [e for e in res.events if e.kind == "amendment_enacted"]
+    rejected = [e for e in res.events if e.kind == "amendment_rejected"]
+    gov = [s for s in res.tape if s.kind == "governance"]
+    assert len(enacted) == 2, f"expected exactly 2 enactments (one per meeting), got {len(enacted)}"
+    assert len(rejected) == 0, (
+        f"cross-assembly re-enaction detected: {[(e.tick, e.payload.get('invalid_reasons')) for e in rejected]}"
+    )
+    # no retroactive rejection anywhere in the governance tape.
+    retro = [s for s in gov if s.governance.get("invalid_reasons") and "retroactive_amendment" in s.governance["invalid_reasons"]]
+    assert retro == []
+    assert len(gov) == 2
+    # each meeting bumped the constitution exactly once (versions list =
+    # base + one per enactment).
+    assert len(res.constitution_versions) == 3
+    assert len(set(res.constitution_versions)) == 3
     assert res.replay_matches is True
     assert res.replay_log_identical is True
 
