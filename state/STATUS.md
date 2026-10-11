@@ -1,6 +1,6 @@
 # Execution state (integrator-owned)
 
-Update UTC: 2026-10-12 16:30 (Tranche 11 — Society V2 Stage B: independent review BLOCK (N1-N4) remediated on feat/society-v2-stage-b-fix1 @ 7ccabcf; LIVE seed-1 (fix1) re-run CRASHED at tick 230 on a genuine reducer invariant breach (negative balance b01 credits -2.0); root-caused to a validator/reducer DEPOSIT invariant gap and a transfer-only sanction gate; fixed on 09080dc (validator now rejects over-deposits with law:no_double_spend/overdraft; sanction gate generalized to all substantive rejections); 510 passed + ruff clean; LIVE seed-1 fix2 re-run in progress @ concurrency 4)
+Update UTC: 2026-10-12 18:05 (Tranche 11 — Society V2 Stage B COMPLETE and merged to dev @ f116387: review BLOCK N1-N4 remediated (7ccabcf); LIVE crash root-caused + fixed (09080dc, deposit invariant + generalized sanction gate); two review fix sets (bae0e8f mixed-assembly ledgering + fresh-Assembly-per-meeting; 00fee2c per-meeting quarantine auditability + cross-assembly regression test). Three LIVE runs all complete + replay-identical: seed-1 fix2 (concurrency 4), seed-1 repeat (concurrency 6), TRUE seed-2 20261013 (concurrency 6). Both live runs surfaced a REAL mixed assembly (b05 stale-base proposal rejected threshold_not_met 5:7) correctly ledgered — live proof of the Finding-1 fix. 512 passed, 1 skipped, ruff clean on dev. `main` untouched.)
 
 ## Tranche 11 (this update): Society V2 Stage B BLOCK remediation + deposit-invariant crash fix
 Campaign: docs/LIVE_SOCIETY_CAMPAIGN.md (Stage B: 12 agents b01-b12, 30 ticks, 3 assemblies, honest+adversarial).
@@ -183,6 +183,8 @@ SECOND SEED-1 RUN) — COMPLETED
   carries `run_seed: 20261013` and a different agent roster; launching it
   under the wrong name was a launch error. The repeat is preserved as a
   seed-1 reproducibility data point, not claimed as seed 2.)
+- Code at launch included the fresh-Assembly fix (verified
+  `fresh_assembly = Assembly(governance)` at campaign.py:359, commit bae0e8f).
 - status=**complete**; SimulaChat default Qwen3.8-27B; final_hash
   bd889c51f6fe0f16 (≠ seed1-fix2's ca00c60a… — expected: the Qwen model is
   sampling, so a repeat run is NOT byte-identical; determinism lives in the
@@ -210,12 +212,77 @@ SECOND SEED-1 RUN) — COMPLETED
   at campaign.py:359) and no `retroactive_amendment` rejection appears.
 - Enforcement cycle: 2 sanctions → 4 appeals → 2 restorations.
 
-### 11i — LIVE Stage B TRUE seed-2 (seed 20261013) — LAUNCHED
+### 11i — LIVE Stage B TRUE seed-2 (seed 20261013) — COMPLETED
 - run: `runs/society-v2/stageB-20261012-seed2`, scenario
   `society_v2_stageB_seed2.json` (seed 20261013, distinct agent roster),
   concurrency 6, code at `00fee2c`.
-- Awaiting completion → verification → merge of feat/society-v2-stage-b-fix1
-  (7ccabcf, 09080dc, ea5307c, bae0e8f, 972dd15, 00fee2c) to dev.
+- status=**complete**; final_hash 874436f0ff14934b (distinct from the other
+  two runs — expected under model sampling); replay_matches=True,
+  replay_log_identical=True. 362 events / 982 model calls / 324 probes /
+  2177 s wall; health healthy, mean 4.65 s, p95 11.5 s, zero quarantine.
+- Actions: 355 accepted / 3 rejected (b12 world-pool over-withdraw at t4;
+  b05 food over-deposit at t231/t243 — all ledgered as rejections, no
+  invariant breach). Per-agent accepted 27–30, no starvation.
+- Governance: 3 assemblies; constitution base→v10→v15→v21. **Assembly 2
+  (tick 205/206) again a REAL mixed assembly**: enacted a proposal (→v15)
+  AND rejected b05's stale-base proposal `asm-b05-16` (threshold_not_met).
+  Cross-seed reproducibility: seed-1's repeat ALSO rejected `asm-b05-16`
+  5:7 — the same agent+proposal_id signature failing the amendment
+  threshold in two independent live worlds.
+- Enforcement cycle: 2 sanctions → 4 appeals → 2 restorations.
+- **NIT-3 fix live in production:** metrics.json now carries
+  `assembly_quarantined: {tick-8: 0, tick-16: 0, tick-24: 0}` (assembly
+  quarantine is auditable at run level; empty here = no quarantined
+  proposals in either live seed).
+
+### 11j — Tranche 11 COMPLETE — merged to dev (serial fast-forward)
+- Worker branch `feat/society-v2-stage-b-fix1` (commits 7ccabcf, 09080dc,
+  ea5307c, bae0e8f, 972dd15, 00fee2c, f116387) fast-forward merged to
+  **dev @ f116387** (dev base was 305198c = the merge-base, so clean FF, no
+  rebase). Pushed. `main` untouched (never touched this whole tranche).
+- Cross-module validation on dev: python -m pytest tests = **512 passed,
+  1 skipped** (13.5 s); ruff check src tests = clean.
+- Three independent verdi-reviewer passes: (1) SHIP-WITH-NITS → Finding 1
+  mixed-assembly + exposed Assembly-reuse bug (fixed bae0e8f); (2)
+  SHIP-WITH-NITS → NIT-1..5 (fixed 00fee2c: per-meeting quarantine,
+  cross-assembly regression test, timeline labelling; NIT-4 documented
+  out-of-scope; NIT-5 was my commit-message off-by-one, confirmed).
+- Stage B gates passed: G0 (frozen protocol docs/LIVE_SOCIETY_CAMPAIGN.md +
+  SOCIETY_V2_PROTOCOL.md), G1 (512 passed + ruff), G2 (cross-component:
+  validator/reducer/ledger/assembly/sanction/probe all exercised live),
+  G3 (deterministic replay + byte-identical log across all 3 live runs +
+  offline Stage B replay tests), G4 (SimpleAudit: same-family judge
+  caveat recorded on 324 probes each run; 0 quarantine), G5 (sanity: no
+  agent starvation, no invariant breach, sanctions/appeals/restorations
+  cycled, honest limitation that the Qwen judge is same-family — not
+  independent).
+- **Honest limitations (recorded, not hidden):** (a) The Qwen judge for
+  probes is same-family as the agents — probe scores are a signal, not an
+  independent ground truth; an independent-judge check is a G4 gap for a
+  future tranche. (b) A "repeat of seed 1" (seed2-fix1) is NOT a second
+  seed — it re-ran seed 20261012; the true second seed is 20261013.
+  (c) The b01 over-deposit (seed 1) / b05 over-deposit (seed 2) rejections
+  are the enforcement working correctly, not failures — the validator now
+  catches over-deposits before the reducer would breach nonnegativity.
+- Three LIVE run dirs preserved as evidence (never deleted):
+  runs/society-v2/stageB-20261012-seed1-fix1 (the original CRASHED run —
+  retained as the failure evidence), stageB-20261012-seed1-fix2 (clean
+  seed-1 @ concurrency 4), stageB-20261012-seed2-fix1 (seed-1 REPEAT @
+  concurrency 6), stageB-20261012-seed2 (TRUE seed 20261013 @ concurrency 6).
+
+### Next 3 actions (Stage C gate)
+1. Throughput soak before raising concurrency: seed-1-repeat (concurrency 6,
+   mean 3.57 s/p95 10.7 s) and seed-2 (concurrency 6, mean 4.65 s/p95
+   11.5 s) show no retry degradation at 6 vs 4 — candidate to raise to 8
+   for Stage C only if a dedicated soak at 8 stays zero-retry/zero-quarantine.
+2. Stage C (24 → 48 → 96 agents, longer timelines) is now UNBLOCKED: the
+   validator/reducer invariant, mixed-assembly ledgering, fresh-Assembly
+   lifecycle, and per-meeting quarantine auditability are all on dev and
+   live-verified. Build the Stage C scenario(s) from dev on a fresh feature
+   branch.
+3. Independent-judge G4 gap: source or implement an out-of-family judge for
+   the 324-probe battery so probe scores are not same-family self-assessment
+   (currently a recorded limitation, not a blocker for Stage C structure).
 
 ## Tranche 10 (prior): Society V2 Stage A (live society campaign) — dev 55a6c5d
 
