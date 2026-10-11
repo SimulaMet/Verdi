@@ -421,6 +421,22 @@ Pre-registration: docs/STAGE_C_PREREGISTRATION.md (committed BEFORE live outcome
   sensitivity loss, not a bug; pinned by
   test_watchdog_masks_single_wedged_call_under_parallelism), run_batch
   concurrency arg marked advisory. Full suite + ruff clean at fed2992.
+- **Attempt 6 OUTCOME (19:05 UTC, status=failed, preserved as
+  stageC1-20261014-attempt6-524-failed): 1094 events, 3274 beats, all 3
+  assembly ticks PASSED (t15/t20/t45 snapshots written, 3 amendments
+  enacted — t45's amendment is event 1093), died at ~tick 46 on ONE
+  un-retried HTTP 524 (Cloudflare origin-timeout; RETRYABLE_STATUS lacked
+  524).** The parallel-assembly hypothesis is now validated live: three
+  full 24-voter parallel assemblies completed in a ~92-min run where the
+  sequential code died at the first (attempts 1 & 3) or was projected at
+  ~2-3h per assembly pair. Partial data fully intact for analysis.
+- **Fix 25a76a4:** 524 added to RETRYABLE_STATUS (same transient class as
+  502/503), 524-then-200 recovery test + budget-exhaustion parametrization
+  extended, full suite + ruff clean. Endpoint re-probed healthy (3x OK,
+  0.5-0.7s) before relaunch.
+- **Attempt 7 LIVE:** same seed 20261014 / scenario, concurrency 10, 524-
+  resilient client, PID 377, ~19:06 UTC, smoke OK (trace f6d29383). This
+  attempt only needs to reach t60 to complete C-1.
 
 ### Next 3 actions (Stage C)
 1. Monitor attempt 6 (PID 45753, concurrency 10, parallel assembly) to
