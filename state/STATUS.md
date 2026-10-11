@@ -1,6 +1,8 @@
 # Execution state (integrator-owned)
 
-Update UTC: 2026-10-12 18:05 (Tranche 11 — Society V2 Stage B COMPLETE and merged to dev @ f116387: review BLOCK N1-N4 remediated (7ccabcf); LIVE crash root-caused + fixed (09080dc, deposit invariant + generalized sanction gate); two review fix sets (bae0e8f mixed-assembly ledgering + fresh-Assembly-per-meeting; 00fee2c per-meeting quarantine auditability + cross-assembly regression test). Three LIVE runs all complete + replay-identical: seed-1 fix2 (concurrency 4), seed-1 repeat (concurrency 6), TRUE seed-2 20261013 (concurrency 6). Both live runs surfaced a REAL mixed assembly (b05 stale-base proposal rejected threshold_not_met 5:7) correctly ledgered — live proof of the Finding-1 fix. 512 passed, 1 skipped, ruff clean on dev. `main` untouched.)
+Update UTC: 2026-10-11 10:00 (Tranche 12 — Society V2 Stage C-1 scale-jump IN PROGRESS on feat/society-v2-stage-c: pre-registration + deterministic 24x60 scenario + offline scale gate (65c7d0a); C-2 48x100 rung + parametrized offline test (553bd5a); LIVE attempt 1 HUNG at event 377 on a dead endpoint socket (preserved as stageC1-20261014-attempt1-hung, root-caused, LESSONS Tranche 12a); independent stall-watchdog fix + 2 tests (5784c62); attempt 3 live with watchdog armed. 516 passed, 1 skipped, ruff clean. `main` untouched.)
+
+Prior: Update UTC: 2026-10-12 18:05 (Tranche 11 — Society V2 Stage B COMPLETE and merged to dev @ f116387: review BLOCK N1-N4 remediated (7ccabcf); LIVE crash root-caused + fixed (09080dc, deposit invariant + generalized sanction gate); two review fix sets (bae0e8f mixed-assembly ledgering + fresh-Assembly-per-meeting; 00fee2c per-meeting quarantine auditability + cross-assembly regression test). Three LIVE runs all complete + replay-identical: seed-1 fix2 (concurrency 4), seed-1 repeat (concurrency 6), TRUE seed-2 20261013 (concurrency 6). Both live runs surfaced a REAL mixed assembly (b05 stale-base proposal rejected threshold_not_met 5:7) correctly ledgered — live proof of the Finding-1 fix. 512 passed, 1 skipped, ruff clean on dev. `main` untouched.)
 
 ## Tranche 11 (this update): Society V2 Stage B BLOCK remediation + deposit-invariant crash fix
 Campaign: docs/LIVE_SOCIETY_CAMPAIGN.md (Stage B: 12 agents b01-b12, 30 ticks, 3 assemblies, honest+adversarial).
@@ -283,6 +285,54 @@ SECOND SEED-1 RUN) — COMPLETED
 3. Independent-judge G4 gap: source or implement an out-of-family judge for
    the 324-probe battery so probe scores are not same-family self-assessment
    (currently a recorded limitation, not a blocker for Stage C structure).
+
+## Tranche 12 (this update): Society V2 Stage C-1 scale-jump (24x60) — dev lineage @ `5784c62`
+Campaign: docs/LIVE_SOCIETY_CAMPAIGN.md Stage C (24/48/96 agents, 60/100/200 ticks).
+Branch: `feat/society-v2-stage-c` (worker commits 65c7d0a, 553bd5a, 5784c62) off dev @ b36bafa. `main` untouched.
+Pre-registration: docs/STAGE_C_PREREGISTRATION.md (committed BEFORE live outcomes, per scale-jump gate).
+
+### 12a. C-1 scenario + offline scale gate (65c7d0a)
+- experiments/generate_stageC.py deterministic generator; society_v2_stageC1.json
+  (24 agents c01-c24 ring, 60 ticks, 3 assemblies @15/30/45, 1 adversary c13,
+  world food 80, seed 20261014, world_id world-society-v2-stagec1).
+- tests/society/test_stageC_offline_scale.py runs the REAL scenario through the
+  full engine with a deterministic scripted caller (NO API): byte-identical
+  replay + hash chain, denominator 24*60-1=1439 actions, 3 assemblies each
+  enacting one (base+3 versions), one-tick suspension + rights restoration,
+  648-probe battery (9 ticks x 24 x 3). This is the fast pre-live gate.
+- C-2 rung added (553bd5a): 48x100, 5 assemblies @20/40/60/80/95, adversary
+  d25, seed 20261015; offline ~42s. Test parametrized over both rungs.
+
+### 12b. LIVE C-1 attempt 1 HUNG (preserved) + stall watchdog (5784c62)
+- Attempt 1: `python -m verdi.society.live ... --concurrency 6` progressed to
+  event 377 (~27 min) then zero new bytes 9+ min at 0% CPU, one ESTABLISHED
+  socket to the vLLM host that never completed a read. httpx read-timeout only
+  fires on read activity, so a held-open-without-data connection never times
+  out; one hung call holds a semaphore slot and parks the WHOLE campaign.
+  Root cause: transient endpoint-side stall (re-probed healthy at 1.3s after
+  kill). Recorded in state/LESSONS.md (Tranche 12a).
+- Fix (5784c62): independent _stall_watchdog asyncio task in verdi.society.live
+  writes heartbeat_utc + events_logged to run_meta.json every 20s; if the
+  events.jsonl line count stops growing for --stall-timeout (default 600s) it
+  records status=stalled and exits code 3, preserving the partial run. Runs as
+  a SEPARATE task so it survives a hung in-flight read. 2 offline tests.
+- Evidence preservation: runs/society-v2/stageC1-20261014-attempt1-hung/
+  (377 events, gitignored, NOT deleted).
+- Verification at commit: 516 passed, 1 skipped; ruff clean.
+
+### 12c. LIVE C-1 attempt 3 (IN FLIGHT) — watchdog armed
+- Relaunched on 5784c62 with `python -u`, `--stall-timeout 600`. As of
+  2026-10-11 ~10:00 UTC: smoke OK, events growing, watchdog heartbeat active.
+  Outcome (replay/hash/health/denominator) will be recorded on completion.
+
+### Next 3 actions (Stage C)
+1. On C-1 attempt 3 completion: verify replay True/True, all 24 agents acted,
+   3 assemblies enacting, endpoint health (retries/quarantine), final hash;
+   record in STATUS + merge feat/society-v2-stage-c to dev (serial).
+2. Concurrency 6->8 gated on a dedicated zero-retry soak (Tranche 11 item 1).
+3. C-2 (48x100) live launch is GATED on C-1 passing its scale-jump gate;
+   multi-seed / topology-varying / adversary-prevalence 0/1/3 effect study is
+   C-2/C-3 and is NOT claimable until independently reviewed.
 
 ## Tranche 10 (prior): Society V2 Stage A (live society campaign) — dev 55a6c5d
 
