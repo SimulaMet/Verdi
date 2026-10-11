@@ -36,6 +36,7 @@ import re
 import subprocess
 import time
 from collections.abc import Callable
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -70,6 +71,11 @@ from verdi.world.replay import TapeStep
 from verdi.world.validate import validate_action
 
 PROTOCOL_VERSION = "verdi.society-v2/1"
+
+#: Per-phase context for progress beats (Tranche 12h). Set by the campaign
+#: tick loop so each completed model call's beat records which tick/purpose/
+#: subject it belonged to. The live runner's _LiveProgressCaller reads this.
+BEAT_CONTEXT: ContextVar[dict[str, Any] | None] = ContextVar("beat_context", default=None)
 
 #: ``attempted_violation_codes`` values (see src/verdi/world/validate.py) that
 #: represent a genuine world-rule violation an agent deliberately attempted --
@@ -117,6 +123,7 @@ class SocietyResult:
     probes: list[ProbeResult] = field(default_factory=list)
     assembly_outcome: dict[str, Any] | None = None
     assembly_quarantined: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    meetings: list[dict[str, Any]] = field(default_factory=list)
     sanction_events: list[dict[str, Any]] = field(default_factory=list)
     appeal_events: list[dict[str, Any]] = field(default_factory=list)
     restoration_events: list[dict[str, Any]] = field(default_factory=list)
@@ -195,6 +202,7 @@ class SocietyCampaign:
         self._constitution_versions: list[str] = []
         self._checkpoints: dict[str, Any] = {}
         self._assembly_outcome: dict[str, Any] | None = None
+        self._meetings: list[dict[str, Any]] = []
         # Per-meeting assembly quarantine, accumulated across meetings (each
         # meeting uses a fresh Assembly instance, so its quarantine records
         # must be lifted before the instance is dropped — otherwise assembly
@@ -294,6 +302,10 @@ class SocietyCampaign:
 
             snapshot = state  # frozen start-of-tick state (concurrency base)
 
+            # Tranche 12h: set beat context so progress.jsonl records which
+            # tick/purpose each completed model call belonged to.
+            BEAT_CONTEXT.set({"tick": tick, "purpose": "action", "subject": None})
+
             if tick in self._probe_phases:
                 await self._probe_phase(snapshot, tick, self._probe_phases[tick], recorder)
 
@@ -348,6 +360,7 @@ class SocietyCampaign:
                 memory[aid].append_observations(aid, fresh.model_dump())
 
             if tick == self._reflection_tick:
+                BEAT_CONTEXT.set({"tick": tick, "purpose": "reflection", "subject": None})
                 await self._reflect(tick, state, memory, fingerprint)
 
             if tick in self._assembly_ticks:
@@ -358,6 +371,7 @@ class SocietyCampaign:
                 # proposals, which fail as retroactive_amendment and pollute the
                 # ledger). The GovernanceEngine (constitution state) is shared.
                 fresh_assembly = Assembly(governance)
+                BEAT_CONTEXT.set({"tick": tick, "purpose": "assembly", "subject": None})
                 state = await self._assemble(tick, state, agent_ids, fresh_assembly, log, reducer)
                 self._constitution_versions.append(governance.constitution.current.version)
 
@@ -399,6 +413,7 @@ class SocietyCampaign:
             probes=self._probes,
             assembly_outcome=self._assembly_outcome,
             assembly_quarantined=self._assembly_quarantined,
+            meetings=self._meetings,
             sanction_events=self._sanction_events,
             appeal_events=self._appeal_events,
             restoration_events=self._restoration_events,
@@ -573,6 +588,18 @@ class SocietyCampaign:
             "abstentions": outcome.abstentions,
             "quarantined": list(assembly.quarantined),
         }
+        # Tranche 12h: accumulate the FULL meeting record (proposals with
+        # texts, votes, outcome) for meetings.jsonl — one canonical file.
+        self._meetings.append({
+            "tick": tick,
+            "outcome": outcome.outcome,
+            "enacted_version": outcome.enacted_version,
+            "proposals": outcome.proposal_details,
+            "votes": outcome.votes,
+            "abstentions": outcome.abstentions,
+            "quarantined": list(assembly.quarantined),
+            "deliberation_abstentions": list(assembly.deliberation_abstentions),
+        })
         if outcome.outcome == "amendment_enacted" and outcome.enacted_version:
             gen_event = {
                 "kind": "amendment_enacted",
@@ -830,7 +857,8 @@ class SocietyCampaign:
         run_dir = self._run_dir
         write_probes(run_dir, result.probes)
         write_model_calls(run_dir, result.model_calls)
-        write_constitution_history(run_dir, result.constitution_versions)
+        write_meetings(run_dir, result.meetings)
+        write_constitution_history(run_dir, result.constitution_versions, result.meetings)
         write_metrics(run_dir, result, result.events)
         write_health(run_dir, result)
         write_checkpoint(run_dir, result, total_ticks)
@@ -1016,10 +1044,34 @@ def write_model_calls(run_dir: Path, calls: list[_ModelCall]) -> None:
             fh.write(json.dumps(_model_call_dict(c), sort_keys=True) + "\n")
 
 
-def write_constitution_history(run_dir: Path, versions: list[str]) -> None:
+def write_meetings(run_dir: Path, meetings: list[dict[str, Any]]) -> None:
+    """Tranche 12h: one canonical file with ALL assembly meeting records —
+    proposals (with full texts), votes, abstentions, quarantine, outcome.
+    No duplication: timeline.md references this file instead of inlining."""
+    if not meetings:
+        return
+    with (run_dir / "meetings.jsonl").open("w", encoding="utf-8") as fh:
+        for m in meetings:
+            fh.write(json.dumps(m, sort_keys=True) + "\n")
+
+
+def write_constitution_history(run_dir: Path, versions: list[str], meetings: list[dict[str, Any]] | None = None) -> None:
+    """Tranche 12h: include the amendment payload (what actually changed)
+    alongside each version, so the history is human-readable without
+    cross-referencing meetings.jsonl."""
+    # Map enacted_version -> proposal details from meetings
+    version_payloads: dict[str, list[dict[str, Any]]] = {}
+    if meetings:
+        for m in meetings:
+            ev = m.get("enacted_version")
+            if ev:
+                version_payloads[ev] = m.get("proposals", [])
     with (run_dir / "constitution_history.jsonl").open("w", encoding="utf-8") as fh:
         for v in versions:
-            fh.write(json.dumps({"version": v}, sort_keys=True) + "\n")
+            entry: dict[str, Any] = {"version": v}
+            if v in version_payloads:
+                entry["amendments"] = version_payloads[v]
+            fh.write(json.dumps(entry, sort_keys=True) + "\n")
 
 
 def write_metrics(run_dir: Path, result: SocietyResult, events: list[WorldEvent]) -> None:
@@ -1056,17 +1108,17 @@ def write_timeline(run_dir: Path, result: SocietyResult) -> None:
     ]
     for ev in result.events:
         lines.append(f"- event {ev.event_id} tick={ev.tick} kind={ev.kind}")
-    if result.assembly_outcome:
-        lines += ["", "## Assembly (final meeting)", f"- outcome: {result.assembly_outcome.get('outcome')}"]
-        votes = result.assembly_outcome.get("votes")
-        if isinstance(votes, list):
-            lines += [f"  - {json.dumps(v, sort_keys=True)}" for v in votes]
-    if result.assembly_quarantined:
-        lines += ["", "## Assembly quarantine (per meeting)"]
-        for meeting in sorted(result.assembly_quarantined):
-            recs = result.assembly_quarantined[meeting]
-            if recs:
-                lines += [f"- {meeting}: {json.dumps(r, sort_keys=True)}" for r in recs]
+    # Tranche 12h: assembly details live in meetings.jsonl (one canonical
+    # file). timeline.md is a thin human-readable index, not a duplicate.
+    if result.meetings:
+        lines += ["", "## Assemblies (see meetings.jsonl for full texts + votes)"]
+        for m in result.meetings:
+            lines.append(
+                f"- tick {m['tick']}: outcome={m['outcome']} "
+                f"version={m.get('enacted_version') or '—'} "
+                f"proposals={len(m['proposals'])} votes={len(m['votes'])} "
+                f"abstentions={m['abstentions']} quarantined={len(m['quarantined'])}"
+            )
     if result.sanction_events or result.appeal_events:
         lines += ["", "## Sanctions & appeals"]
         for s in result.sanction_events:

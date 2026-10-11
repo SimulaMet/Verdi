@@ -24,12 +24,13 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from verdi.agents.client import ModelClient
 from verdi.audit.judge_live import _assert_no_key_material
 from verdi.config import ModelEndpointConfig, model_endpoint_from_env
 from verdi.experiments.g5_judge_live import _load_dotenv_into_environ
-from verdi.society.campaign import PROTOCOL_VERSION, SocietyCampaign
+from verdi.society.campaign import BEAT_CONTEXT, PROTOCOL_VERSION, SocietyCampaign
 
 DEFAULT_CONCURRENCY = 4
 # Per-model-call liveness watchdog. Calibrated per Tranche 12d review F1:
@@ -77,6 +78,10 @@ class _LiveProgressCaller:
     caller's return value / behavior byte-identical, and they never touch
     the network. Each beat carries a monotonically increasing sequence so
     the watchdog can distinguish real growth from a re-counted file.
+
+    Tranche 12h: beats also carry ``tick``/``purpose``/``subject`` (from
+    :data:`BEAT_CONTEXT`) so progress.jsonl doubles as a per-call timeline
+    of which event each model call belonged to.
     """
 
     def __init__(self, inner, run_dir: Path) -> None:
@@ -88,14 +93,24 @@ class _LiveProgressCaller:
     async def generate_structured(self, messages, **kwargs):
         res = await self._inner.generate_structured(messages, **kwargs)
         self._seq += 1
-        beat = json.dumps({
+        beat: dict[str, Any] = {
             "seq": self._seq,
             "ts_utc": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+        ctx = BEAT_CONTEXT.get()
+        if ctx:
+            beat["tick"] = ctx.get("tick")
+            beat["purpose"] = ctx.get("purpose")
+            beat["subject"] = ctx.get("subject")
         async with self._lock:  # serialize appends across concurrent calls
             with self._path.open("a", encoding="utf-8") as fh:
-                fh.write(beat + "\n")
+                fh.write(json.dumps(beat) + "\n")
         return res
+
+
+#: Per-phase context for progress beats (Tranche 12h). The campaign sets
+#: this before each tick/phase so every completed call's beat records which
+#: tick, purpose, and subject it belonged to. Safe for single-loop asyncio.
 
 
 async def _stall_watchdog(run_dir: Path, stall_timeout_seconds: float) -> None:
