@@ -131,6 +131,14 @@ def test_stageC_offline_scale_invariants(tmp_path, name, n, total, assemblies, a
     assert len(scenario["agents"]) == n and scenario["total_ticks"] == total
     assert scenario["assemblies"] == assemblies
 
+    # F3 (Tranche 12d): probe_points must stay Stage-B compatible (list of
+    # string labels). Probing is driven by lifecycle KEYS, but the field must
+    # not drift into a format the engine/protocol docs do not define.
+    for tick_key, meta in scenario["lifecycle"].items():
+        pts = meta.get("probe_points", [])
+        assert isinstance(pts, list) and all(isinstance(p, str) for p in pts), \
+            f"{name}: probe_points at tick {tick_key} must be a list of str: {pts!r}"
+
     res = _run(scenario, tmp_path)
 
     # E1: deterministic reducer holds at scale (byte-identical replay + chain)

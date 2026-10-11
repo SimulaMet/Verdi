@@ -19,57 +19,57 @@
   "lifecycle": {
     "0": {
       "phase": "baseline",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t0-baseline"
+      ]
     },
     "14": {
       "phase": "pre_meeting",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t14-pre-meeting-1"
+      ]
     },
     "29": {
       "phase": "pre_meeting",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t29-pre-meeting-2"
+      ]
     },
     "44": {
       "phase": "pre_meeting",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t44-pre-meeting-3"
+      ]
     },
     "15": {
       "phase": "assembly",
-      "probe_points": {}
+      "probe_points": [
+        "t15-post-assembly-1"
+      ]
     },
     "30": {
       "phase": "assembly",
-      "probe_points": {}
+      "probe_points": [
+        "t30-post-assembly-1"
+      ]
     },
     "45": {
       "phase": "assembly",
-      "probe_points": {}
+      "probe_points": [
+        "t45-post-assembly-1"
+      ]
     },
     "20": {
       "phase": "reflection",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t20-reflection"
+      ]
     },
     "59": {
       "phase": "post",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t59-post"
+      ]
     }
   },
   "total_ticks": 60,

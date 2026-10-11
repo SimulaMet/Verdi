@@ -1,6 +1,6 @@
 # Execution state (integrator-owned)
 
-Update UTC: 2026-10-11 10:00 (Tranche 12 — Society V2 Stage C-1 scale-jump IN PROGRESS on feat/society-v2-stage-c: pre-registration + deterministic 24x60 scenario + offline scale gate (65c7d0a); C-2 48x100 rung + parametrized offline test (553bd5a); LIVE attempt 1 HUNG at event 377 on a dead endpoint socket (preserved as stageC1-20261014-attempt1-hung, root-caused, LESSONS Tranche 12a); independent stall-watchdog fix + 2 tests (5784c62); attempt 3 live with watchdog armed. 516 passed, 1 skipped, ruff clean. `main` untouched.)
+Update UTC: 2026-10-11 10:35 (Tranche 12 — Society V2 Stage C-1 scale-jump on feat/society-v2-stage-c: pre-registration + 24x60 scenario + offline scale gate (65c7d0a); C-2 48x100 (553bd5a); attempt 1 hung at 377 (preserved); watchdog v1 (5784c62); attempt 3 FALSE-FIRED by the events-only watchdog at t15 assembly (497 events, preserved, exit 3); independent review SHIP-WITH-NITS (694580fb); F1 per-call liveness beats + 1200 s calibrated window, F2 atomic run_meta, F3 probe_points format, F4 pre-reg wording — all fixed; 521 passed, 1 skipped, ruff clean. `main` untouched.)
 
 Prior: Update UTC: 2026-10-12 18:05 (Tranche 11 — Society V2 Stage B COMPLETE and merged to dev @ f116387: review BLOCK N1-N4 remediated (7ccabcf); LIVE crash root-caused + fixed (09080dc, deposit invariant + generalized sanction gate); two review fix sets (bae0e8f mixed-assembly ledgering + fresh-Assembly-per-meeting; 00fee2c per-meeting quarantine auditability + cross-assembly regression test). Three LIVE runs all complete + replay-identical: seed-1 fix2 (concurrency 4), seed-1 repeat (concurrency 6), TRUE seed-2 20261013 (concurrency 6). Both live runs surfaced a REAL mixed assembly (b05 stale-base proposal rejected threshold_not_met 5:7) correctly ledgered — live proof of the Finding-1 fix. 512 passed, 1 skipped, ruff clean on dev. `main` untouched.)
 
@@ -320,19 +320,39 @@ Pre-registration: docs/STAGE_C_PREREGISTRATION.md (committed BEFORE live outcome
   (377 events, gitignored, NOT deleted).
 - Verification at commit: 516 passed, 1 skipped; ruff clean.
 
-### 12c. LIVE C-1 attempt 3 (IN FLIGHT) — watchdog armed
-- Relaunched on 5784c62 with `python -u`, `--stall-timeout 600`. As of
-  2026-10-11 ~10:00 UTC: smoke OK, events growing, watchdog heartbeat active.
-  Outcome (replay/hash/health/denominator) will be recorded on completion.
+### 12c. LIVE C-1 attempt 3 — watchdog FALSE-FIRE at t15 (preserved), F1-F3 fixed
+- Attempt 3 (5784c62, `--stall-timeout 600`) ran healthily to event 497
+  (~35%, ~66 min) then the watchdog fired at 10:25:54 UTC: "STALL: no new
+  events for 600s (last count 497)", exit 3, run_meta status=stalled. The
+  run was NOT hung — it was mid-assembly at t15: assembly ticks write zero
+  ledger events until finalize (n probes + n deliberation + n×votes
+  sequential calls ≈ 120+ calls ≈ 1000 s+ at p95 latency > 600 s window).
+- Independent review (verdi-reviewer 694580fb, `b36bafa..bc9ed5e`,
+  verdict SHIP-WITH-NITS) confirmed this as F1 (HIGH) and revises the
+  attempt-1 interpretation: both failures stopped at t15, the same assembly
+  no-write window.
+- Remediation (on this branch): per-model-call liveness beats
+  (`progress.jsonl` via `_LiveProgressCaller`; watchdog count = events +
+  beats); default `--stall-timeout` 600 -> 1200 s (stuck-call retry window
+  180 s × 6 = 1080 s + heartbeat) with a measured floor for user values;
+  F2 MEDIUM: atomic `_write_run_meta` (temp file + os.replace);
+  F3 LOW: scenario `probe_points` now Stage-B string-list format with a
+  NOTE that lifecycle keys drive engine probing; F4 LOW: pre-registration
+  doc wording corrected (committed on campaign branch, not dev).
+- New tests: `tests/society/test_watchdog_calibrated.py` (5). Verification:
+  521 passed, 1 skipped, ruff clean. LESSONS Tranche 12d recorded.
+  Partial run preserved: `runs/society-v2/stageC1-20261014/` (497 events,
+  status=stalled).
 
 ### Next 3 actions (Stage C)
-1. On C-1 attempt 3 completion: verify replay True/True, all 24 agents acted,
-   3 assemblies enacting, endpoint health (retries/quarantine), final hash;
-   record in STATUS + merge feat/society-v2-stage-c to dev (serial).
-2. Concurrency 6->8 gated on a dedicated zero-retry soak (Tranche 11 item 1).
-3. C-2 (48x100) live launch is GATED on C-1 passing its scale-jump gate;
-   multi-seed / topology-varying / adversary-prevalence 0/1/3 effect study is
-   C-2/C-3 and is NOT claimable until independently reviewed.
+1. Launch C-1 attempt 4 on the F1-fixed code (default 1200 s window, per-call
+   beats) — monitor beats + events; verify replay True/True, all 24 agents
+   acted, 3 assemblies, endpoint health, final hash; record evidence.
+2. On C-1 pass: merge feat/society-v2-stage-c to dev (serial), then C-2
+   (48x100) live launch (gated on C-1 scale-jump gate).
+3. Concurrency 6 -> 8 only after a dedicated zero-retry soak; multi-seed /
+   topology / adversary-prevalence effect study stays on C-2/C-3 and is NOT
+   claimable until independently reviewed.
 
 ## Tranche 10 (prior): Society V2 Stage A (live society campaign) — dev 55a6c5d
 

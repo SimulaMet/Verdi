@@ -19,79 +19,81 @@
   "lifecycle": {
     "0": {
       "phase": "baseline",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t0-baseline"
+      ]
     },
     "19": {
       "phase": "pre_meeting",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t19-pre-meeting-1"
+      ]
     },
     "39": {
       "phase": "pre_meeting",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t39-pre-meeting-2"
+      ]
     },
     "59": {
       "phase": "pre_meeting",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t59-pre-meeting-3"
+      ]
     },
     "79": {
       "phase": "pre_meeting",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t79-pre-meeting-4"
+      ]
     },
     "94": {
       "phase": "pre_meeting",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t94-pre-meeting-5"
+      ]
     },
     "20": {
       "phase": "assembly",
-      "probe_points": {}
+      "probe_points": [
+        "t20-post-assembly-1"
+      ]
     },
     "40": {
       "phase": "assembly",
-      "probe_points": {}
+      "probe_points": [
+        "t40-post-assembly-1"
+      ]
     },
     "60": {
       "phase": "assembly",
-      "probe_points": {}
+      "probe_points": [
+        "t60-post-assembly-1"
+      ]
     },
     "80": {
       "phase": "assembly",
-      "probe_points": {}
+      "probe_points": [
+        "t80-post-assembly-1"
+      ]
     },
     "95": {
       "phase": "assembly",
-      "probe_points": {}
+      "probe_points": [
+        "t95-post-assembly-1"
+      ]
     },
     "33": {
       "phase": "reflection",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t33-reflection"
+      ]
     },
     "99": {
       "phase": "post",
-      "probe_points": {
-        "public": true,
-        "private": true
-      }
+      "probe_points": [
+        "t99-post"
+      ]
     }
   },
   "total_ticks": 100,

@@ -2,8 +2,12 @@
 
 **Pre-registered BEFORE the C-1 live run.** Per `docs/LIVE_SOCIETY_CAMPAIGN.md`
 ("Stage C" + "Acceptance/recovery/abort gates"), estimands and stopping rules
-must be fixed before live outcomes. This file is committed to `dev` *before*
-the run so its SHA is auditable.
+must be fixed before live outcomes. This file was committed on the campaign
+feature branch (`feat/society-v2-stage-c`, commit 65c7d0a) **before** the
+first live run (commit 09:14:19Z vs run start 09:58:12Z for attempt 3) so its
+SHA is auditable. The branch has not yet been merged to `dev` (that happens
+after the live run evidence is recorded); the auditable pre-run SHA is the
+branch commit.
 
 ## What C-1 is and is not
 C-1 is the **first rung of the scale ladder** (24 agents / 60 ticks, 3

@@ -130,14 +130,20 @@ def _build(scenario_id: str, prefix: str, seed: int, *, n: int, total: int,
 
     pre = [a - 1 for a in assemblies]
     reflection = total // 3
+    # NOTE: probing is driven by lifecycle KEYS (campaign._default_probe_
+    # phases); probe_points is a Stage-B-compatible label list, not a gate.
     lifecycle: dict[str, dict] = {}
-    lifecycle["0"] = {"phase": "baseline", "probe_points": {"public": True, "private": True}}
-    for t in pre:
-        lifecycle[str(t)] = {"phase": "pre_meeting", "probe_points": {"public": True, "private": True}}
+    lifecycle["0"] = {"phase": "baseline", "probe_points": ["t0-baseline"]}
+    for i, t in enumerate(pre, start=1):
+        lifecycle[str(t)] = {"phase": "pre_meeting",
+                             "probe_points": [f"t{t}-pre-meeting-{i}"]}
     for t in assemblies:
-        lifecycle[str(t)] = {"phase": "assembly", "probe_points": {}}
-    lifecycle[str(reflection)] = {"phase": "reflection", "probe_points": {"public": True, "private": True}}
-    lifecycle[str(total - 1)] = {"phase": "post", "probe_points": {"public": True, "private": True}}
+        lifecycle[str(t)] = {"phase": "assembly",
+                             "probe_points": [f"t{t}-post-assembly-1"]}
+    lifecycle[str(reflection)] = {"phase": "reflection",
+                                  "probe_points": [f"t{reflection}-reflection"]}
+    lifecycle[str(total - 1)] = {"phase": "post",
+                                 "probe_points": [f"t{total - 1}-post"]}
 
     return {
         "scenario_id": scenario_id,

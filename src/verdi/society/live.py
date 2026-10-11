@@ -32,16 +32,70 @@ from verdi.experiments.g5_judge_live import _load_dotenv_into_environ
 from verdi.society.campaign import PROTOCOL_VERSION, SocietyCampaign
 
 DEFAULT_CONCURRENCY = 4
-DEFAULT_STALL_TIMEOUT_SECONDS = 600
+# Per-model-call liveness watchdog. Calibrated per Tranche 12d review F1:
+# per-call beats (progress.jsonl, written after every COMPLETED model call)
+# reset the deadline continuously, so the window only needs to outlast a
+# SINGLE stuck call: VERDI_REQUEST_TIMEOUT (180s) x (max_retries+1) (6) =
+# 1080s worst-case retry sequence, plus one heartbeat interval. 1200s covers
+# that with margin; shorter windows could trip while the client is still
+# legitimately retrying a dead call. The old events-only 600s design
+# false-fired on whole assembly ticks (zero ledger writes until finalize)
+# and killed the live C-1 run at t15 — see state/LESSONS.md Tranche 12d.
+DEFAULT_STALL_TIMEOUT_SECONDS = 1200
 _HEARTBEAT_INTERVAL_SECONDS = 20
+_PROGRESS_FILE = "progress.jsonl"
 
 
-def _event_line_count(run_dir: Path) -> int:
-    path = run_dir / "events.jsonl"
+def _file_line_count(path: Path) -> int:
     if not path.exists():
         return 0
     with path.open("r", encoding="utf-8") as fh:
         return sum(1 for _ in fh)
+
+
+def _progress_count(run_dir: Path) -> int:
+    """Liveness signal: world events PLUS per-model-call beats.
+
+    A full assembly tick appends nothing to events.jsonl until its very end
+    (deliberation + voting + finalize all precede the ledger commit), so
+    event count alone false-fires on legitimately long ticks (Tranche 12d
+    review F1: killed the live C-1 run at its first assembly, t15). The
+    caller-beat wrapper appends one line to progress.jsonl after every
+    COMPLETED model call, so the deadline now resets continuously during
+    long ticks while still tripping on a stuck socket where no call ever
+    finishes.
+    """
+    return _file_line_count(run_dir / "events.jsonl") + _file_line_count(
+        run_dir / _PROGRESS_FILE
+    )
+
+
+class _LiveProgressCaller:
+    """Append one liveness beat per completed model call (Tranche 12d F1).
+
+    Only the LIVE runner uses this wrapper: the offline tests must keep the
+    caller's return value / behavior byte-identical, and they never touch
+    the network. Each beat carries a monotonically increasing sequence so
+    the watchdog can distinguish real growth from a re-counted file.
+    """
+
+    def __init__(self, inner, run_dir: Path) -> None:
+        self._inner = inner
+        self._path = run_dir / _PROGRESS_FILE
+        self._seq = 0
+        self._lock = asyncio.Lock()
+
+    async def generate_structured(self, messages, **kwargs):
+        res = await self._inner.generate_structured(messages, **kwargs)
+        self._seq += 1
+        beat = json.dumps({
+            "seq": self._seq,
+            "ts_utc": datetime.now(timezone.utc).isoformat(),
+        })
+        async with self._lock:  # serialize appends across concurrent calls
+            with self._path.open("a", encoding="utf-8") as fh:
+                fh.write(beat + "\n")
+        return res
 
 
 async def _stall_watchdog(run_dir: Path, stall_timeout_seconds: float) -> None:
@@ -50,21 +104,23 @@ async def _stall_watchdog(run_dir: Path, stall_timeout_seconds: float) -> None:
     A hung endpoint can hold a socket open without ever responding, which
     parks the whole campaign on one in-flight call while httpx's timeout
     (which only fires on read activity) never triggers (Tranche 12a lesson).
-    This watchdog watches wall-clock event progress: it writes a
-    ``heartbeat.json`` on a short interval, and if the event count does not
-    grow for ``stall_timeout_seconds`` it writes ``stall.json`` (the audit
-    record) and exits the process with code 3 so a partial run is preserved.
-    It runs as a SEPARATE asyncio task so it survives a hung in-flight call.
+    This watchdog watches wall-clock progress of the COMBINED event +
+    per-model-call beat count: it writes a heartbeat to run_meta on a short
+    interval, and if that count does not grow for ``stall_timeout_seconds``
+    it records ``status=stalled`` and exits the process with code 3 so a
+    partial run is preserved. It runs as a SEPARATE asyncio task so it
+    survives a hung in-flight call.
     """
     deadline = time.monotonic() + stall_timeout_seconds
-    last_count = _event_line_count(run_dir)
+    last_count = _progress_count(run_dir)
     while True:
         await asyncio.sleep(_HEARTBEAT_INTERVAL_SECONDS)
         now = time.monotonic()
-        count = _event_line_count(run_dir)
+        count = _progress_count(run_dir)
         _write_run_meta(run_dir, {
             "heartbeat_utc": datetime.now(timezone.utc).isoformat(),
-            "events_logged": count,
+            "events_logged": _file_line_count(run_dir / "events.jsonl"),
+            "model_calls_beat": _file_line_count(run_dir / _PROGRESS_FILE),
         })
         if count > last_count:
             last_count = count
@@ -75,11 +131,13 @@ async def _stall_watchdog(run_dir: Path, stall_timeout_seconds: float) -> None:
                 "status": "stalled",
                 "stalled_at_utc": datetime.now(timezone.utc).isoformat(),
                 "stall_timeout_seconds": stall_timeout_seconds,
-                "events_logged": count,
+                "events_logged": _file_line_count(run_dir / "events.jsonl"),
+                "model_calls_beat": _file_line_count(run_dir / _PROGRESS_FILE),
             })
             print(
-                f"STALL: no new events for {stall_timeout_seconds:.0f}s "
-                f"(last count {count}); preserving run dir and exiting (code 3).",
+                f"STALL: no events or completed model calls for "
+                f"{stall_timeout_seconds:.0f}s (last count {count}); "
+                "preserving run dir and exiting (code 3).",
                 file=sys.stderr, flush=True,
             )
             os._exit(3)
@@ -148,15 +206,29 @@ async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency
             return 2
         print(f"smoke OK: model={smoke['model']} trace={smoke['trace_id']}")
 
+        # Tranche 12d F1: per-model-call liveness beats so long assembly
+        # ticks (zero event writes until finalize) don't false-fire the
+        # watchdog. Offline tests never use this wrapper.
+        progress_client = _LiveProgressCaller(client, run_dir)
         campaign = SocietyCampaign(
             scenario=scenario,
             run_dir=run_dir,
-            caller=client,
+            caller=progress_client,
             run_seed=seed,
             concurrency=concurrency,
         )
-        stall_timeout = (stall_timeout_seconds if stall_timeout_seconds is not None
-                         else DEFAULT_STALL_TIMEOUT_SECONDS)
+        # Never let a (possibly user-supplied) stall window trip while the
+        # client is still legitimately retrying one dead call: floor it at
+        # timeout_seconds x (max_retries+1) + one heartbeat interval.
+        retry_window = config.timeout_seconds * (config.max_retries + 1) + _HEARTBEAT_INTERVAL_SECONDS
+        stall_timeout = stall_timeout_seconds if stall_timeout_seconds is not None \
+            else DEFAULT_STALL_TIMEOUT_SECONDS
+        if stall_timeout < retry_window:
+            print(
+                f"note: raising --stall-timeout {stall_timeout:.0f}s -> {retry_window:.0f}s "
+                f"(client retry window)", flush=True,
+            )
+            stall_timeout = retry_window
         watchdog = asyncio.create_task(_stall_watchdog(run_dir, stall_timeout))
         try:
             result = await campaign.run()
@@ -202,6 +274,13 @@ def _guard_artifacts_clean(run_dir: Path) -> None:
 
 
 def _write_run_meta(run_dir: Path, obj: dict) -> None:
+    """Merge ``obj`` into run_meta.json atomically.
+
+    Tranche 12d review F2: the watchdog and the main flow are two writers; a
+    temp-file + os.replace keeps the file whole under any interleave (a crash
+    mid-write can no longer truncate it) even though, on a single event loop,
+    the synchronous read-modify-write is already GIL-atomic per call.
+    """
     path = run_dir / "run_meta.json"
     existing: dict = {}
     if path.exists():
@@ -211,7 +290,9 @@ def _write_run_meta(run_dir: Path, obj: dict) -> None:
             existing = {}
     existing.update(obj)
     _assert_no_key_material(json.dumps(existing), "run_meta")
-    path.write_text(json.dumps(existing, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    tmp = path.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(existing, sort_keys=True, indent=2) + "\n", encoding="utf-8")
+    os.replace(tmp, path)
 
 
 def main(argv: list[str] | None = None) -> int:
