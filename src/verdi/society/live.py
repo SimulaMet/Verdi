@@ -303,8 +303,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--concurrency", type=int, default=None,
                         help="proposal concurrency (default: VERDI_MAX_CONCURRENCY or 4)")
     parser.add_argument("--stall-timeout", type=float, default=None,
-                        help="abort if no new events for this many seconds "
-                             "(default 600; guards against hung endpoint sockets)")
+                        help="abort if no events OR completed model calls for "
+                             "this many seconds (default "
+                             f"{DEFAULT_STALL_TIMEOUT_SECONDS}; guards against hung "
+                             "endpoint sockets and never fires during long "
+                             "assembly ticks because per-call beats reset the clock)")
     args = parser.parse_args(argv)
     return asyncio.run(_run(args.scenario, args.run_dir, args.seed, args.concurrency,
                             args.stall_timeout))

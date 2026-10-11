@@ -1,6 +1,6 @@
 # Execution state (integrator-owned)
 
-Update UTC: 2026-10-11 10:35 (Tranche 12 — Society V2 Stage C-1 scale-jump on feat/society-v2-stage-c: pre-registration + 24x60 scenario + offline scale gate (65c7d0a); C-2 48x100 (553bd5a); attempt 1 hung at 377 (preserved); watchdog v1 (5784c62); attempt 3 FALSE-FIRED by the events-only watchdog at t15 assembly (497 events, preserved, exit 3); independent review SHIP-WITH-NITS (694580fb); F1 per-call liveness beats + 1200 s calibrated window, F2 atomic run_meta, F3 probe_points format, F4 pre-reg wording — all fixed; 521 passed, 1 skipped, ruff clean. `main` untouched.)
+Update UTC: 2026-10-11 14:15 (Tranche 12 — Society V2 Stage C-1 scale-jump on feat/society-v2-stage-c: F1-F4 fixes (58c33f3) + doc corrections (bc9cd64), two independent reviews SHIP-WITH-NITS; attempt 4 VALIDATED THE F1 FIX LIVE (passed t15 + t20, t30 amendment enacted at 735 events) then lapsed at 13:05:01Z (hypothesis: local-environment event; LESSONS Tranche 12e); attempt 5 relaunched 14:10:16Z (PID 17325, seed 20261014). All four prior partials preserved. 521 passed, 1 skipped, ruff clean. `main` untouched.)
 
 Prior: Update UTC: 2026-10-12 18:05 (Tranche 11 — Society V2 Stage B COMPLETE and merged to dev @ f116387: review BLOCK N1-N4 remediated (7ccabcf); LIVE crash root-caused + fixed (09080dc, deposit invariant + generalized sanction gate); two review fix sets (bae0e8f mixed-assembly ledgering + fresh-Assembly-per-meeting; 00fee2c per-meeting quarantine auditability + cross-assembly regression test). Three LIVE runs all complete + replay-identical: seed-1 fix2 (concurrency 4), seed-1 repeat (concurrency 6), TRUE seed-2 20261013 (concurrency 6). Both live runs surfaced a REAL mixed assembly (b05 stale-base proposal rejected threshold_not_met 5:7) correctly ledgered — live proof of the Finding-1 fix. 512 passed, 1 skipped, ruff clean on dev. `main` untouched.)
 
@@ -352,10 +352,28 @@ Pre-registration: docs/STAGE_C_PREREGISTRATION.md (committed BEFORE live outcome
   run_meta timestamps) corrected in STATUS + LESSONS; LOW residual
   (dead-call detection latency up to ~20 min) accepted and recorded.
 
+### 12d. LIVE C-1 attempt 4 — F1 fix validated in the field; process lapsed at 735 (preserved), attempt 5 relaunched
+- Attempt 4 (58c33f3 + help-string fix, started 10:53:22Z, concurrency 6)
+  proved the F1 fix under live conditions: it passed **t15** (the
+  kill-point of attempts 1 and 3 — 8+ min of event-free assembly, beats
+  kept advancing, no false-fire; the t15 assembly enacted amendment
+  #1) and t20 reflection, and by 13:05:01Z had reached 735 events with the
+  **t30 assembly enacting amendment #2** (710 accepted / 23 rejected).
+- The process then died silently (no crash report, no output; last beat
+  13:05:18Z). Root cause recorded as hypothesis (local-environment event)
+  in LESSONS Tranche 12e; endpoint re-probed healthy (0.7 s) afterward.
+- Preserved as `runs/society-v2/stageC1-20261014-attempt4-lapsed/` +
+  console log. All four prior partials retained.
+- Attempt 5 relaunched 14:10:16Z (PID 17325, seed 20261014, same
+  deterministic scenario, fresh `runs/society-v2/stageC1-20261014/`).
+  Smoke OK. Monitor: beat rate per check (lapse detection, not just
+  mtime).
+
 ### Next 3 actions (Stage C)
-1. Launch C-1 attempt 4 on the F1-fixed code (default 1200 s window, per-call
-   beats) — monitor beats + events; verify replay True/True, all 24 agents
-   acted, 3 assemblies, endpoint health, final hash; record evidence.
+1. Monitor attempt 5 (PID 17325, 14:10:16Z start) to completion with
+   per-check beat-rate sampling (lapse detection); verify replay True/True,
+   24/24 agent denominator, 3 assemblies, endpoint health, final hash;
+   record evidence in 12d/12e.
 2. On C-1 pass: merge feat/society-v2-stage-c to dev (serial), then C-2
    (48x100) live launch (gated on C-1 scale-jump gate).
 3. Concurrency 6 -> 8 only after a dedicated zero-retry soak; multi-seed /
