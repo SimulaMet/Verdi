@@ -28,6 +28,7 @@ measured (wall) only, for throughput accounting.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import random
@@ -505,15 +506,29 @@ class SocietyCampaign:
         self._probes.extend(rows)
 
     async def _reflect(self, tick: int, state: WorldState, memory: dict[str, AgentMemory], fingerprint: str) -> None:
-        for aid in sorted(state.agents):
+        def _prompt(aid: str) -> list[dict[str, Any]]:
             agent = state.agents[aid]
-            prompt = (
-                f"[verdi.reflection/1]\nAgent {aid} (role {agent.role}). Tick {tick}.\n"
-                f"{memory[aid].render_history_summary(aid)}\n\n{_REFLECTION_INSTRUCTION}"
-            )
-            res = await self._caller.generate_structured(
-                [{"role": "user", "content": prompt}], response_format_json=False, temperature=self._temperature
-            )
+            return [
+                {
+                    "role": "user",
+                    "content": (
+                        f"[verdi.reflection/1]\nAgent {aid} (role {agent.role}). Tick {tick}.\n"
+                        f"{memory[aid].render_history_summary(aid)}\n\n{_REFLECTION_INSTRUCTION}"
+                    ),
+                }
+            ]
+
+        agents = sorted(state.agents)
+        # Model calls run in parallel (bounded); memory writes and
+        # _model_calls appends stay in sorted-agent order so the offline and
+        # live reflection outputs are identical for identical model outputs.
+        responses = await _run_bounded(
+            self._concurrency,
+            [self._caller.generate_structured(
+                _prompt(aid), response_format_json=False, temperature=self._temperature)
+                for aid in agents],
+        )
+        for aid, res in zip(agents, responses, strict=True):
             text = res.content.strip() or "(no reflection text)"
             memory[aid].append_reflection(aid, text)
             self._model_calls.append(
@@ -538,6 +553,9 @@ class SocietyCampaign:
         ]
         self._tick = tick
         rec = _RecordingCaller(self._caller, self, "assembly", "assembly")
+        # Parallel per-voter model calls (bounded by the run's concurrency);
+        # engine mutations stay in deterministic order inside run_*.
+        assembly.run_batch = lambda n, coros: _run_bounded(self._concurrency, coros)
         drafts = await assembly.run_deliberation(state, rec, context=context, tick=tick)
         voter_ids = frozenset(aid for aid in agent_ids if state.agents[aid].rights.voting)
         votes = await assembly.run_voting(drafts, rec, voters=voter_ids, tick=tick)
@@ -825,6 +843,26 @@ def governance_of(assembly: Assembly) -> GovernanceEngine:
     if eng is None:
         raise AttributeError("Assembly has no engine bound")
     return eng
+
+
+async def _run_bounded(concurrency: int, coros: list) -> list:
+    """Batch runner: await coroutines under a bounded semaphore, returning
+    results in INPUT order regardless of completion order.
+
+    Injected into ``Assembly.run_batch`` by the campaign so governance
+    deliberation/vote model calls run in parallel (the SimulaChat endpoint
+    sustains ~10 concurrent calls). Engine mutations happen in the caller's
+    post-pass over input order, so determinism is unaffected — only
+    wall-clock duration and the telemetry row order of model_calls.jsonl
+    change.
+    """
+    sem = asyncio.Semaphore(max(1, int(concurrency)))
+
+    async def _one(coro):
+        async with sem:
+            return await coro
+
+    return list(await asyncio.gather(*(_one(c) for c in coros)))
 
 
 class _RecordingCaller:

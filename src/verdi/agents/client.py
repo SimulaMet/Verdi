@@ -19,7 +19,10 @@ import httpx
 
 from verdi.config import ModelEndpointConfig
 
-RETRYABLE_STATUS = (429, 502, 503)
+# 524 is Cloudflare's origin-timeout (equivalent to 502/503: the upstream
+# origin — here a 27B reasoning model under load — took too long to answer).
+# Stage C-1 attempt 6 died on an un-retried 524 (LESSONS Tranche 12g).
+RETRYABLE_STATUS = (429, 502, 503, 524)
 _BACKOFF_BASE = 0.5
 _BACKOFF_CAP = 10.0
 

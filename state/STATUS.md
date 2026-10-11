@@ -1,6 +1,8 @@
 # Execution state (integrator-owned)
 
-Update UTC: 2026-10-12 18:05 (Tranche 11 — Society V2 Stage B COMPLETE and merged to dev @ f116387: review BLOCK N1-N4 remediated (7ccabcf); LIVE crash root-caused + fixed (09080dc, deposit invariant + generalized sanction gate); two review fix sets (bae0e8f mixed-assembly ledgering + fresh-Assembly-per-meeting; 00fee2c per-meeting quarantine auditability + cross-assembly regression test). Three LIVE runs all complete + replay-identical: seed-1 fix2 (concurrency 4), seed-1 repeat (concurrency 6), TRUE seed-2 20261013 (concurrency 6). Both live runs surfaced a REAL mixed assembly (b05 stale-base proposal rejected threshold_not_met 5:7) correctly ledgered — live proof of the Finding-1 fix. 512 passed, 1 skipped, ruff clean on dev. `main` untouched.)
+Update UTC: 2026-10-11 17:45 (Tranche 12f — PARALLEL ASSEMBLY batch runner on feat/society-v2-stage-c: assembly deliberation/vote + reflection model calls now run through an injected bounded-concurrency runner (asyncio stays out of verdi.governance per its determinism guard test); determinism contract = engine mutations in the same sorted input order, so identical model outputs → identical ledger/state, only wall-clock + model_calls.jsonl row order differ. Attempt 5 (sequential, concurrency 6) preserved at 639 events / past t20 / amendment #1 enacted as stageC1-20261014-attempt5-partial. Attempt 6 LIVE on the parallel code, concurrency 10, same seed 20261014 (PID 45753, smoke OK). Full suite + ruff clean. `main` untouched.)
+
+Prior: Update UTC: 2026-10-12 18:05 (Tranche 11 — Society V2 Stage B COMPLETE and merged to dev @ f116387: review BLOCK N1-N4 remediated (7ccabcf); LIVE crash root-caused + fixed (09080dc, deposit invariant + generalized sanction gate); two review fix sets (bae0e8f mixed-assembly ledgering + fresh-Assembly-per-meeting; 00fee2c per-meeting quarantine auditability + cross-assembly regression test). Three LIVE runs all complete + replay-identical: seed-1 fix2 (concurrency 4), seed-1 repeat (concurrency 6), TRUE seed-2 20261013 (concurrency 6). Both live runs surfaced a REAL mixed assembly (b05 stale-base proposal rejected threshold_not_met 5:7) correctly ledgered — live proof of the Finding-1 fix. 512 passed, 1 skipped, ruff clean on dev. `main` untouched.)
 
 ## Tranche 11 (this update): Society V2 Stage B BLOCK remediation + deposit-invariant crash fix
 Campaign: docs/LIVE_SOCIETY_CAMPAIGN.md (Stage B: 12 agents b01-b12, 30 ticks, 3 assemblies, honest+adversarial).
@@ -283,6 +285,181 @@ SECOND SEED-1 RUN) — COMPLETED
 3. Independent-judge G4 gap: source or implement an out-of-family judge for
    the 324-probe battery so probe scores are not same-family self-assessment
    (currently a recorded limitation, not a blocker for Stage C structure).
+
+## Tranche 12 (this update): Society V2 Stage C-1 scale-jump (24x60) — dev lineage @ `5784c62`
+Campaign: docs/LIVE_SOCIETY_CAMPAIGN.md Stage C (24/48/96 agents, 60/100/200 ticks).
+Branch: `feat/society-v2-stage-c` (worker commits 65c7d0a, 553bd5a, 5784c62) off dev @ b36bafa. `main` untouched.
+Pre-registration: docs/STAGE_C_PREREGISTRATION.md (committed BEFORE live outcomes, per scale-jump gate).
+
+### 12a. C-1 scenario + offline scale gate (65c7d0a)
+- experiments/generate_stageC.py deterministic generator; society_v2_stageC1.json
+  (24 agents c01-c24 ring, 60 ticks, 3 assemblies @15/30/45, 1 adversary c13,
+  world food 80, seed 20261014, world_id world-society-v2-stagec1).
+- tests/society/test_stageC_offline_scale.py runs the REAL scenario through the
+  full engine with a deterministic scripted caller (NO API): byte-identical
+  replay + hash chain, denominator 24*60-1=1439 actions, 3 assemblies each
+  enacting one (base+3 versions), one-tick suspension + rights restoration,
+  648-probe battery (9 ticks x 24 x 3). This is the fast pre-live gate.
+- C-2 rung added (553bd5a): 48x100, 5 assemblies @20/40/60/80/95, adversary
+  d25, seed 20261015; offline ~42s. Test parametrized over both rungs.
+
+### 12b. LIVE C-1 attempt 1 HUNG (preserved) + stall watchdog (5784c62)
+- Attempt 1: `python -m verdi.society.live ... --concurrency 6` progressed to
+  event 377 (~27 min) then zero new bytes 9+ min at 0% CPU, one ESTABLISHED
+  socket to the vLLM host that never completed a read. httpx read-timeout only
+  fires on read activity, so a held-open-without-data connection never times
+  out; one hung call holds a semaphore slot and parks the WHOLE campaign.
+  Root cause: transient endpoint-side stall (re-probed healthy at 1.3s after
+  kill). Recorded in state/LESSONS.md (Tranche 12a).
+- Fix (5784c62): independent _stall_watchdog asyncio task in verdi.society.live
+  writes heartbeat_utc + events_logged to run_meta.json every 20s; if the
+  events.jsonl line count stops growing for --stall-timeout (default 600s) it
+  records status=stalled and exits code 3, preserving the partial run. Runs as
+  a SEPARATE task so it survives a hung in-flight read. 2 offline tests.
+- Evidence preservation: runs/society-v2/stageC1-20261014-attempt1-hung/
+  (377 events, gitignored, NOT deleted).
+- Verification at commit: 516 passed, 1 skipped; ruff clean.
+
+### 12c. LIVE C-1 attempt 3 — watchdog FALSE-FIRE at t15 (preserved), F1-F3 fixed
+- Attempt 3 (5784c62, `--stall-timeout 600`) ran healthily to event 497
+  (~35%, ~28 min: 09:58:12Z -> 10:25:54Z) then the watchdog fired: "STALL: no new
+  events for 600s (last count 497)", exit 3, run_meta status=stalled. The
+  run was NOT hung — it was mid-assembly at t15: assembly ticks write zero
+  ledger events until finalize (n probes + n deliberation + n×votes
+  sequential calls ≈ 120+ calls ≈ 1000 s+ at p95 latency > 600 s window).
+- Independent review (verdi-reviewer 694580fb, `b36bafa..bc9ed5e`,
+  verdict SHIP-WITH-NITS) confirmed this as F1 (HIGH) and revises the
+  attempt-1 interpretation: both failures stopped at t15, the same assembly
+  no-write window.
+- Remediation (on this branch): per-model-call liveness beats
+  (`progress.jsonl` via `_LiveProgressCaller`; watchdog count = events +
+  beats); default `--stall-timeout` 600 -> 1200 s (stuck-call retry window
+  180 s × 6 = 1080 s + heartbeat) with a measured floor for user values;
+  F2 MEDIUM: atomic `_write_run_meta` (temp file + os.replace);
+  F3 LOW: scenario `probe_points` now Stage-B string-list format with a
+  NOTE that lifecycle keys drive engine probing; F4 LOW: pre-registration
+  doc wording corrected (committed on campaign branch, not dev).
+- New tests: `tests/society/test_watchdog_calibrated.py` (5). Verification:
+  521 passed, 1 skipped, ruff clean. LESSONS Tranche 12d recorded.
+  Partial run preserved: `runs/society-v2/stageC1-20261014-attempt3-stalled/`
+  (497 events, status=stalled); attempt 4 writes to a fresh
+  `runs/society-v2/stageC1-20261014/`.
+- Second independent review (7e512896 on 58c33f3): SHIP-WITH-NITS — F1 fix
+  verified sound, no masking of a wedged campaign (per-tick call sets are
+  bounded; an isolated stuck call freezes beats), F2-F4 pass, and the
+  F3 regeneration is byte-identical for BOTH C-1 and C-2 scenarios. One
+  factual nit (attempt-3 duration "~66 min" -> "~28 min" per preserved
+  run_meta timestamps) corrected in STATUS + LESSONS; LOW residual
+  (dead-call detection latency up to ~20 min) accepted and recorded.
+
+### 12d. LIVE C-1 attempt 4 — F1 fix validated in the field; process lapsed at 735 (preserved), attempt 5 relaunched
+- Attempt 4 (58c33f3 + help-string fix, started 10:53:22Z, concurrency 6)
+  proved the F1 fix under live conditions: it passed **t15** (the
+  kill-point of attempts 1 and 3 — 8+ min of event-free assembly, beats
+  kept advancing, no false-fire; the t15 assembly enacted amendment
+  #1) and t20 reflection, and by 13:05:01Z had reached 735 events with the
+  **t30 assembly enacting amendment #2** (710 accepted / 23 rejected).
+- The process then died silently (no crash report, no output; last beat
+  13:05:18Z). Root cause recorded as hypothesis (local-environment event)
+  in LESSONS Tranche 12e; endpoint re-probed healthy (0.7 s) afterward.
+- Preserved as `runs/society-v2/stageC1-20261014-attempt4-lapsed/` +
+  console log. All four prior partials retained.
+- Attempt 5 relaunched 14:10:16Z (PID 17325, seed 20261014, same
+  deterministic scenario, fresh `runs/society-v2/stageC1-20261014/`).
+  Smoke OK. Monitor: beat rate per check (lapse detection, not just
+  mtime).
+
+### 12f. Parallel assembly batch runner (this update) + attempt 5 partial + attempt 6 launch
+- Why: user-reported the SimulaChat endpoint sustains ~10 concurrent calls;
+  the live bottleneck was the SEQUENTIAL assembly model calls (24-voter
+  deliberation + proposals×voters voting, ~2-3h per assembly pair at
+  concurrency 6), not action ticks (already parallel via TaskPool).
+- Change: split each assembly call into call+parse (parallelizable) and
+  engine mutation (deterministic post-pass in sorted input order).
+  `Assembly.run_batch` is an injected runner (default sequential
+  `_run_sequential`); the campaign injects `_run_bounded` (asyncio
+  Semaphore, size = run concurrency) per assembly. Governance stays
+  asyncio-free (its determinism-guard import test blocked the direct
+  import and drove the injected design). Reflection parallelized too;
+  probes stay sequential (smaller cost; stateful subject_provider).
+- Determinism contract: engine mutations / quarantine / proposal_order /
+  vote records in the SAME order as the old loops → identical model outputs
+  give identical ledger/state; only wall-clock and model_calls.jsonl row
+  order (telemetry) differ. Replay re-folds the tape with zero model calls,
+  so call order cannot affect replay hashes.
+- Evidence: new tests (a) assembly-level seq-vs-concurrency-8 equivalence
+  (proposals, votes, quarantine, abstentions, outcome, engine version all
+  equal) and (b) full-campaign seq-vs-parallel equivalence — identical
+  final_state_hash, identical state model_dump, byte-identical
+  events.jsonl, replay True/True — PLUS a mechanical proof that the two
+  paths differ (probe caller: max in-flight assembly calls >1 parallel,
+  ==1 when sequential forced; the equivalence-only version of this test
+  silently ran both paths sequentially due to monkeypatch lifetime and
+  proved nothing — see LESSONS Tranche 12f). Full suite green, ruff clean.
+- Attempt 5 (sequential code, concurrency 6) reached 639 events, past t20,
+  amendment #1 enacted, healthy beat rate — then its run dir was renamed to
+  `stageC1-20261014-attempt5-partial` to hand the path to attempt 6; the
+  process survived the rename briefly (re-opened its beat file on the new
+  path) and died on the next atomic run_meta write (stale tmp path —
+  expected failure mode of the rename trick, no run data lost).
+- Attempt 6 LIVE: same seed 20261014, same scenario, concurrency 10,
+  parallel assembly code, PID 45753, 17:4x UTC, smoke OK (trace
+  7c14362b). First-assembly passage (t15) is the gate for the parallel
+  path; 429 throttling, if any, shows as quarantine spike + retries, not
+  a crash (VERDI_MAX_RETRIES=5).
+- **Attempt 6 gate PASSED (18:17 UTC): past t15 AND t20 assemblies.**
+  569 events, 1455 model-call beats, snapshots t00/t05/t09/t15/t20 all
+  written — the two parallel-assembly ticks that killed attempts 1 and 3
+  (sequential) completed cleanly on the parallel path. Beat rate ~1/s
+  sustained vs ~0.5/s sequential (attempt 5). Both parallel assemblies
+  (~3 min wall-clock each) vs ~2-3h projected sequential.
+- Independent review verdict on a8e1745: SHIP-WITH-NITS (determinism
+  contract, exception parity, no-asyncio boundary, replay safety, and no
+  t15 crash risk all verified). Nits fixed in fed2992: docstrings now
+  describe the parallel regime (a single wedged call is masked by
+  continuing healthy beats for up to the 1200s stall window — documented
+  sensitivity loss, not a bug; pinned by
+  test_watchdog_masks_single_wedged_call_under_parallelism), run_batch
+  concurrency arg marked advisory. Full suite + ruff clean at fed2992.
+- **Attempt 6 OUTCOME (19:05 UTC, status=failed, preserved as
+  stageC1-20261014-attempt6-524-failed): 1094 events, 3274 beats, all 3
+  assembly ticks PASSED (t15/t20/t45 snapshots written, 3 amendments
+  enacted — t45's amendment is event 1093), died at ~tick 46 on ONE
+  un-retried HTTP 524 (Cloudflare origin-timeout; RETRYABLE_STATUS lacked
+  524).** The parallel-assembly hypothesis is now validated live: three
+  full 24-voter parallel assemblies completed in a ~92-min run where the
+  sequential code died at the first (attempts 1 & 3) or was projected at
+  ~2-3h per assembly pair. Partial data fully intact for analysis.
+- **Fix 25a76a4:** 524 added to RETRYABLE_STATUS (same transient class as
+  502/503), 524-then-200 recovery test + budget-exhaustion parametrization
+  extended, full suite + ruff clean. Endpoint re-probed healthy (3x OK,
+  0.5-0.7s) before relaunch.
+- **Attempt 7 LIVE:** same seed 20261014 / scenario, concurrency 10, 524-
+  resilient client, PID 377, ~19:06 UTC, smoke OK (trace f6d29383). This
+  attempt only needs to reach t60 to complete C-1.
+- **C-1 COMPLETE (attempt 10, c25 non-thinking, 22:14 UTC):**
+  - status=healthy, replay True/True, log_verify True, quarantine 0%
+  - 1428 events, 2672 model calls, wall 83.7 min (vs ~3.5 h thinking)
+  - 3 amendments enacted (v11/v15/v21) + 1 amendment rejected
+  - 25 distinct actors (24 agents + assembly), 38 rejections
+    (19 overdraft, 19 insufficient_world)
+  - Wealth 396→576 (+45%), credits spread 0–28 (started all 10)
+  - timeline.md written (86 KB with deliberation texts + votes)
+  - Attempts 7/8/9 preserved as partials (thinking-mode c10, c10, c25)
+
+### Next 3 actions (Stage C)
+1. Monitor attempt 6 (PID 45753, concurrency 10, parallel assembly) to
+   completion with per-check beat-rate sampling; the t15 assembly is the
+   parallel-path gate (wall-clock should drop from ~2h to ~15-30 min);
+   verify replay True/True, 24/24 agent denominator, 3 assemblies,
+   endpoint health, final hash; record evidence in 12f.
+2. On C-1 pass: independent review of the parallel-runner commit, then
+   merge feat/society-v2-stage-c to dev (serial), then C-2 (48x100) live
+   launch (gated on C-1 scale-jump gate).
+3. Throughput measurements on attempt 6 (beats/sec per tick class) inform
+   the C-3 (96 agents) concurrency choice; multi-seed / topology /
+   adversary-prevalence effect study stays on C-2/C-3 and is NOT
+   claimable until independently reviewed.
 
 ## Tranche 10 (prior): Society V2 Stage A (live society campaign) — dev 55a6c5d
 

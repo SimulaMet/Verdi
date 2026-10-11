@@ -232,3 +232,47 @@ def test_below_quorum_rejected_even_when_all_present_votes_are_for():
     assert outcome.outcome == "amendment_rejected"
     assert engine.constitution.current.version == "cons-1"
     assert "quorum_not_met" in engine.last_amendment.invalid_reasons
+
+
+def test_parallel_batch_runner_matches_sequential_outcomes():
+    """The society-layer bounded runner (concurrency=8) must produce the same
+    proposals, votes, quarantine records, abstentions and outcome as the
+    default sequential runner for identical model outputs — only call
+    wall-clock/telemetry order may differ."""
+    from verdi.governance.assembled import _run_sequential
+    from verdi.society.campaign import _run_bounded
+
+    def handler(phase, voter, proposal):
+        if phase == "delib":
+            if voter in ("a1", "a3"):
+                return propose_json(
+                    {"fair_allocation_rule": "proportional", "effective_from_tick": TICK},
+                    summary=f"allocation rule by {voter}",
+                )
+            if voter == "a5":
+                return "not json {"
+            return json.dumps({"abstain": True})
+        if voter == "a4":
+            return "garbage"
+        return json.dumps({"choice": "for" if voter in ("a1", "a2", "a3") else "against"})
+
+    async def run(run_batch):
+        engine = make_engine()
+        state = make_state(tick=TICK)
+        assembly = Assembly(engine)
+        assembly.run_batch = run_batch
+        proposals = await assembly.run_deliberation(state, FakeModelCaller(handler), context=CONTEXT, tick=TICK)
+        votes = await assembly.run_voting(proposals, FakeModelCaller(handler), voters=frozenset(ELIGIBLE), tick=TICK)
+        outcome = assembly.finalize(engine, votes, tick=TICK)
+        return (
+            [p.__dict__ for p in proposals],
+            [v.model_dump() for v in votes],
+            list(assembly.quarantined),
+            list(assembly.deliberation_abstentions),
+            outcome.model_dump(),
+            engine.constitution.current.version,
+        )
+
+    seq = asyncio.run(run(lambda n, coros: _run_sequential(n, coros)))
+    par = asyncio.run(run(lambda n, coros: _run_bounded(8, coros)))
+    assert seq == par

@@ -97,7 +97,7 @@ def test_retry_then_success_trace_chain_single_trace_id(monkeypatch: pytest.Monk
     assert all(FAKE_API_KEY not in repr(rec["json"]) for rec in records)
 
 
-@pytest.mark.parametrize("status", [429, 502, 503])
+@pytest.mark.parametrize("status", [429, 502, 503, 524])
 def test_budget_exhaustion(monkeypatch: pytest.MonkeyPatch, status: int):
     sleeps = recording_sleep(monkeypatch)
     records: list[dict] = []

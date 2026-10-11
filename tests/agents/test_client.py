@@ -58,6 +58,25 @@ def test_retry_once_then_fail_on_503():
     assert "SECRET-DO-NOT-LOG" not in str(excinfo.value)
 
 
+def test_524_origin_timeout_is_retried():
+    """LESSONS 12g: C-1 attempt 6 died on an un-retried HTTP 524
+    (Cloudflare origin-timeout from a slow 27B origin). 524 must retry
+    like 502/503 and recover on the next attempt."""
+    records: list[dict] = []
+    transport = chat_transport([524, completion_body("recovered")], records=records)
+    client = ModelClient(make_config(max_retries=2), transport=transport)
+
+    async def run():
+        try:
+            return await client.generate_structured([{"role": "user", "content": "hi"}])
+        finally:
+            await client.aclose()
+
+    result = asyncio.run(run())
+    assert result.content  # recovered
+    assert len(records) == 2  # 524 then success
+
+
 def test_retry_then_success():
     records: list[dict] = []
     transport = chat_transport([429, completion_body("ok")], records=records)
