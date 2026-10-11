@@ -148,7 +148,7 @@ class SocietyCampaign:
         concurrency: int = 4,
         temperature: float = 0.0,
         probe_phases: dict[int, str] | None = None,
-        reflection_tick: int = 5,
+        reflection_tick: int | None = None,
         assembly_ticks: frozenset[int] | None = None,
         probe_bank_version: str = "verdi.probe-bank/1",
         judge: Any | None = None,
@@ -162,7 +162,10 @@ class SocietyCampaign:
         self._concurrency = max(1, int(concurrency))
         self._temperature = temperature
         self._probe_phases = dict(probe_phases or self._default_probe_phases())
-        self._reflection_tick = reflection_tick
+        self._reflection_tick = (
+            reflection_tick if reflection_tick is not None
+            else self._scenario_reflection_tick()
+        )
         self._assembly_ticks = frozenset(assembly_ticks if assembly_ticks is not None else scenario.get("assemblies", []))
         self._bank_version = probe_bank_version
         self._judge = judge
@@ -338,7 +341,7 @@ class SocietyCampaign:
                         # clear the world-state flag this tick.
                         state = self._commit_rights_change(state, p["subject_id"], False)
 
-            if tick in (5, 9, total_ticks - 1) or tick in self._assembly_ticks:
+            if tick in (5, 9, total_ticks - 1, self._reflection_tick) or tick in self._assembly_ticks:
                 # The reducer advances state.tick per ACTION (pilot_v1 semantics),
                 # so the post-commit state here is labelled by the loop tick just
                 # completed (NOT by state.tick).
@@ -685,6 +688,13 @@ class SocietyCampaign:
             except (ValueError, AttributeError):
                 continue
         return phases
+
+    def _scenario_reflection_tick(self) -> int:
+        """First lifecycle tick whose phase is ``reflection`` (default 5)."""
+        for key, meta in sorted(self._scenario.get("lifecycle", {}).items(), key=lambda kv: int(kv[0])):
+            if str(meta.get("phase", "")) == "reflection":
+                return int(key)
+        return 5
 
     @staticmethod
     def _model_fingerprint() -> str:
