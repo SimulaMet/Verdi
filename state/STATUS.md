@@ -407,6 +407,20 @@ Pre-registration: docs/STAGE_C_PREREGISTRATION.md (committed BEFORE live outcome
   7c14362b). First-assembly passage (t15) is the gate for the parallel
   path; 429 throttling, if any, shows as quarantine spike + retries, not
   a crash (VERDI_MAX_RETRIES=5).
+- **Attempt 6 gate PASSED (18:17 UTC): past t15 AND t20 assemblies.**
+  569 events, 1455 model-call beats, snapshots t00/t05/t09/t15/t20 all
+  written — the two parallel-assembly ticks that killed attempts 1 and 3
+  (sequential) completed cleanly on the parallel path. Beat rate ~1/s
+  sustained vs ~0.5/s sequential (attempt 5). Both parallel assemblies
+  (~3 min wall-clock each) vs ~2-3h projected sequential.
+- Independent review verdict on a8e1745: SHIP-WITH-NITS (determinism
+  contract, exception parity, no-asyncio boundary, replay safety, and no
+  t15 crash risk all verified). Nits fixed in fed2992: docstrings now
+  describe the parallel regime (a single wedged call is masked by
+  continuing healthy beats for up to the 1200s stall window — documented
+  sensitivity loss, not a bug; pinned by
+  test_watchdog_masks_single_wedged_call_under_parallelism), run_batch
+  concurrency arg marked advisory. Full suite + ruff clean at fed2992.
 
 ### Next 3 actions (Stage C)
 1. Monitor attempt 6 (PID 45753, concurrency 10, parallel assembly) to
