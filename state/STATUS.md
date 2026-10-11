@@ -109,7 +109,45 @@ would have been logged but NOT sanctioned.
 - Protocol updated (`docs/SOCIETY_V2_PROTOCOL.md` §1.2): "one Assembly per
   meeting" invariant + "mixed assemblies must ledger every proposal" rule.
 - Verification: python -m pytest = 512 passed, 1 skipped; ruff clean. Both new
-  tests RED→GREEN.
+  tests RED→GREEN. Committed `bae0e8f` on feat/society-v2-stage-b-fix1.
+
+### 11f — LIVE Stage B seed-1 (fix2) COMPLETED — crash fixed, run clean
+- run: `runs/society-v2/stageB-20261012-seed1-fix2`, status=**complete**,
+  SimulaChat default Qwen3.8-27B, seed 20261012, concurrency 4, retries 5.
+- final_state_hash = ca00c60a9a2383d083b38dab11c09a39d7d6939230e96b946f8c4c34759d090e
+- **361 events / 970 model calls / 324 probes / 2384 s wall** (≈40 min).
+  replay_matches=True, replay_log_identical=True. Health: mean 3.36 s/call,
+  p95 8.9 s, **zero retries, zero quarantine**.
+- **Crash point (tick 230) passed cleanly.** The b01 2.0-credit over-deposit
+  at tick 230 is now *ledgered as a rejection* (action_rejected,
+  law:no_double_spend / overdraft, "holds 0.0 'credits', cannot deposit 2.0")
+  instead of breaching `_assert_nonnegative`.
+- Actions: 355 accepted / 3 rejected across 12 agents × 30 ticks
+  (29–30 accepted each — no agent starved; b01/b05 each had 1 rejection).
+  Rejections: tick 191 (transfer 0 units, overdraft code path), tick 222
+  (b01 transfer 1 credit holding 0.0), tick 230 (b01 over-deposit, the
+  original crash).
+- Governance: 3 real model-voted assemblies (ticks 109/206/301), each
+  **amendment_enacted** → constitution society-v2-base → v7 → v13 → v20
+  (quorum + threshold met by the deterministic engine; 0 quarantined
+  proposals). Enforcement cycle observed: 2 sanctions → 4 appeals → 2
+  restorations. Probes: 324 (108 each declared/private/public) with
+  same-family judge caveat (judge_version verdi.social/v1.0).
+- Note: this run executed on `09080dc` (deposit fix) but BEFORE the
+  fresh-Assembly fix `bae0e8f`; its 3 assemblies each enacted exactly one
+  proposal, so no cross-assembly re-enaction artifact is present in this
+  evidence (verified: 3 amendment_enacted events, none spurious). The
+  Assembly fix is validated offline by the test suite and is a second real
+  validation via the seed-2-fix1 run (launched below, concurrency 6).
+- Concurrency decision: at 4, mean 3.36 s / p95 8.9 s / zero retries →
+  endpoint has headroom; seed 2 launched at concurrency 6 per campaign plan.
+
+### 11g — LIVE Stage B seed-2 (fix1) IN PROGRESS
+- run: `runs/society-v2/stageB-20261012-seed2-fix1`, seed 20261012,
+  concurrency **6**, worker branch HEAD `bae0e8f` (includes fresh-Assembly
+  fix — first live run with it). Smoke OK; events committing.
+- Awaiting completion → verification → merge of feat/society-v2-stage-b-fix1
+  (7ccabcf, 09080dc, ea5307c, bae0e8f) to dev.
 
 ## Tranche 10 (prior): Society V2 Stage A (live society campaign) — dev 55a6c5d
 
