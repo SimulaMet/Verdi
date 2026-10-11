@@ -173,12 +173,49 @@ would have been logged but NOT sanctioned.
 - Verification: python -m pytest tests = 512 passed, 1 skipped (30.9 s);
   ruff check src tests = clean.
 
-### 11g — LIVE Stage B seed-2 (fix1) IN PROGRESS
-- run: `runs/society-v2/stageB-20261012-seed2-fix1`, seed 20261012,
-  concurrency **6**, worker branch HEAD `bae0e8f` (includes fresh-Assembly
-  fix — first live run with it). Smoke OK; events committing.
+### 11g — LIVE Stage B second run (mislabelled "seed2-fix1", actually a
+SECOND SEED-1 RUN) — COMPLETED
+- run: `runs/society-v2/stageB-20261012-seed2-fix1`, concurrency 6, code at
+  `bae0e8f` (includes fresh-Assembly fix). **Labeling correction:** this
+  run used `society_v2_stageB.json` + `--seed 20261012` — i.e. the SAME
+  scenario and seed as seed1-fix2, so it is a *repeat of seed 1*, not a
+  distinct seed. (The true second-seed scenario `society_v2_stageB_seed2.json`
+  carries `run_seed: 20261013` and a different agent roster; launching it
+  under the wrong name was a launch error. The repeat is preserved as a
+  seed-1 reproducibility data point, not claimed as seed 2.)
+- status=**complete**; SimulaChat default Qwen3.8-27B; final_hash
+  bd889c51f6fe0f16 (≠ seed1-fix2's ca00c60a… — expected: the Qwen model is
+  sampling, so a repeat run is NOT byte-identical; determinism lives in the
+  deterministic ledger/replay, which is identical-structure:
+  replay_matches=True, replay_log_identical=True).
+- 362 events / 1006 model calls / 324 probes / 2106 s wall (faster than
+  seed1-fix2's 2384 s at concurrency 4 — concurrency 6 gave ~18% speedup,
+  mean 3.57 s/call, p95 10.7 s, zero retries, zero quarantine).
+- Actions: 355 accepted / 3 rejected (same shape as seed1-fix2: b01's
+  over-deposit at tick 231 ledgered as a rejection, no invariant breach).
+  Per-agent accepted 27–30 — no starvation.
+- Governance: 3 assemblies. Assemblies 1 and 3 enacted one amendment each
+  (base→v10→v17→v23). **Assembly 2 (tick 206) was a REAL mixed assembly**:
+  it enacted b05's new proposal (→v17) AND the deterministic engine
+  rejected a second proposal (asm-b05-16, 5 for / 7 against,
+  threshold_not_met) — now correctly ledgered as `amendment_rejected`
+  (ev206). This is the first live evidence of the Finding-1
+  mixed-assembly ledgering fix working in production: pre-fix that
+  rejection would have been silently dropped from the ledger + tape.
+  Note the rejected proposal's `old_version` is `base-constitution-v10`
+  (a stale base from assembly 1) — this is a legitimate live-world
+  phenomenon (a voter proposing against a superseded constitution base),
+  NOT the cross-assembly re-enaction bug: the fresh-Assembly fix is active
+  in this run (confirmed `fresh_assembly = Assembly(governance)` present
+  at campaign.py:359) and no `retroactive_amendment` rejection appears.
+- Enforcement cycle: 2 sanctions → 4 appeals → 2 restorations.
+
+### 11i — LIVE Stage B TRUE seed-2 (seed 20261013) — LAUNCHED
+- run: `runs/society-v2/stageB-20261012-seed2`, scenario
+  `society_v2_stageB_seed2.json` (seed 20261013, distinct agent roster),
+  concurrency 6, code at `00fee2c`.
 - Awaiting completion → verification → merge of feat/society-v2-stage-b-fix1
-  (7ccabcf, 09080dc, ea5307c, bae0e8f) to dev.
+  (7ccabcf, 09080dc, ea5307c, bae0e8f, 972dd15, 00fee2c) to dev.
 
 ## Tranche 10 (prior): Society V2 Stage A (live society campaign) — dev 55a6c5d
 
