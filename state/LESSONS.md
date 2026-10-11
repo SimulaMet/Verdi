@@ -464,3 +464,16 @@ exercises it.
 handles rights_change tape steps; the library verdi.world.replay.replay()
 would crash on them. Tracked as issue #1. Rule: whenever a tape gains a new
 step kind, grep for ALL consumers of the tape, not just the one you extended.
+
+**Live (transient edge status outside the retry class — 12g).** C-1 attempt
+6 (parallel code, concurrency 10) ran healthy through both t15/t20 and the
+t45 assembly (3 amendments enacted, 1094 events) and then died on ONE un-
+retried HTTP 524 (Cloudflare origin-timeout): the 27B reasoning origin under
+load exceeded the edge's origin-read timeout mid-tick. RETRYABLE_STATUS was
+(429, 502, 503) — 524 looked like a permanent failure, so the client raised
+immediately and the whole run aborted with all partial state preserved.
+Rule: treat any gateway/origin timeout status (408, 502, 503, 504, 524) as
+the same transient class as 502/503; a single slow origin call must be
+backed-off, never fatal. Also: when an endpoint returns 524 at concurrency
+10 on a reasoning model, the right reading is "origin is slow under load",
+not "endpoint is broken" — the very next probes succeed in <1s.
