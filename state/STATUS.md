@@ -437,6 +437,15 @@ Pre-registration: docs/STAGE_C_PREREGISTRATION.md (committed BEFORE live outcome
 - **Attempt 7 LIVE:** same seed 20261014 / scenario, concurrency 10, 524-
   resilient client, PID 377, ~19:06 UTC, smoke OK (trace f6d29383). This
   attempt only needs to reach t60 to complete C-1.
+- **C-1 COMPLETE (attempt 10, c25 non-thinking, 22:14 UTC):**
+  - status=healthy, replay True/True, log_verify True, quarantine 0%
+  - 1428 events, 2672 model calls, wall 83.7 min (vs ~3.5 h thinking)
+  - 3 amendments enacted (v11/v15/v21) + 1 amendment rejected
+  - 25 distinct actors (24 agents + assembly), 38 rejections
+    (19 overdraft, 19 insufficient_world)
+  - Wealth 396→576 (+45%), credits spread 0–28 (started all 10)
+  - timeline.md written (86 KB with deliberation texts + votes)
+  - Attempts 7/8/9 preserved as partials (thinking-mode c10, c10, c25)
 
 ### Next 3 actions (Stage C)
 1. Monitor attempt 6 (PID 45753, concurrency 10, parallel assembly) to
