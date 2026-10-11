@@ -132,7 +132,12 @@ def generate_tick_tape(
 
         if kind == "transfer":
             amount = _transfer_units(agent, adversarial=is_adversary_persona(agent))
-            constraints = {"resource": resource, "amount": amount, "to": target}
+            # NOTE: constraint keys MUST mirror the validator's expected
+            # argument field names (validate.py: transfer takes
+            # to/resource/units). An earlier version used "amount" here,
+            # which leaked into live runs as 100% missing_argument
+            # rejections (Tranche 11 lesson).
+            constraints = {"resource": resource, "units": amount, "to": target}
             counterpart_ids = [target]
             public_observations = [f"transfer {amount} {resource} to {target}"]
         elif kind == "deposit":
@@ -148,7 +153,12 @@ def generate_tick_tape(
             counterpart_ids = []
             public_observations = ["produce food for the common pool"]
         else:  # emit_signal
-            constraints = {"resource": "food", "units": 1}
+            # NOTE: emit_signal's only required argument is a non-empty
+            # "text" (validate.py); "units" on the constraint object is a
+            # scalar, not an object, and did not tell the model the field
+            # name. An earlier version caused 100% empty_signal live
+            # rejections (Tranche 11 lesson).
+            constraints = {"text_required": True}
             counterpart_ids = list(agent.social_edges)
             public_observations = ["emit a public signal to your neighbors"]
 

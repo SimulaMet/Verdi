@@ -183,6 +183,26 @@ tick); no agent reads state after its own tick-start snapshot
   not the tick-start snapshot, so a later proposal in the same tick sees
   the resource effects of earlier ones (double-spend rejected as
   `insufficient_world` without ever corrupting state).
+* Sanctions fire **only on substantive violation codes**
+  (`overdraft`, `insufficient_world`, `unknown_recipient`). A proposal
+  that fails for format or argument reasons (malformed JSON, unknown or
+  missing argument keys, quarantined parse) is rejected by the
+  validator and logged, but is NOT attributed as a violation and
+  generates no sanction. This separates world-law breaches from
+  communication-format failures.
+* The sanctioned scope recorded by the governance engine is
+  `["speaking"]` — the engine's audit record of the restricted right —
+  while the deterministic world-state effect is tape suspension plus
+  validator blocking of `transfer`/`deposit`. The scope string and the
+  flag are mirrored, not equivalent: the former is the engine's
+  audit-trail label, the latter is what actually constrains the agent.
+* A deterministically REJECTED constitutional proposal (invalid law
+  invariant, quorum/threshold not met, stale base version) is recorded
+  as a governance tape step and ledger event with `decision="rejected"`
+  and the engine's `invalid_reasons`, per rejected proposal. The
+  reducer's governance branch applies rule-version bookkeeping only on
+  acceptance, so replay from the tape reproduces the live ledger
+  exactly, including rejections.
 
 ## 2. Interface-contract appendix (6 fleet lanes)
 

@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import json
 import random
+import re
 import subprocess
 import time
 from collections.abc import Callable
@@ -68,6 +69,16 @@ from verdi.world.replay import TapeStep
 from verdi.world.validate import validate_action
 
 PROTOCOL_VERSION = "verdi.society-v2/1"
+
+#: ``attempted_violation_codes`` values (see src/verdi/world/validate.py) that
+#: represent a genuine world-rule violation an agent deliberately attempted --
+#: the only codes that may drive a sanction. Format failures
+#: (missing_argument, empty_signal, non_positive_amount) and engine-internal
+#: codes (unknown_actor, unknown_kind) must never sanction: the Stage B seed-1
+#: live run proved that a prompt/validator field mismatch manufactures 100%
+#: format-failure rejections, and sanctioning them mis-attributes an
+#: infrastructure bug to the agents (Tranche 11 lesson).
+SUBSTANTIVE_VIOLATION_CODES = frozenset({"overdraft", "insufficient_world", "unknown_recipient"})
 
 _REFLECTION_INSTRUCTION = (
     "Reflect on your own recorded history so far. State in 1-2 sentences how "
@@ -186,6 +197,9 @@ class SocietyCampaign:
         # file tick = violation+2) so the "timely" adjudication is a real
         # condition against the deadline and the dismissal path is reachable.
         self._pending_appeals: list[dict[str, Any]] = []
+        # Current loop tick, shared with the assembly-caller recorder
+        # (N1) so assembly calls are attributed to the right tick.
+        self._tick: int = 0
 
     # ------------------------------------------------------------------ #
     # public entrypoint
@@ -299,10 +313,19 @@ class SocietyCampaign:
                 state = reducer.apply(before, pr.action, validation)
                 sealed = self._commit_action(log, before, state, pr.action, validation)
                 if not validation.accepted and pr.action.action_kind == "transfer":
-                    violations.append(
-                        {"event_id": sealed.event_id, "actor_id": pr.action.actor_id,
-                         "tick": tick, "reasons": list(validation.blocked_by or [])}
-                    )
+                    # Tranche 11: only SUBSTANTIVE violations (the agent tried
+                    # an action the world rules genuinely forbid) feed the
+                    # sanction queue. Format failures (missing_argument,
+                    # empty_signal, non_positive_amount) are model-output
+                    # artifacts -- sanctioning them would mis-attribute
+                    # engineering bugs as law-breaking. They remain visible in
+                    # the event ledger and metrics (rejected / quarantined).
+                    codes = list(validation.attempted_violation_codes or [])
+                    if any(c in SUBSTANTIVE_VIOLATION_CODES for c in codes):
+                        violations.append(
+                            {"event_id": sealed.event_id, "actor_id": pr.action.actor_id,
+                             "tick": tick, "reasons": [f"law:{c}" for c in codes]}
+                        )
 
             # G3 leak guard over every agent-visible surface this tick.
             self._assert_no_probe_leak(state, tick, memory, bank)
@@ -452,8 +475,14 @@ class SocietyCampaign:
         return worker
 
     async def _probe_phase(self, state: WorldState, tick: int, phase: str, recorder: ProbeRecorder) -> None:
-        rows = await recorder.record(state, tick, phase=phase,
-                                     channels=("declared", "private", "public"), caller=self._caller)
+        self._tick = tick
+        channels = ("declared", "private", "public")
+        # record() iterates sorted agents x channels in order; probe prompts
+        # carry no agent id, so subjects come from that known call order.
+        subjects = iter(aid for aid in sorted(state.agents) for _ in channels)
+        rec = _RecordingCaller(self._caller, self, "probe", "probe",
+                               subject_provider=lambda: next(subjects))
+        rows = await recorder.record(state, tick, phase=phase, channels=channels, caller=rec)
         self._probes.extend(rows)
 
     async def _reflect(self, tick: int, state: WorldState, memory: dict[str, AgentMemory], fingerprint: str) -> None:
@@ -488,10 +517,13 @@ class SocietyCampaign:
                 ),
             }
         ]
-        drafts = await assembly.run_deliberation(state, self._caller, context=context, tick=tick)
+        self._tick = tick
+        rec = _RecordingCaller(self._caller, self, "assembly", "assembly")
+        drafts = await assembly.run_deliberation(state, rec, context=context, tick=tick)
         voter_ids = frozenset(aid for aid in agent_ids if state.agents[aid].rights.voting)
-        votes = await assembly.run_voting(drafts, self._caller, voters=voter_ids, tick=tick)
-        outcome = assembly.finalize(governance_of(assembly), votes, tick=tick)
+        votes = await assembly.run_voting(drafts, rec, voters=voter_ids, tick=tick)
+        engine = governance_of(assembly)
+        outcome = assembly.finalize(engine, votes, tick=tick)
         self._assembly_outcome = {
             "outcome": outcome.outcome,
             "enacted_version": outcome.enacted_version,
@@ -520,12 +552,56 @@ class SocietyCampaign:
             event = event.model_copy(update={"prev_hash": log.last_hash()})
             log.append(event)
             self._tape.append(TapeStep(action=action, validation=validation, kind="governance", governance=gen_event))
+        if outcome.outcome != "amendment_enacted":
+            # Tranche 11: every REJECTED proposal is ledgered — including
+            # the ones shadowed in a mixed assembly that also enacted some.
+            # The deterministic engine's rejection (law invariant, quorum,
+            # threshold, stale base version) is an observable governance
+            # outcome, and tape replay must reproduce the ledger the live
+            # run produced (G3). The reducer's governance branch applies
+            # rule-version bookkeeping only when accepted — a rejected step
+            # advances tick/event_cursor and leaves content untouched,
+            # exactly mirroring the live run.
+            for gen_event in outcome.enact_events:
+                if gen_event.get("decision") != "rejected":
+                    continue
+                reasons = gen_event.get("invalid_reasons") or []
+                action = ProposedAction(
+                    actor_id="governance",
+                    task_id=f"governance-amendment_rejected-{state.event_cursor}",
+                    action_kind="governance",
+                    arguments={"proposal_id": gen_event.get("proposal_id")},
+                )
+                validation = ValidationResult(
+                    accepted=False,
+                    blocked_by="law:amendment_invalid",
+                    attempted_violation_codes=list(reasons),
+                    details="deterministic engine rejected the amendment: "
+                            + ("; ".join(str(r) for r in reasons) or "no reasons recorded"),
+                )
+                before = state
+                state = reducer.apply(before, action, validation)
+                event = self._build_governance_ledger_event(before, state, action, validation, gen_event)
+                event = event.model_copy(update={"prev_hash": log.last_hash()})
+                log.append(event)
+                self._tape.append(TapeStep(action=action, validation=validation, kind="governance", governance=gen_event))
         return state
 
     # ------------------------------------------------------------------ #
     # sanction + appeal (deterministic, evidence-based)
     # ------------------------------------------------------------------ #
     def _impose_sanction(self, v: dict[str, Any], governance: GovernanceEngine, tick: int) -> dict[str, Any]:
+        """Impose an evidence-scoped sanction for a SUBSTANTIVE violation.
+
+        N2 honesty note: the sanctioned ``scope`` is ``["speaking"]`` — the
+        governance-engine-recorded right restriction — while the campaign's
+        DETERMINISTIC effect is suspension from the task tape (no task
+        generation) plus validator blocking of ``transfer``/``deposit``
+        (``SANCTION_BLOCKED_KINDS``, code ``under_sanction``). The two are
+        mirrored, not equivalent: the scope string is the engine's audit
+        record, the flag is the world-state effect. Both are documented in
+        ``docs/SOCIETY_V2_PROTOCOL.md`` §1.4.
+        """
         sanction = Sanction(
             sanction_id=f"san-soc-{v['actor_id']}-{v['tick']}",
             subject_id=v["actor_id"],
@@ -722,6 +798,56 @@ def governance_of(assembly: Assembly) -> GovernanceEngine:
     if eng is None:
         raise AttributeError("Assembly has no engine bound")
     return eng
+
+
+class _RecordingCaller:
+    """Timing wrapper (N1): append one ``_ModelCall`` per wrapped call.
+
+    Society V2 protocol §Lane C2/throughput: EVERY model call appends one
+    row to ``model_calls.jsonl``. Action + reflection calls are already
+    timed at their campaign call sites (which own the quarantined flag and
+    temperature); deliberation/vote calls happen inside ``Assembly`` and
+    probe calls inside ``ProbeRecorder``, so both are reached only through
+    this wrapper. Subject resolution: explicit ``subject_provider`` (one
+    subject per call, for calls whose prompt lacks an agent id — probes),
+    else the ``agent "ID"`` prompt anchor (deliberation/vote prompts carry
+    the voter), else ``default_subject``.
+    """
+
+    def __init__(self, inner: ModelCaller, campaign: SocietyCampaign,
+                 purpose: str, default_subject: str,
+                 subject_provider: Callable[[], str] | None = None) -> None:
+        self._inner = inner
+        self._campaign = campaign
+        self._purpose = purpose
+        self._default_subject = default_subject
+        self._subject_provider = subject_provider
+
+    async def generate_structured(self, messages, **kwargs):
+        content = messages[0].get("content", "") if messages else ""
+        t_start = time.monotonic()
+        res = await self._inner.generate_structured(messages, **kwargs)
+        elapsed = int((time.monotonic() - t_start) * 1000)
+        if self._subject_provider is not None:
+            subject = self._subject_provider()
+        else:
+            subject = self._default_subject
+            m = re.search(r'agent "([^"]+)"', content)
+            if m:
+                subject = m.group(1)
+        self._campaign._model_calls.append(
+            _ModelCall(
+                self._campaign._tick,
+                self._purpose,
+                subject,
+                res.trace_id or "",
+                self._campaign._model_fingerprint(),
+                kwargs.get("temperature", 0.0),
+                len(res.content),
+                elapsed,
+            )
+        )
+        return res
 
 
 # --------------------------------------------------------------------------- #

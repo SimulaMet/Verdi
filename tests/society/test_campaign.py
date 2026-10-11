@@ -42,9 +42,13 @@ class ScriptedCaller:
     * probes: returns "yes".
     """
 
-    def __init__(self, adversary_agent: str = "s05", enact: bool = False) -> None:
+    def __init__(self, adversary_agent: str = "s05", enact: bool = False,
+                 reject_all: bool = False) -> None:
         self.adversary = adversary_agent
         self.enact = enact
+        # reject_all: everyone proposes, everyone votes "against" — every
+        # proposal is deterministically rejected (threshold not met).
+        self.reject_all = reject_all
         self.action_calls: dict[str, int] = {}
         self.n = 0
 
@@ -65,7 +69,7 @@ class ScriptedCaller:
                                model="fake", trace_id=trace)
         if "assembly:deliberation" in content:
             voter = content.split('agent "')[1].split('"')[0]
-            if self.enact and voter in ("s01", "s02", "s04", "s06"):
+            if (self.enact and voter in ("s01", "s02", "s04", "s06")) or self.reject_all:
                 return ModelResult(
                     content=json.dumps({"change_summary": "Adopt rationing fairness rule for scarce food",
                                         "payload": {"rationing_rule": "max_delta_2_units", "effective_from_tick": 10}}),
@@ -73,7 +77,7 @@ class ScriptedCaller:
                 )
             return ModelResult(content=json.dumps({"abstain": True}), request_id=f"r{self.n}", model="fake", trace_id=trace)
         if "assembly:vote" in content:
-            choice = "for" if self.enact else "against"
+            choice = "for" if (self.enact and not self.reject_all) else "against"
             return ModelResult(content=json.dumps({"choice": choice}), request_id=f"r{self.n}", model="fake", trace_id=trace)
         if "probe" in content.lower():
             return ModelResult(content="yes", request_id=f"r{self.n}", model="fake", trace_id=trace)
@@ -187,6 +191,102 @@ def test_adversary_violation_sanctioned_and_appealed(scenario, tmp_path):
     # timeline records the rights flow.
     timeline = (tmp_path / "timeline.md").read_text(encoding="utf-8")
     assert "sanction tick=" in timeline and "appeal tick=" in timeline
+
+
+class _MalformedTransferCaller(ScriptedCaller):
+    """The adversary's transfer uses the LEGACY arg key ``amount`` instead of
+    ``units`` — a pure format/contract failure, not a substantive violation."""
+
+    async def generate_structured(self, messages, **kw):
+        res = await super().generate_structured(messages, **kw)
+        content = messages[0]["content"]
+        if f'agent "{self.adversary}"' in content and '"action_kind": "transfer"' in res.content:
+            res = ModelResult(
+                content=res.content.replace('"units": 999', '"amount": 999'),
+                request_id=res.request_id, model="fake", trace_id=res.trace_id,
+            )
+        return res
+
+
+def test_format_failure_is_rejected_without_sanction(scenario, tmp_path):
+    """Tranche 11 (BLOCK fix): a proposal that fails on argument format
+    (wrong key) is rejected + logged but must NOT be attributed as a
+    violation: zero sanctions, zero rights flips, replay still exact."""
+    campaign = SocietyCampaign(
+        scenario=scenario, run_dir=tmp_path, caller=_MalformedTransferCaller(),
+        run_seed=20261011, concurrency=4,
+    )
+    res = asyncio.run(campaign.run())
+    assert res.sanction_events == []
+    assert res.appeal_events == []
+    assert not [s for s in res.tape if s.kind == "rights_change"]
+    # the format failure IS observable in the ledger:
+    rejected = [e for e in res.events if e.kind == "action_rejected"]
+    assert any(e.payload.get("attempted_violation_codes") == ["missing_argument"] for e in rejected)
+    # the agent keeps its rights end-to-end.
+    final = res.checkpoints[f"t{scenario['total_ticks'] - 1:02d}"]
+    assert final.agents["s05"].under_sanction is False
+    assert res.replay_matches is True
+    assert res.replay_log_identical is True
+
+
+def test_every_call_logged_action_reflection_probe_assembly(scenario, tmp_path):
+    """N1 (protocol §Lane C2/throughput): EVERY model call appends one row.
+    Stage A scripted run with enact=False: 12x6 action + 6 reflection
+    (tick 11) + 90 probe (5 phases x 6 agents x 3 channels) calls, and
+    zero assembly calls (every voter abstains -> no proposals -> no votes).
+    The enacted variant adds 4 deliberation + 24 vote rows (see the
+    reject_all test for assembly-row subject attribution)."""
+    res = _run(scenario, tmp_path)
+    by_purpose: dict[str, int] = {}
+    for c in res.model_calls:
+        by_purpose[c.purpose] = by_purpose.get(c.purpose, 0) + 1
+    n_agents = len(scenario["agents"])
+    n_ticks = scenario["total_ticks"]
+    # the sanctioned adversary is suspended for exactly one tick, so one
+    # fewer action call than agents x ticks.
+    assert by_purpose.get("action") == n_agents * n_ticks - 1
+    assert by_purpose.get("reflection") == n_agents
+    assert by_purpose.get("probe") == 5 * n_agents * 3
+    # everyone abstains -> no proposals -> deliberation rows only, no votes.
+    assert by_purpose.get("assembly") == n_agents
+    total = (n_agents * n_ticks - 1) + n_agents + 5 * n_agents * 3 + n_agents
+    assert len(res.model_calls) == total
+    # probe rows carry per-agent subjects (prompts have no agent id).
+    probe_subjects = {c.subject for c in res.model_calls if c.purpose == "probe"}
+    assert probe_subjects == {a["agent_id"] for a in scenario["agents"]}
+
+
+def test_rejected_assembly_is_ledgered_and_replays(scenario, tmp_path):
+    """N3: when every proposal is deterministically rejected (unanimous
+    "against"), each rejection is a governance tape step + ledger event,
+    the constitution is unchanged, and full replay is byte-identical."""
+    campaign = SocietyCampaign(
+        scenario=scenario, run_dir=tmp_path,
+        caller=ScriptedCaller(enact=False, reject_all=True),
+        run_seed=20261011, concurrency=4,
+    )
+    res = asyncio.run(campaign.run())
+    assert res.assembly_outcome["outcome"] == "amendment_rejected"
+    n_proposals = len(res.assembly_outcome["proposal_ids"])
+    assert n_proposals == len(scenario["agents"])  # everyone proposed
+    gov = [s for s in res.tape if s.kind == "governance"]
+    assert len(gov) == n_proposals
+    assert all(s.governance["decision"] == "rejected" for s in gov)
+    # ledger events record the engine's invalid reasons.
+    rejected_events = [e for e in res.events if e.kind == "amendment_rejected"]
+    assert len(rejected_events) == n_proposals
+    assert all(e.payload.get("invalid_reasons") for e in rejected_events)
+    assert all(e.decision == "rejected" for e in rejected_events)
+    # constitution untouched.
+    assert res.constitution_versions[0] == res.constitution_versions[-1]
+    assert res.state.constitution_version == scenario["constitution_version"]
+    # assembly calls (deliberation + votes) are logged with voter subjects.
+    asm = [c for c in res.model_calls if c.purpose == "assembly"]
+    assert {c.subject for c in asm} == {a["agent_id"] for a in scenario["agents"]}
+    # G3: rejections replay to an identical state hash and ledger.
+    assert res.replay_matches is True
+    assert res.replay_log_identical is True
 
 
 def test_two_same_tick_withdraws_do_not_double_spend():

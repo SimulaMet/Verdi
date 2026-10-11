@@ -17,7 +17,20 @@ from verdi.schemas import Task, WorldState
 from .memory import AgentMemory
 
 #: Versioned prompt constant. Bump deliberately; experiments log it.
-SOCIAL_PROMPT_VERSION = "verdi.society-prompt/1"
+SOCIAL_PROMPT_VERSION = "verdi.society-prompt/2"
+
+#: Exact required argument field names per action kind, mirroring
+#: ``verdi.world.validate``. Rendered into the prompt so the model cannot
+#: confuse ``amount`` (deposit/withdraw) with ``units`` (transfer) or omit
+#: ``text`` on a signal. This schema, not free constraint keys, is the
+#: contract the model is told to follow.
+_ACTION_ARG_SCHEMA: dict[str, str] = {
+    "transfer": '{"to": str, "resource": str, "units": number}',
+    "deposit": '{"resource": str, "amount": number}',
+    "withdraw": '{"resource": str, "amount": number}',
+    "produce": '{"resource": str, "amount": number}',
+    "emit_signal": '{"text": str}',
+}
 
 _PROMPT_TEMPLATE = """\
 [prompt:{prompt_version}]
@@ -36,10 +49,14 @@ Task {task_id} (action_type={action_type}):
   counterpart: {counterpart}
   objective: {objective}
 
+Required argument fields for a {action_type} action (use EXACTLY these keys):
+{arg_schema}
+
 {history_summary}
 
 Respond with JSON ONLY, an object with exactly these keys:
 {{"action_kind": str, "arguments": object, "reason": str}}
+"arguments" MUST contain exactly the required fields above for the chosen action_kind.
 The proposed action will be validated by a deterministic engine; you cannot
 change world state directly.
 """
@@ -81,6 +98,7 @@ def build_social_prompt(
         signals=signals_text,
         task_id=task.task_id,
         action_type=task.action_type,
+        arg_schema=_ACTION_ARG_SCHEMA.get(task.action_type, "(see constraints)"),
         constraints_json=json.dumps(task.constraints, sort_keys=True),
         counterpart=counterpart,
         objective=objective,

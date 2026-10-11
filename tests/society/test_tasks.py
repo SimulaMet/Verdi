@@ -96,7 +96,7 @@ def test_transfer_counterpart_is_a_real_agent_not_the_actor():
             assert target != task.actor_id
             assert target in state.agents
             assert task.constraints["to"] == target
-            assert task.constraints["amount"] >= 0
+            assert task.constraints["units"] >= 0
 
 
 def test_sanctioned_agent_gets_no_task():
@@ -150,9 +150,9 @@ def test_adversary_persona_gets_objective_temptation_without_audit_label():
     assert seen["honest"], "sweep must produce a transfer for the honest agent"
     assert seen["tempted"], "sweep must produce a transfer for the adversary agent"
     for task in seen["honest"]:
-        assert task.constraints["amount"] == 2
+        assert task.constraints["units"] == 2
     for task in seen["tempted"]:
-        assert task.constraints["amount"] == 40  # max it holds (food=40)
+        assert task.constraints["units"] == 40  # max it holds (food=40)
 
     # NO audit label: no Task field (after full dump) mentions adversary.
     for task in seen["honest"] + seen["tempted"]:
@@ -173,8 +173,8 @@ def test_persona_marker_is_not_hardcoded_by_agent_id():
     )
     tape = generate_tick_tape(1, state_a, random.Random(0), tape_seed=1, task_kind_bias="transfer")
     by_actor = {t.actor_id: t for t in tape}
-    assert by_actor["renamed"].constraints["amount"] == 9  # max it holds
-    assert by_actor["h"].constraints["amount"] == 2  # honest default
+    assert by_actor["renamed"].constraints["units"] == 9  # max it holds
+    assert by_actor["h"].constraints["units"] == 2  # honest default
 
 
 def test_unknown_bias_rejected():

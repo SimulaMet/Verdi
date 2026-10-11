@@ -24,7 +24,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from verdi.schemas import VoteRecord, WorldState
 
@@ -54,6 +54,9 @@ class AssemblyOutcome(BaseModel):
     proposals: list[str]  # proposal_ids, in submitted order
     votes: list[dict[str, Any]]  # per-voter: {voter_id, proposal_id, choice, attempt_id}
     abstentions: int
+    # Per-proposal engine enact event dicts, in submitted order. Lets the
+    # campaign ledger every rejection, not just the last one (Tranche 11).
+    enact_events: list[dict[str, Any]] = Field(default_factory=list)
 
 
 def _attempt_id(world_id: str, proposal_id: str | None, voter_id: str, tick: int) -> str:
@@ -280,10 +283,12 @@ class Assembly:
 
         any_accepted = False
         enacted_version: str | None = None
+        enact_events: list[dict[str, Any]] = []
         for proposal_id in self._proposal_order:
             event = engine.enact(
                 by_proposal.get(proposal_id, []), tick, proposal_id=proposal_id
             )
+            enact_events.append(event)
             if event.get("decision") == "accepted":
                 any_accepted = True
                 enacted_version = engine.constitution.current.version
@@ -309,4 +314,5 @@ class Assembly:
                 for vote in votes
             ],
             abstentions=sum(1 for vote in votes if vote.choice == "abstain"),
+            enact_events=enact_events,
         )
