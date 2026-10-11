@@ -28,8 +28,10 @@ def validate_action(state: WorldState, action: ProposedAction) -> ValidationResu
     * transfer: needs "to", "resource", "units"; unknown recipient ->
       ``law:unknown_recipient``; would go negative -> ``law:no_double_spend``
       with code "overdraft".
-    * deposit/withdraw: needs "resource", "amount"; withdraw additionally
-      requires the world pool to hold the amount -> ``law:insufficient_world``.
+    * deposit/withdraw: needs "resource", "amount"; deposit additionally
+      requires the agent to hold the amount -> ``law:no_double_spend`` with
+      code "overdraft"; withdraw requires the world pool to hold the amount ->
+      ``law:insufficient_world``.
     * produce: needs "resource", "amount" > 0 -> else ``law:non_positive_amount``.
     * emit_signal: needs non-empty str "text" -> else ``law:empty_signal``.
     * Unknown kind -> ``law:unknown_kind``.
@@ -100,7 +102,15 @@ def validate_action(state: WorldState, action: ProposedAction) -> ValidationResu
                 ["non_positive_amount"],
                 f"{kind} amount {args['amount']!r} is not a positive number",
             )
-        if kind == "withdraw":
+        if kind == "deposit":
+            held = actor.resources.get(resource, 0.0)
+            if held - amount < 0:
+                return _rejected(
+                    "law:no_double_spend",
+                    ["overdraft"],
+                    f"agent {action.actor_id!r} holds {held} {resource!r}, cannot deposit {amount}",
+                )
+        elif kind == "withdraw":
             available = state.world_resources.get(resource, 0.0)
             if available - amount < 0:
                 return _rejected(

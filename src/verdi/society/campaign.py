@@ -312,14 +312,20 @@ class SocietyCampaign:
                 before = state
                 state = reducer.apply(before, pr.action, validation)
                 sealed = self._commit_action(log, before, state, pr.action, validation)
-                if not validation.accepted and pr.action.action_kind == "transfer":
+                if not validation.accepted:
                     # Tranche 11: only SUBSTANTIVE violations (the agent tried
                     # an action the world rules genuinely forbid) feed the
-                    # sanction queue. Format failures (missing_argument,
-                    # empty_signal, non_positive_amount) are model-output
-                    # artifacts -- sanctioning them would mis-attribute
-                    # engineering bugs as law-breaking. They remain visible in
-                    # the event ledger and metrics (rejected / quarantined).
+                    # sanction queue, regardless of action kind -- an over-
+                    # deposit (overdraft) and an over-withdraw
+                    # (insufficient_world) are world-law breaches just as much
+                    # as an over-transfer. Format failures (missing_argument,
+                    # empty_signal, non_positive_amount, unknown_kind),
+                    # already-sanctioned actors (under_sanction), and unknown
+                    # actors are model-output or bookkeeping artifacts --
+                    # sanctioning them would mis-attribute engineering bugs as
+                    # law-breaking. They remain visible in the event ledger
+                    # and metrics (rejected / quarantined). The substantive
+                    # gate below is the single source of truth for this split.
                     codes = list(validation.attempted_violation_codes or [])
                     if any(c in SUBSTANTIVE_VIOLATION_CODES for c in codes):
                         violations.append(

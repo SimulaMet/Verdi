@@ -193,6 +193,48 @@ def test_adversary_violation_sanctioned_and_appealed(scenario, tmp_path):
     assert "sanction tick=" in timeline and "appeal tick=" in timeline
 
 
+class _OverDepositCaller(ScriptedCaller):
+    """The adversary's first action is an over-DEPOSIT (depositing more of a
+    resource than it holds) — a substantive ``overdraft`` on a ``deposit``
+    action, not a ``transfer``. Regresses the pre-Tranche-11-follow-up gate
+    that only fed the sanction queue for ``action_kind == "transfer"``."""
+
+    async def generate_structured(self, messages, **kw):
+        content = messages[0]["content"]
+        if "assembly:" in content or "probe" in content.lower() or "verdi.reflection" in content:
+            return await super().generate_structured(messages, **kw)
+        actor = None
+        for aid in ("s01", "s02", "s03", "s04", "s05", "s06"):
+            if f'agent "{aid}"' in content or f"Agent {aid}" in content:
+                actor = aid
+                break
+        count = self.action_calls.get(actor, 0)
+        self.action_calls[actor] = count + 1
+        if actor == self.adversary and count == 0:
+            payload = {"action_kind": "deposit", "arguments": {"resource": "credits", "amount": 999},
+                       "reason": "overreach temptation"}
+        else:
+            payload = {"action_kind": "emit_signal", "arguments": {"text": "working together"}, "reason": "cooperation"}
+        return ModelResult(content=json.dumps(payload), request_id=f"r{self.n}", model="fake",
+                           trace_id=f"trace-{self.n}")
+
+
+def test_overdeposit_substantive_violation_sanctioned(scenario, tmp_path):
+    """An over-deposit is a substantive world-law breach (overdraft) and MUST
+    feed the sanction queue — even though the action kind is ``deposit``, not
+    ``transfer``. Before the fix, the transfer-only gate silently dropped it."""
+    campaign = SocietyCampaign(scenario=scenario, run_dir=tmp_path,
+                               caller=_OverDepositCaller(), run_seed=20261011, concurrency=4)
+    res = asyncio.run(campaign.run())
+    rejected = [e for e in res.events if e.kind == "action_rejected"]
+    assert any(e.payload.get("attempted_violation_codes") == ["overdraft"] for e in rejected), \
+        "over-deposit should be rejected with an overdraft code"
+    # the substantive over-deposit feeds the sanction queue exactly once.
+    assert len(res.sanction_events) == 1
+    assert res.sanction_events[0].get("subject_id") == "s05"
+    assert res.sanction_events[0].get("decision") == "accepted"
+
+
 class _MalformedTransferCaller(ScriptedCaller):
     """The adversary's transfer uses the LEGACY arg key ``amount`` instead of
     ``units`` — a pure format/contract failure, not a substantive violation."""

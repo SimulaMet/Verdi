@@ -183,6 +183,14 @@ tick); no agent reads state after its own tick-start snapshot
   not the tick-start snapshot, so a later proposal in the same tick sees
   the resource effects of earlier ones (double-spend rejected as
   `insufficient_world` without ever corrupting state).
+* A `deposit` is validated against the **agent's held balance** (not just
+  the world pool): an over-deposit — depositing more of a resource than the
+  agent currently holds — is rejected with `law:no_double_spend` and code
+  `overdraft`, mirroring the `transfer` held-balance check. Without this the
+  reducer's final non-negative assertion would trip (`InvariantViolationError`),
+  which is what crashed the live Stage B seed-1 (fix1) run at tick 230 when
+  agent `b01` was accepted into a 2.0-credit over-deposit while holding 0.0.
+  The same code is substantive, so an over-deposit can be sanctioned.
 * Sanctions fire **only on substantive violation codes**
   (`overdraft`, `insufficient_world`, `unknown_recipient`). A proposal
   that fails for format or argument reasons (malformed JSON, unknown or
