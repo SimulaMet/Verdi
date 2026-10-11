@@ -146,7 +146,10 @@ class Assembly:
         #: Batch runner for model calls: (concurrency, coroutines) in,
         #: results in INPUT order. Sequential by default; the society layer
         #: injects a bounded concurrency runner
-        #: (``verdi.society.campaign._run_bounded``).
+        #: (``verdi.society.campaign._run_bounded``). Note: the
+        #: ``concurrency`` argument is advisory only — the injected runner
+        #: binds its own bound from the run config and may ignore the value
+        #: passed here (run_batch is always invoked with 1).
         self.run_batch: Callable[[int, list], Awaitable[list]] = _run_sequential
 
     # -- prompts ---------------------------------------------------------------
