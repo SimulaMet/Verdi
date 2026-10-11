@@ -322,7 +322,7 @@ Pre-registration: docs/STAGE_C_PREREGISTRATION.md (committed BEFORE live outcome
 
 ### 12c. LIVE C-1 attempt 3 — watchdog FALSE-FIRE at t15 (preserved), F1-F3 fixed
 - Attempt 3 (5784c62, `--stall-timeout 600`) ran healthily to event 497
-  (~35%, ~66 min) then the watchdog fired at 10:25:54 UTC: "STALL: no new
+  (~35%, ~28 min: 09:58:12Z -> 10:25:54Z) then the watchdog fired: "STALL: no new
   events for 600s (last count 497)", exit 3, run_meta status=stalled. The
   run was NOT hung — it was mid-assembly at t15: assembly ticks write zero
   ledger events until finalize (n probes + n deliberation + n×votes
@@ -341,8 +341,16 @@ Pre-registration: docs/STAGE_C_PREREGISTRATION.md (committed BEFORE live outcome
   doc wording corrected (committed on campaign branch, not dev).
 - New tests: `tests/society/test_watchdog_calibrated.py` (5). Verification:
   521 passed, 1 skipped, ruff clean. LESSONS Tranche 12d recorded.
-  Partial run preserved: `runs/society-v2/stageC1-20261014/` (497 events,
-  status=stalled).
+  Partial run preserved: `runs/society-v2/stageC1-20261014-attempt3-stalled/`
+  (497 events, status=stalled); attempt 4 writes to a fresh
+  `runs/society-v2/stageC1-20261014/`.
+- Second independent review (7e512896 on 58c33f3): SHIP-WITH-NITS — F1 fix
+  verified sound, no masking of a wedged campaign (per-tick call sets are
+  bounded; an isolated stuck call freezes beats), F2-F4 pass, and the
+  F3 regeneration is byte-identical for BOTH C-1 and C-2 scenarios. One
+  factual nit (attempt-3 duration "~66 min" -> "~28 min" per preserved
+  run_meta timestamps) corrected in STATUS + LESSONS; LOW residual
+  (dead-call detection latency up to ~20 min) accepted and recorded.
 
 ### Next 3 actions (Stage C)
 1. Launch C-1 attempt 4 on the F1-fixed code (default 1200 s window, per-call
