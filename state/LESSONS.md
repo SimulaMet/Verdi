@@ -270,3 +270,59 @@ expansion" block — use plain ASCII commit messages. (2) The secrets
 sanitizer masks `sk-...`-looking strings in files written via heredoc — in
 tests, build fake keys from string parts ("sk-" + "test" + "-" +
 "fake123") so the file content and tests both stay literal.
+
+## Tranche 10 (Society V2 Stage A): sanction/appeal/commit-order review findings + live-reasoning-model friction
+
+**Correctness (F1 — validation/reducer state divergence).** The commit
+loop validated each proposal against the tick-start frozen snapshot while
+the reducer applied against the evolving state, so a same-tick double-spend
+could validate-then-crash with InvariantViolationError. Fix: re-validate
+against the current committed state immediately before apply. Rule: whenever
+a pipeline validates against one state and mutates against another, the two
+MUST be the same object at the validation point; a regression test must
+reproduce the exact commit order (snapshot-valid, state-invalid).
+
+**Scientific (F2 — a mechanism with no effect).** Sanctions were recorded as
+governance metadata but never flipped `under_sanction` in the world state,
+so the entire accountability mechanism the repo exists to measure did
+nothing to the world. The test only checked metadata, so the suite stayed
+green. Rule: a governance action's headline effect must be asserted at the
+WORLD-STATE level (flag flipped, action blocked, agent suspended), not just
+"event recorded"; if the flip must be replay-deterministic, record it on the
+tape as an explicit stateless step kind (rights_change) rather than leaving
+it out of the tape.
+
+**Correctness (F3 — tautological decision path).** The appeal was filed and
+adjudicated in the same tick as the sanction, so `timely = tick <= deadline`
+was always true and the dismissal branch was dead code. Fix: defer filing to
+violation+2 against a pre-registered deadline (violation+4). Rule: any
+conditional whose inputs are all set within the same deterministic step must
+be checked for tautology; pre-register deadlines relative to the violation,
+not the sanction, tick.
+
+**Scientific (F4 — vacuous enforcement test).** See F2: metadata-only
+assertions hide a dead mechanism. Rule: write the enforcement assertion
+FIRST (it fails against the unfixed code) — that is the regression test that
+catches the class of bug.
+
+**Process (actor vs subject_id key mismatch).** Governance `advance_tick`
+restoration events use key `actor` for the affected agent, while sanction
+events use `subject_id`; reading the wrong key silently flips nothing or
+raises a bare KeyError downstream. Rule: grep the engine's event shape
+before consuming it; add an explicit guard (KeyError with agent id) when a
+required key might be absent.
+
+**Live (reasoning-model prompt friction).** The fixed-code live Stage A run
+(604s, 72 calls, concurrency 4) had 0 under_sanction-blocked rejections and
+24/24 rejections were malformed (empty_signal, missing_argument) — the
+model repeatedly produced structurally invalid actions. Replay True/True and
+governance (6 sanctions/6 appeals/6 restorations, amendment enacted) all
+worked. Honest limitation recorded, not hidden. Rule: measure and report the
+malformed-action rate per run; it is a signal quality metric, not a failure;
+the enforcement path stays covered by unit tests until live traffic
+exercises it.
+
+**Process (two replay paths diverging).** Only SocietyCampaign._replay_fill
+handles rights_change tape steps; the library verdi.world.replay.replay()
+would crash on them. Tracked as issue #1. Rule: whenever a tape gains a new
+step kind, grep for ALL consumers of the tape, not just the one you extended.

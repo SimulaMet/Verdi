@@ -1,5 +1,83 @@
 # Execution state (integrator-owned)
 
+Update UTC: 2026-10-11 01:30 (Tranche 10 — Society V2 Stage A integrated on dev 55a6c5d: campaign orchestrator + live entrypoint + 6-lane packages; independent code review BLOCK (4 findings F1-F4) fully remediated and re-reviewed SHIP; LIVE Stage A re-run with fixed code passed (replay True/True, 90 probes, 6 sanctions / 6 appeals / 6 restorations, amendment enacted, 604s wall at concurrency 4); full suite + ruff green on dev; dev pushed)
+
+## Tranche 10 (this update): Society V2 Stage A (live society campaign) — dev 55a6c5d
+Campaign: docs/LIVE_SOCIETY_CAMPAIGN.md + docs/SOCIETY_V2_PROTOCOL.md (frozen Stage A protocol, G0).
+Branch lineage: feat/society-v2-protocol off dev@bf4bfd4, fast-forward merged to dev (commits 6b1cfa3, c73ca22, 288a307, f56f747, 55a6c5d).
+
+Scope delivered:
+- src/verdi/society/ — campaign orchestrator (concurrent-generation /
+  sequential-commit loop, private AgentMemory feedback, longitudinal probe
+  battery + leak guard, real model-voted constitutional assembly, sanction +
+  deferred-appeal governance), live entrypoint (SimulaChat default Qwen3.8-27B
+  via existing vLLM config, bounded concurrency, smoke call, key-material
+  guard, status meta), memory, prompting, seeded task tape.
+- src/verdi/world/validate.py + observation.py (deterministic action
+  validation incl. under_sanction blocking; observation channel).
+- src/verdi/world/replay.py TapeStep extended (kind="rights_change" with
+  rights payload) so world-state flag flips are tape-recorded and replayed.
+- src/verdi/governance/assembled.py, src/verdi/measurement/longitudinal.py.
+- experiments/scenarios/society_v2_stageA.json (6 agents, 12 ticks).
+- tests: 40 new society tests + governance/measurement/world lanes.
+
+Independent review (BLOCK → remediated → SHIP):
+- F1 (HIGH, resolved): commit loop re-validates against evolving state;
+  same-tick double-spend now rejected as insufficient_world (regression test
+  test_two_same_tick_withdraws_do_not_double_spend).
+- F2 (HIGH, resolved): sanctions deterministically flip under_sanction in
+  world state (agent suspended from tape; validator blocks transfer/deposit);
+  flips recorded as rights_change tape steps (regression test
+  test_rights_change_flips_world_state_and_blocks_sanctioned_agent).
+- F3 (resolved): appeals filed at violation_tick+2, adjudicated against
+  pre-registered deadline violation_tick+4 (deferred, no same-tick tautology).
+- F4 (resolved): adversary test now asserts real enforcement effects.
+- Re-review verdict: SHIP-WITH-NIT; nit #1 (library replay() rights_change-
+  blind) tracked as issue #1. 4 additional non-blocking nits recorded.
+
+Verification (dev @ 55a6c5d):
+- python -m pytest: 502 collected, all passing (incl. 40 society), no
+  failures.
+- ruff check src tests: clean.
+- G2/G3 offline: full offline Stage A run produces all artifacts, replay
+  byte-identical (log bytes + final state hash), 90 probes, tick accounting
+  reflects sanctioned-agent suspension (n_agents*ticks-1 committed actions
+  when one agent is suspended one tick).
+
+LIVE Stage A re-run (fixed code), runs/society-v2/stageA-20261011-fix1/
+(gitignored), SimulaChat default Qwen3.8-27B, concurrency 4, seed 20261011:
+- 72 model calls, 604.4s wall (~8.4s/call incl. governance; prior baseline
+  78 calls / 1045.7s — endpoint faster this window).
+- 67 events: 42 action_accepted, 24 action_rejected (12 empty_signal,
+  12 missing_argument), 1 amendment_enacted (constitution v5 enacted).
+- Governance: 6 sanctions (all 6 agents violated over 12 ticks), 6 appeals
+  all filed at violation+2 and upheld (deadline violation+4), 6 restorations;
+  all final under_sanction flags False (rights restored before tick 11).
+- Replay: replay_matches=True, replay_log_identical=True.
+- Probes: 90 points (30 per channel), leak guard clean.
+- run_meta status: "complete"; final_state_hash f7b4874e… (recorded).
+HONEST LIMITATIONS (frozen): 0 under_sanction-blocked rejections observed in
+this run (sanctioned agents' suspended tick produced no transfer/deposit
+attempts — the F2 blocking path is covered by unit tests, not yet by live
+traffic); 24 rejections are malformed arguments (empty_signal/
+missing_argument), reflecting prompt/schema friction of the reasoning model,
+not substantive violations; no live double-spend occurred (F1 path covered
+by regression test). Pre-fix live run (pre-F1-F4 code) preserved at
+runs/society-v2/stageA-20261011/ for comparison.
+
+Blockers: none.
+Next 3 actions:
+1. Stage B scenario (12 agents, 30 ticks, multi-seed, honest+adversarial,
+   governance interventions) — build + offline-validate, then live run.
+2. Concurrency soak: raise to 8 after throughput measurements confirm no
+   429/5xx trend; record per-call latency distribution.
+3. Fix issue #1 (library replay() should handle/reject rights_change steps)
+   before Stage B live runs.
+Release readiness: NOT READY for main (Society V2 is dev-only; main
+publication remains manual/curated). main untouched in this tranche.
+
+---
+
 Update UTC: 2026-10-10 23:40 (post-Tranche 9: operator reviewed and approved the G5-close framework; operator will verify independently and run the other-family cross-judge later on a separately supplied endpoint; model policy confirmed — SimulaChat default Qwen only; dev pushed)
 
 Updated UTC: 2026-10-10 22:15 (Tranche 9: G5-close (ADR-014, Qwen-only) live Qwen judge pass over the G5 paired data + G5-depth bias/leakage audits + identification strategy; independent engineering+science reviews PASS after remediation; G6 public release SKIPPED per operator)
