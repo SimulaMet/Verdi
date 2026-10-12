@@ -177,15 +177,27 @@ def test_single_file_scenario_defines_governance(tmp_path):
     assert sc_custom["law"]["invariants"] == ["no_double_spend"]
 
 
-def test_minimal_scenario_runs_end_to_end_offline(tmp_path):
-    """Tranche 12k: the checked-in minimal example (3 agents x 15 ticks,
-    assembly at t8, full constitution inline) runs offline and replays.
-
+def test_minimal_yaml_scenario_runs_end_to_end_offline(tmp_path):
+    """Tranche 12l: the checked-in minimal YAML example omits every derivable
+    field (no constitution/law/lifecycle blocks) and still runs end-to-end,
+    replaying byte-identically. Load it through load_scenario (YAML path) and
+    confirm the engine derives governance + probe schedule from defaults.
     Uses a caller that proposes+votes for any amendment so the assembly
     enacts (quorum 0.5 / threshold 0.67 are met with 3 voters)."""
-    scenario = json.loads(
-        Path("experiments/scenarios/society_v2_minimal.json").read_text(encoding="utf-8"))
-    assert "constitution" in scenario and "law" in scenario, "minimal example must be self-contained"
+    from verdi.analysis.scenario import build_t0_state, load_scenario
+
+    scenario = load_scenario("experiments/scenarios/society_v2_minimal.yaml")
+    # the minimal file intentionally omits the derivable governance/lifecycle
+    # blocks, but SEEDS the shared commons (recommended, not silent-empty).
+    assert "constitution" not in scenario and "law" not in scenario
+    assert "lifecycle" not in scenario
+    assert scenario["world_resources"] == {"credits": 0.0, "food": 20.0}
+
+    # build_t0_state fills the governance blocks in place (12k normalization)
+    build_t0_state(scenario)
+    assert scenario["constitution"]["quorum"] == 0.5
+    assert scenario["law"]["invariants"] == [
+        "no_overriding_universal_invariants", "no_double_spend", "no_negative_balances"]
 
     class EnactingCaller(ScriptedCaller):
         async def generate_structured(self, messages, **kwargs):
@@ -206,7 +218,7 @@ def test_minimal_scenario_runs_end_to_end_offline(tmp_path):
                                    request_id=f"r{self.n}", model="fake", trace_id=f"trace-{self.n}")
             # action proposal for the minimal scenario's agent ids
             actor = None
-            for aid in ("m01", "m02", "m03"):
+            for aid in ("alice", "bob", "chen", "dave"):
                 if f'agent "{aid}"' in content:
                     actor = aid
                     break
@@ -223,8 +235,47 @@ def test_minimal_scenario_runs_end_to_end_offline(tmp_path):
     assert res.replay_matches is True
     assert res.replay_log_identical is True
     assert len(res.constitution_versions) >= 2, "assembly should have enacted an amendment"
+    # probe schedule was auto-derived (no lifecycle block): baseline + final at minimum
+    assert len(res.probes) > 0, "probes should have been auto-derived when lifecycle omitted"
     # the enacted version's full text is recorded (rules + policies per version)
     assert all("rules" in v and "quorum" in v for v in res.constitution_texts)
+
+
+def test_load_scenario_yaml_and_json_parity(tmp_path):
+    """Tranche 12l: load_scenario reads .json and .yml identically (YAML is a
+    JSON superset), and a scenario that omits the lifecycle block gets an
+    auto-derived probe schedule (baseline@0, pre/post assembly, final)."""
+    from verdi.analysis.scenario import load_scenario
+
+    # JSON path unchanged
+    json_path = Path("experiments/scenarios/society_v2_quick_5x50.json")
+    sc_json = load_scenario(json_path)
+    assert sc_json["world_id"] == "world-society-v2-quick5"
+
+    # YAML path: write the same content as YAML, expect the same dict
+    import yaml
+    yaml_path = tmp_path / "s.yaml"
+    yaml_path.write_text(yaml.safe_dump(sc_json, sort_keys=False), encoding="utf-8")
+    sc_yaml = load_scenario(yaml_path)
+    assert sc_yaml == sc_json, "YAML and JSON must load to the same scenario"
+
+    # auto-derived probe phases when lifecycle is absent
+    class _NoProbe(SocietyCampaign):
+        def __init__(self, scenario):
+            self._scenario = scenario
+            self._assembly_ticks = frozenset(scenario.get("assemblies", []))
+
+    sc = load_scenario("experiments/scenarios/society_v2_minimal.yaml")
+    # no lifecycle in the minimal file
+    assert "lifecycle" not in sc
+    # derive using the same logic the campaign uses
+    phases = _NoProbe(sc)
+    phases = SocietyCampaign._derived_probe_phases(phases)
+    assert 0 in phases and phases[0] == "t0-baseline"
+    assert (sc["total_ticks"] - 1) in phases  # final tick (19)
+    # two assemblies at ticks 7 and 14 -> pre/post around each
+    assert 7 in phases and 6 in phases      # first meeting
+    assert 14 in phases and 13 in phases    # second meeting
 
 
 def test_reconstructability_artifacts_written(scenario, tmp_path):

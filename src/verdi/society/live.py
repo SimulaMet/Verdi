@@ -26,6 +26,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from verdi.agents.client import ModelClient
+from verdi.analysis.scenario import load_scenario
 from verdi.audit.judge_live import _assert_no_key_material
 from verdi.config import ModelEndpointConfig, model_endpoint_from_env
 from verdi.experiments.g5_judge_live import _load_dotenv_into_environ
@@ -153,7 +154,7 @@ async def smoke_call(client: ModelClient) -> dict:
 async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency: int | None,
                stall_timeout_seconds: float | None = None) -> int:
     config = resolve_endpoint_config()
-    scenario = json.loads(scenario_path.read_text(encoding="utf-8"))
+    scenario = load_scenario(scenario_path)
     seed = int(seed if seed is not None else scenario["run_seed"])
     if concurrency is None:
         concurrency = int(os.environ.get("VERDI_MAX_CONCURRENCY", str(DEFAULT_CONCURRENCY)))

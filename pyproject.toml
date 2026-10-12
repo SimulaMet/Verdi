@@ -12,6 +12,7 @@ dependencies = [
     "httpx>=0.27",
     "tenacity>=8.2",
     "SimpleAudit>=0.4,<0.5",
+    "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]
