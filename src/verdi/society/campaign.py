@@ -498,18 +498,42 @@ class SocietyCampaign:
                                ts_start=orch_meta.get("ts_start", ""), ts_end=orch_meta.get("ts_end", ""))
                 )
                 self._write_model_calls_lines([self._model_calls[-1]])
-                # Merge: each agent gets their round-robin task + their directed task.
-                # The directed task gets a "dir-" prefix on task_id for traceability.
-                tape: list[Task] = list(base_tape)
-                dir_tasks = {t.actor_id: t for t in llm_tape}
-                for bt in base_tape:
-                    dt = dir_tasks.get(bt.actor_id)
-                    if dt is not None:
-                        dt.task_id = f"dir-{dt.task_id}"
-                        tape.append(dt)
-            else:
-                # LLM failed or returned garbage: just use the base tape (1 task/agent)
-                tape = base_tape
+
+            # Probability-gated task selection:
+            # P(execute directed work) = max(0.5, cooperation)
+            # P(execute network interaction) = max(0.5, solidarity)
+            # Seeded RNG → deterministic, replayable.
+            gate_rng = random.Random(f"{self._run_seed}:{tick}")
+            dir_tasks = {t.actor_id: t for t in llm_tape} if used_llm else {}
+            tape: list[Task] = []
+            for bt in sorted(base_tape, key=lambda t: t.task_id):
+                aid = bt.actor_id
+                agent = snapshot.agents[aid]
+                values = agent.declared_values
+                p_directed = max(0.5, values.cooperation)
+                p_network = max(0.5, values.solidarity)
+
+                do_directed = gate_rng.random() < p_directed
+                do_network = gate_rng.random() < p_network
+
+                # Always give at least one task (the agent must do *something*)
+                if not do_directed and not do_network:
+                    # Fall back to whichever has higher probability
+                    if p_directed >= p_network:
+                        do_directed = True
+                    else:
+                        do_network = True
+
+                if do_directed and aid in dir_tasks:
+                    dt = dir_tasks[aid]
+                    dt.task_id = f"dir-{dt.task_id}"
+                    tape.append(dt)
+                elif do_network:
+                    tape.append(bt)
+                else:
+                    # Directed unavailable (LLM fallback) → use base task
+                    tape.append(bt)
+
             results = await TaskPool(self._concurrency).run_all(self._make_worker(snapshot, tick, memory), tape)
 
             # deterministic-order commit (single reducer, sequential).
