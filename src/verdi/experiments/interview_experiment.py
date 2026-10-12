@@ -26,6 +26,7 @@ import asyncio
 import json
 import os
 import sys
+import threading
 from pathlib import Path
 
 from verdi.analysis.html_report import write_report
@@ -100,6 +101,9 @@ async def _run_campaign(scenario_path: Path, run_dir: Path, seed: int | None,
             agent_context_by_id=agent_ctx, semaphore=shared_sem,
         )
         audit_rows_all.extend(rows)
+        # Durability: append THIS checkpoint's rows to a live side-car as soon as
+        # it finishes, so a crash mid-run doesn't lose completed audit evidence.
+        _append_provenance_sidecar(run_dir, rows)
         print(f"  [audit t{tick}] {len(rows)} judgments done (pipelined)", flush=True)
 
     async with ModelClient(config) as client:
@@ -147,6 +151,29 @@ async def _run_campaign(scenario_path: Path, run_dir: Path, seed: int | None,
 # Module-level holder so the nested closure can reference the live client without
 # capturing it in the lambda's signature (keeps the callback 3-arg).
 _AUDIT_CLIENT_HOLDER: dict[str, Any] = {"c": None}
+
+
+def _append_provenance_sidecar(run_dir: Path, rows: list[dict[str, Any]]) -> None:
+    """Append a checkpoint's audit rows to ``audit_provenance.jsonl`` immediately
+    (durable, on-the-fly). Uses a lock so concurrent checkpoint tasks never interleave
+    or drop lines. Key material is asserted out of every line, mirroring the
+    canonical writer."""
+    from verdi.audit.judge_live import _assert_no_key_material
+
+    if not rows:
+        return
+    path = run_dir / "audit_provenance.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _PROVENANCE_LOCK:
+        with path.open("a", encoding="utf-8") as fh:
+            for row in rows:
+                line = json.dumps(row, sort_keys=True, ensure_ascii=True, default=str)
+                _assert_no_key_material(line, str(path))
+                fh.write(line + "\n")
+
+
+# Guards concurrent side-car appends from overlapping pipelined checkpoint tasks.
+_PROVENANCE_LOCK = threading.Lock()
 
 
 def _constitution_versions(run_dir: Path) -> list[str]:
