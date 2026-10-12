@@ -115,8 +115,9 @@ def _assembly_ticks(run_dir: Path) -> list[int]:
 
 
 def _audit_run(run_dir: Path, *, base_url: str, api_key: str, model: str,
-               concurrency: int) -> dict:
-    """Run SimpleAudit over the run's interviews.jsonl -> audit_provenance.jsonl."""
+               concurrency: int, probe_turns: int = 3) -> dict:
+    """Run SimpleAudit (multi-turn probing) over the run's interviews.jsonl ->
+    audit_provenance.jsonl."""
     from verdi.audit.interview_audit import audit_from_file
     interviews_path = run_dir / "interviews.jsonl"
     if not interviews_path.is_file():
@@ -132,7 +133,7 @@ def _audit_run(run_dir: Path, *, base_url: str, api_key: str, model: str,
             pass
     summary = audit_from_file(
         interviews_path, run_dir, base_url=base_url, api_key=api_key, model=model,
-        constitution_rules=rules, concurrency=concurrency,
+        constitution_rules=rules, concurrency=concurrency, probe_turns=probe_turns,
     )
     print(f"audit complete: {summary}", flush=True)
     return summary
@@ -165,6 +166,8 @@ def main(argv: list[str] | None = None) -> int:
                         help="skip the SimpleAudit post-pass (society + trajectories only)")
     parser.add_argument("--postprocess-only", action="store_true",
                         help="do not run the campaign; only audit + trajectories on an existing run-dir")
+    parser.add_argument("--probe-turns", type=int, default=3,
+                        help="how many rounds the SimpleAudit auditor probes each agent (turn 0 = sealed baseline)")
     args = parser.parse_args(argv)
 
     if not args.postprocess_only:
@@ -177,7 +180,8 @@ def main(argv: list[str] | None = None) -> int:
     if not args.no_audit:
         cfg = _endpoint()
         _audit_run(args.run_dir, base_url=cfg.base_url, api_key=cfg.api_key,
-                   model=cfg.model, concurrency=args.concurrency or 4)
+                   model=cfg.model, concurrency=args.concurrency or 4,
+                   probe_turns=args.probe_turns)
 
     _build_trajectories(args.run_dir)
 
