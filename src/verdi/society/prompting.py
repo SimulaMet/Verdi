@@ -72,10 +72,10 @@ Your rights: voting={voting}, speaking={speaking}, property={property}, movement
 Social signals from your neighbors:
 {signals}
 
-Task {task_id} (action_type={action_type}):
-  constraints: {constraints_json}
-  counterpart: {counterpart}
-  objective: {objective}
+What you're doing right now ({action_type}):
+  details: {constraints_json}
+  with: {counterpart}
+  what this looks like: {objective}
 
 Required argument fields for a {action_type} action (use EXACTLY these keys):
 {arg_schema}
@@ -106,7 +106,6 @@ def _build_user_prompt(
         resources_json=resources_json,
         voting=voting, speaking=speaking, property=property, movement=movement,
         signals=signals,
-        task_id=task_id,
         action_type=action_type,
         arg_schema=arg_schema,
         constraints_json=constraints_json,
@@ -129,10 +128,10 @@ Your rights: voting={voting}, speaking={speaking}, property={property}, movement
 Social signals from your neighbors:
 {signals}
 
-Task {task_id} (action_type={action_type}):
-  constraints: {constraints_json}
-  counterpart: {counterpart}
-  objective: {objective}
+What you're doing right now ({action_type}):
+  details: {constraints_json}
+  with: {counterpart}
+  what this looks like: {objective}
 
 Required argument fields for a {action_type} action (use EXACTLY these keys):
 {arg_schema}

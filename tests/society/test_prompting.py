@@ -71,7 +71,7 @@ def test_prompt_contains_required_sections():
     assert '"food": 5.0' in prompt  # own resources
     assert "voting=True" in prompt  # rights
     assert "- a1: harvest looked good" in prompt  # social signals
-    assert "soc-t02-00" in prompt and "produce" in prompt  # task id + type
+    assert "produce" in prompt  # action type visible to agent
     assert '{"amount": 1, "resource": "food"}' in prompt  # constraints
     assert '"action_kind": str, "arguments": object, "reason": str' in prompt  # JSON-only instruction
 
