@@ -196,15 +196,11 @@ def generate_tick_tape(
             constraints = {"resource": "food", "amount": 1}
             counterpart_ids = []
             public_observations = ["produce food for the common pool"]
-        else:  # emit_signal
-            # NOTE: emit_signal's only required argument is a non-empty
-            # "text" (validate.py); "units" on the constraint object is a
-            # scalar, not an object, and did not tell the model the field
-            # name. An earlier version caused 100% empty_signal live
-            # rejections (Tranche 11 lesson).
+        else:  # emit_signal — 1:1 conversation with a specific person
+            target = _pick_target(agent, state, call_rng)
             constraints = {"text_required": True}
-            counterpart_ids = list(agent.social_edges)
-            public_observations = ["emit a public signal to your neighbors"]
+            counterpart_ids = [target] if target else []
+            public_observations = [f"talk to {target}"] if target else ["say something to yourself"]
 
         tasks.append(
             Task(
@@ -336,7 +332,12 @@ def _parse_orchestrator_response(content: str, state: WorldState, tick: int) -> 
         if kind == "transfer" and target and target in state.agents and target != aid:
             counterpart_ids = [target]
         elif kind == "emit_signal":
-            counterpart_ids = list(agent.social_edges)
+            # 1:1 conversation: use the "to" field if provided, else pick a neighbor
+            sig_target = target if (target and target in state.agents and target != aid) else None
+            if sig_target is None:
+                edges = sorted(e for e in agent.social_edges if e in state.agents and e != aid)
+                sig_target = edges[0] if edges else None
+            counterpart_ids = [sig_target] if sig_target else []
 
         # Build constraints matching the validator's expected field names
         if kind == "transfer":
@@ -351,9 +352,9 @@ def _parse_orchestrator_response(content: str, state: WorldState, tick: int) -> 
         elif kind == "produce":
             constraints = {"resource": "food", "amount": amount}
             obs = [f"produce {amount} food for the common pool"]
-        else:  # emit_signal
+        else:  # emit_signal — 1:1 talk
             constraints = {"text_required": True}
-            obs = ["emit a public signal to your neighbors"]
+            obs = [f"talk to {counterpart_ids[0]}"] if counterpart_ids else ["murmur to yourself"]
 
         tasks.append(Task(
             task_id=f"soc-t{tick:02d}-{i:02d}",
