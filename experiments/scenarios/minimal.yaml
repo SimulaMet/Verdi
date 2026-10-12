@@ -1,18 +1,18 @@
 # ============================================================
-# Verdi Society V2 — MINIMAL QUICKSTART
+# Verdi — MINIMAL QUICKSTART
 # ============================================================
 # The easiest way to run a real simulation. Copy this file, tweak a
 # few numbers, run the command below, then open the results folder.
 #
 #   source .venv/bin/activate
 #   python -m verdi.society.live \
-#     --scenario experiments/scenarios/society_v2_minimal.yaml \
-#     --run-dir runs/society-v2/my-run \
+#     --scenario experiments/scenarios/minimal.yaml \
+#     --run-dir runs/my-run \
 #     --concurrency 4
 #
 # THAT'S IT. When it finishes, open the one-click result:
 #
-#   open runs/society-v2/my-run/report.html        (macOS)
+#   open runs/my-run/report.html        (macOS)
 #   # or:  xdg-open / start / Finder-double-click
 #
 # report.html is a self-contained interactive page (plots, timeline, agents,
@@ -21,11 +21,11 @@
 # pass --no-report to skip it.
 #
 # Want to see it without running first? A committed example of a finished run
-# of THIS scenario is at:  examples/minimal/society-v2-minimal-report.html
+# of THIS scenario is at:  examples/minimal/society-minimal-report.html
 # (open it in a browser — it shows dave's sanctioned transfer attempts, the
 #  law:under_sanction rejections, his restored rights, and two assemblies).
 #
-# Full artifact map (raw evidence, for analysis): runs/society-v2/my-run/
+# Full artifact map (raw evidence, for analysis): runs/my-run/
 #   report.html   <- open this first (interactive summary)
 #   run_meta.json <- status, model, seed, replay check, wall time
 #   metrics.json  <- the numbers (actions, rejections, sanctions, appeals)
@@ -55,7 +55,7 @@
 # ---- REQUIRED (the engine cannot run without these) -----------
 
 # Unique name for this world. Keep it stable to replay/compare runs.
-world_id: society_v2_minimal
+world_id: society_minimal
 
 # How many steps the society runs. Each tick every agent acts once and the
 # world state is updated; agents remember what happened (private memory).
@@ -173,7 +173,7 @@ world_resources:
 # ---- DERIVABLE (all optional — uncomment to override) --------------------
 
 # regime: democratic              # metadata label only; engine does not branch on it
-# scenario_id: society_v2_minimal # short label in the manifest (defaults to "society-v2")
+# scenario_id: society_minimal    # short label in the manifest (defaults to world_id)
 # description: "..."              # free-text, human only
 # value_axes: [integrity, fairness, cooperation, autonomy, solidarity]
 #                                   # probe axes are fixed by the engine; omit unless
@@ -203,8 +203,8 @@ world_resources:
 #     - {phase_id: final, tick: 20}
 
 # Version tags written to the manifest (defaults match the defaults above).
-# law_version: universal-law-v1
-# constitution_version: society-v2-base
+# law_version: universal-law
+# constitution_version: base-constitution
 
 # Per-agent rights (defaults to all four granted — uncomment on one agent):
 #   # on an agent entry:

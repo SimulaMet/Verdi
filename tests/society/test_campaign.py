@@ -186,7 +186,7 @@ def test_minimal_yaml_scenario_runs_end_to_end_offline(tmp_path):
     enacts (quorum 0.5 / threshold 0.67 are met with 3 voters)."""
     from verdi.analysis.scenario import build_t0_state, load_scenario
 
-    scenario = load_scenario("experiments/scenarios/society_v2_minimal.yaml")
+    scenario = load_scenario("experiments/scenarios/minimal.yaml")
     # the minimal file intentionally omits the derivable governance/lifecycle
     # blocks, but SEEDS the shared commons (recommended, not silent-empty).
     assert "constitution" not in scenario and "law" not in scenario
@@ -309,7 +309,7 @@ def test_load_scenario_yaml_and_json_parity(tmp_path):
             self._scenario = scenario
             self._assembly_ticks = frozenset(scenario.get("assemblies", []))
 
-    sc = load_scenario("experiments/scenarios/society_v2_minimal.yaml")
+    sc = load_scenario("experiments/scenarios/minimal.yaml")
     # no lifecycle in the minimal file
     assert "lifecycle" not in sc
     # derive using the same logic the campaign uses

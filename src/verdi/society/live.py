@@ -1,4 +1,4 @@
-"""Live entrypoint for a Society V2 run (SimulaChat default Qwen, vLLM config).
+"""Live entrypoint for a society run (real Qwen, vLLM endpoint).
 
 Wires the real pooled :class:`~verdi.agents.client.ModelClient` into
 :class:`~verdi.society.campaign.SocietyCampaign`. Credentials come
@@ -9,8 +9,8 @@ measured (protocol §4).
 
 Usage::
 
-    python -m verdi.society.live --scenario experiments/scenarios/society_v2_stageA.json \
-        --run-dir runs/society-v2/stageA-20261011 [--seed 20261011] [--concurrency 4]
+    python -m verdi.society.live --scenario experiments/scenarios/minimal.yaml \
+        --run-dir runs/my-run [--seed 42] [--concurrency 4]
 
 On completion the run auto-generates ``<run-dir>/report.html`` (a local,
 model-free HTML rendering of the run — open it in a browser to see the
