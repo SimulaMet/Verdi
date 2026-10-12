@@ -1144,6 +1144,7 @@ No blockers. Note: two code-review subagent launches were cancelled by infrastru
 - Deterministic offline proof (minimal test): dave (t0 under_sanction, duration 6) is scripted to transfer every tick; assertions pin >=3 recorded law:under_sanction rejections during his window AND that after auto-restoration his transfers succeed (tape), plus his t0 sanction declaration persisted in sanctions.jsonl (subject_id=dave, record_type=sanction).
 - Verification: full suite `python -m pytest tests` -> 533 passed, 1 skipped (44s); `ruff check src tests experiments` -> clean. Targeted stage re-runs green after the final ternary refactor.
 - Rollback point: prior dev HEAD 20c6e70 (Tranche 12l+12m evidence).
+- LIVE status: the real-Qwen minimal run (runs/society-v2/sanction-transfer-v2) is PENDING — the SimulaChat model backend returned HTTP 502 on chat/completions for the full smoke window (client 5 retries + 3 spaced probes over 90s; the HTTP layer itself stayed up, so it is an upstream model-backend outage, not a code bug). A bounded background watcher is auto-retrying every 45s (up to ~30 min) and will launch the run on recovery; the deterministic OFFLINE proof of dave's rejected transfer is already green and is the authoritative correctness evidence.
 - Next (from the standing campaign plan): re-launch the live minimal run to confirm dave's rejected transfer appears in the real-Qwen events.jsonl + tape, then Stage C-1 live (24x60) validation.
 
 ## 2026-10-12 11:45 (UTC) — Tranche 12n: lessons
