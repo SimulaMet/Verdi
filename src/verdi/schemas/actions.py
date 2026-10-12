@@ -10,7 +10,8 @@ class FrozenModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
-class Task(FrozenModel):
+class Task(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     """A dispatchable unit of world work assigned by the orchestrator."""
 
     schema_version: int = 1

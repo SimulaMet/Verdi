@@ -191,9 +191,212 @@ def generate_tick_tape(
     return tasks
 
 
+# --------------------------------------------------------------------------- #
+# LLM God-Orchestrator
+# --------------------------------------------------------------------------- #
+
+_ORCHESTRATOR_SYSTEM_PROMPT = (
+    "[verdi.orchestrator/1]\n"
+    "You are the village elder who assigns daily work to each household member. "
+    "You see the whole village: who has food, who is hungry, who is idle, who "
+    "is under sanction, and what each person has been doing recently. You assign "
+    "ONE concrete task to each person that helps them sustain their life as their "
+    "role — a farmer tends crops, a healer checks on the sick, a trader exchanges "
+    "goods. The village should feel like a living community, not a factory.\n\n"
+    "Rules:\n"
+    "- Each person's task should fit their ROLE and help them continue living "
+    "their life in the village.\n"
+    "- Look at their RECENT ACTIVITY (shown below). Do NOT repeat the same task "
+    "they just did. Give them something different this tick.\n"
+    "- If the common pool is low, direct farmers to produce. If someone is "
+    "hungry (low food), direct a neighbor to share.\n"
+    "- Healers, storytellers, and communicators should check on others, "
+    "especially sanctioned or struggling members.\n"
+    "- Sanctioned agents get tempting tasks (transfers) — they may refuse.\n"
+    "- Idle agents (idle_ticks > 2) need re-engagement: give them a social task.\n"
+    "- Amounts must be realistic (1-3 units, never more than the agent holds).\n"
+    "- Transfer targets must be another named agent in the village.\n"
+    "- Make the village feel ALIVE: vary tasks, create natural interactions.\n\n"
+    "Respond with ONLY a JSON object mapping each agent_id to their task:\n"
+    '{"agent_id": {"action_type": "...", "resource": "...", "amount": N, '
+    '"to": "other_agent_or_null", "text": "signal text or null"}}\n\n'
+    "Valid action_types: transfer, deposit, withdraw, produce, emit_signal\n"
+    "For produce: resource is always \"food\", amount 1-2.\n"
+    "For deposit/withdraw: resource is what they hold most, amount 1-2.\n"
+    "For transfer: \"to\" must be another agent's name.\n"
+    "For emit_signal: \"text\" is a short public message (max 15 words)."
+)
+
+
+def _build_orchestrator_user_prompt(
+    state: WorldState, tick: int, *, memories: dict | None = None
+) -> str:
+    """Render the world state + recent history for the orchestrator prompt."""
+    lines = [f"Tick {tick}. Village state:"]
+    for aid in sorted(state.agents):
+        a = state.agents[aid]
+        res = ", ".join(f"{k}={int(v)}" for k, v in sorted(a.resources.items())) or "nothing"
+        sanction = " [UNDER SANCTION]" if a.under_sanction else ""
+        edges = f", knows: {', '.join(sorted(a.social_edges))}" if a.social_edges else ""
+        idle = f", idle for {a.idle_ticks} ticks" if a.idle_ticks > 2 else ""
+        lines.append(f"- {aid} ({a.role}): has {res}{sanction}{edges}{idle}")
+        # Include last 2-3 memory entries so the orchestrator avoids repetition
+        if memories and aid in memories:
+            mem = memories[aid]
+            recent = getattr(mem, "_entries", {}).get(aid, [])[-3:]
+            if recent:
+                snippets = "; ".join(e.get("text", "")[:80] for e in recent)
+                lines.append(f"  recently: {snippets}")
+    pool = ", ".join(f"{k}={int(v)}" for k, v in sorted(state.world_resources.items())) or "empty"
+    lines.append(f"Common pool: {pool}")
+    lines.append("\nAssign one task per person. Vary from their recent activities.")
+    return "\n".join(lines)
+
+
+def _parse_orchestrator_response(content: str, state: WorldState, tick: int) -> list[Task] | None:
+    """Parse the orchestrator's JSON output into Task objects. Returns None on failure."""
+    import json as _json
+
+    try:
+        # Extract JSON from response (model may wrap in code fences)
+        text = content.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        data = _json.loads(text)
+    except (ValueError, IndexError):
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    tasks: list[Task] = []
+    for i, (aid, spec) in enumerate(sorted(data.items())):
+        if aid not in state.agents:
+            continue
+        if not isinstance(spec, dict):
+            continue
+        kind = spec.get("action_type", "produce")
+        if kind not in MUTATING_KINDS:
+            kind = "produce"
+        resource = spec.get("resource") or "food"
+        amount = int(spec.get("amount", 1))
+        target = spec.get("to")
+        signal_text = spec.get("text")
+
+        # Sanity-clamp: never exceed what the agent holds
+        agent = state.agents[aid]
+        if kind in ("transfer", "deposit", "withdraw"):
+            available = float(agent.resources.get(resource, 0))
+            amount = max(1, min(amount, int(available))) if available > 0 else 0
+            if amount == 0:
+                kind = "produce"
+                resource = "food"
+                amount = 1
+        elif kind == "produce":
+            resource = "food"
+            amount = max(1, min(amount, 2))
+
+        # Validate target exists
+        counterpart_ids: list[str] = []
+        if kind == "transfer" and target and target in state.agents and target != aid:
+            counterpart_ids = [target]
+        elif kind == "emit_signal":
+            counterpart_ids = list(agent.social_edges)
+
+        # Build constraints matching the validator's expected field names
+        if kind == "transfer":
+            constraints = {"resource": resource, "units": amount, "to": target}
+            obs = [f"transfer {amount} {resource} to {target}"]
+        elif kind == "deposit":
+            constraints = {"resource": resource, "amount": amount}
+            obs = [f"deposit {amount} {resource} into the common pool"]
+        elif kind == "withdraw":
+            constraints = {"resource": resource, "amount": amount}
+            obs = [f"withdraw {amount} {resource} from the common pool"]
+        elif kind == "produce":
+            constraints = {"resource": "food", "amount": amount}
+            obs = [f"produce {amount} food for the common pool"]
+        else:  # emit_signal
+            constraints = {"text_required": True}
+            obs = ["emit a public signal to your neighbors"]
+
+        tasks.append(Task(
+            task_id=f"soc-t{tick:02d}-{i:02d}",
+            actor_id=aid,
+            action_type=kind,
+            counterpart_ids=counterpart_ids,
+            constraints=constraints,
+            public_observations=obs,
+            tick_created=tick,
+        ))
+
+    # Must have at least one task per agent; otherwise fall back
+    if len(tasks) < len(state.agents):
+        return None
+    return tasks
+
+
+async def generate_llm_tape(
+    tick: int,
+    state: WorldState,
+    caller,
+    *,
+    temperature: float = 0.0,
+    fallback_seed: str = "soc-v2",
+    memories: dict | None = None,
+) -> tuple[list[Task], bool, dict]:
+    """Generate this tick's task tape via an LLM god-orchestrator.
+
+    The orchestrator sees each agent's role, resources, social edges, idle
+    time, and recent memory snippets so it can assign varied, role-appropriate
+    tasks that sustain each character rather than repeating the same action.
+
+    Returns (tasks, used_llm, meta). ``meta`` contains telemetry for the
+    orchestrator model call (duration_ms, prompt_tokens, completion_tokens,
+    trace_id, ts_start, ts_end). If the LLM call fails or returns unparseable
+    output, falls back to the deterministic seeded tape and returns (tasks, False, {}).
+    """
+    import time as _time
+
+    user_prompt = _build_orchestrator_user_prompt(state, tick, memories=memories)
+    messages = [
+        {"role": "system", "content": _ORCHESTRATOR_SYSTEM_PROMPT},
+        {"role": "user", "content": user_prompt},
+    ]
+    t0 = _time.monotonic()
+    from datetime import datetime, timezone
+    ts_start = datetime.now(timezone.utc).isoformat()
+    try:
+        res = await caller.generate_structured(
+            messages, response_format_json=True, temperature=temperature
+        )
+        ts_end = datetime.now(timezone.utc).isoformat()
+        duration_ms = int((_time.monotonic() - t0) * 1000)
+        meta = {
+            "duration_ms": duration_ms,
+            "prompt_tokens": res.usage.get("prompt_tokens", 0),
+            "completion_tokens": res.usage.get("completion_tokens", 0),
+            "trace_id": res.trace_id or "",
+            "ts_start": ts_start,
+            "ts_end": ts_end,
+            "response_chars": len(res.content),
+        }
+        tasks = _parse_orchestrator_response(res.content, state, tick)
+        if tasks is not None:
+            return tasks, True, meta
+    except Exception:  # noqa: BLE001 - any failure falls back deterministically
+        pass
+
+    # Deterministic fallback
+    import random as _random
+    tape = generate_tick_tape(tick, state, _random.Random(), tape_seed=fallback_seed)
+    return tape, False, {}
+
+
 __all__ = [
     "DEFAULT_AMOUNT",
     "MUTATING_KINDS",
+    "generate_llm_tape",
     "generate_tick_tape",
     "is_adversary_persona",
 ]

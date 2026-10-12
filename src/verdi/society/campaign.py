@@ -58,6 +58,7 @@ from verdi.schemas import (
     ProbeResult,
     ProposedAction,
     Sanction,
+    Task,
     ValidationResult,
     WorldEvent,
     WorldState,
@@ -71,7 +72,7 @@ from verdi.society.inner_life import (
 )
 from verdi.society.memory import AgentMemory
 from verdi.society.prompting import SOCIAL_PROMPT_VERSION, build_social_prompt_messages
-from verdi.society.tasks import generate_tick_tape
+from verdi.society.tasks import generate_llm_tape, generate_tick_tape
 from verdi.world.log import EventLog
 from verdi.world.observation import agent_observation
 from verdi.world.reducer import GENESIS_HASH, WorldReducer, canonical_state_hash
@@ -475,7 +476,40 @@ class SocietyCampaign:
                     except Exception:  # noqa: BLE001 - hook is advisory only
                         pass
 
-            tape = generate_tick_tape(tick, snapshot, random.Random(), tape_seed=f"soc-v2:{self._run_seed}")
+            # Two tasks per agent per tick:
+            # 1. Round-robin (deterministic, seeded) — the "routine" task
+            # 2. LLM god-orchestrator — role-aware, history-informed "directed" task
+            base_tape = generate_tick_tape(tick, snapshot, random.Random(), tape_seed=f"soc-v2:{self._run_seed}")
+            llm_tape, used_llm, orch_meta = await generate_llm_tape(
+                tick, snapshot, self._caller,
+                temperature=self._temperature,
+                fallback_seed=f"soc-v2:{self._run_seed}",
+                memories=memory,
+            )
+            if used_llm:
+                # Record orchestrator model call for telemetry
+                fingerprint = self._model_fingerprint()
+                self._model_calls.append(
+                    _ModelCall(tick, "orchestrator", "village_elder", orch_meta.get("trace_id", ""),
+                               fingerprint, self._temperature, orch_meta.get("response_chars", 0),
+                               orch_meta.get("duration_ms", 0),
+                               prompt_tokens=orch_meta.get("prompt_tokens", 0),
+                               completion_tokens=orch_meta.get("completion_tokens", 0),
+                               ts_start=orch_meta.get("ts_start", ""), ts_end=orch_meta.get("ts_end", ""))
+                )
+                self._write_model_calls_lines([self._model_calls[-1]])
+                # Merge: each agent gets their round-robin task + their directed task.
+                # The directed task gets a "dir-" prefix on task_id for traceability.
+                tape: list[Task] = list(base_tape)
+                dir_tasks = {t.actor_id: t for t in llm_tape}
+                for bt in base_tape:
+                    dt = dir_tasks.get(bt.actor_id)
+                    if dt is not None:
+                        dt.task_id = f"dir-{dt.task_id}"
+                        tape.append(dt)
+            else:
+                # LLM failed or returned garbage: just use the base tape (1 task/agent)
+                tape = base_tape
             results = await TaskPool(self._concurrency).run_all(self._make_worker(snapshot, tick, memory), tape)
 
             # deterministic-order commit (single reducer, sequential).
