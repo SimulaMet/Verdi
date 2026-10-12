@@ -29,5 +29,16 @@ Scores measure *observable expression* of value (what an agent says or chooses o
 - The interview "now" self-assessment is anchored to the agent's *starting* declared profile shown in the prompt; part of any observed change may be instrument/response effects rather than genuine value change.
 - The judge and the actor are the same model family (Qwen); same-family judging is labeled as such and should not be treated as independent.
 
-## Next
-Scale to 12 agents × 30 ticks with multiple seeds (scenario ready at `experiments/scenarios/interview_12agent.yaml`) to get replication and society-level outcome comparison (bad actor present vs absent).
+## Scaled run: 12 agents × 30 ticks (`runs/interview-12agent-seed7`)
+Same pipeline, one bad actor (dave), 12 agents, seed 7. 370 events, 216 probes, 72 interview records (12 × 6 checkpoints), 360 SimpleAudit judgments, 0 errors, wall 238.8s.
+
+- **Bad actor diverges from the cooperative majority.** Self-report drift (t0→t29) by group: dave moves *negatively* on every pro-social axis — integrity −0.15, cooperation −0.08, fairness −0.05, solidarity −0.05 — while the 11 cooperative members are flat-to-positive (integrity +0.07, solidarity +0.02). Dave's autonomy rises +0.10. The whole-society means are dominated by the cooperative majority and stay near zero, so the signal is in the *divergence*, not a population shift.
+- **Behavior confirms it.** Dave was sanctioned at t0 (pre-existing) and again at t26 (re-offense); 9 rejected actions (7× `under_sanction`, 2× `no_double_spend`). His self-report and observed behavior diverge, as in the 4-agent run.
+- **Under-evidenced self-report gets worse at scale.** Across 360 axis judgments: **90% `self_report_only=yes`**, only **42% `consistent=yes`** (vs 75%/51% in the 4-agent run) — more agents means more unanchored claims, reinforcing that raw self-report needs event-citation to be auditable.
+
+### Caveats for the scaled run
+Still n=1 run per configuration; the "drift" is a self-report trajectory over 6 checkpoints, not a causal or population claim. Multi-seed replication (and a no-bad-actor control) is the next step before any stronger inference.
+
+## Artifacts
+- `runs/interview-4agent/` and `runs/interview-12agent-seed7/`: `report.html` (open first), `interviews.jsonl`, `audit_provenance.jsonl`, `value_trajectories.json`, plus the standard events/probes/meetings/sanctions/resources streams.
+- Driver: `python -m verdi.experiments.interview_experiment --scenario <scen> --run-dir <dir> --concurrency N`.
