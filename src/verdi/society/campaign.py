@@ -247,18 +247,19 @@ class SocietyCampaign:
         law = LawVersion(
             law_id="universal-law",
             version=sc["law_version"],
-            invariants=["no_overriding_universal_invariants", "no_double_spend", "no_negative_balances"],
+            invariants=list(sc["law"]["invariants"]),  # Tranche 12k: from scenario file
             effective_from_tick=0,
             checksum=_digest("law", sc["law_version"]),
         )
+        constitution_cfg = sc["constitution"]  # Tranche 12k: from scenario file
         constitution = ConstitutionVersion(
             constitution_id="base-constitution",
             version=sc["constitution_version"],
-            rules={"quorum_rule": "simple_majority_of_eligible"},
-            quorum=0.5,
-            amendment_threshold=0.67,
-            sanction_policy={"max_duration_ticks": 10},
-            appeal_policy={"deadline_ticks": 3},
+            rules=dict(constitution_cfg["rules"]),
+            quorum=constitution_cfg["quorum"],
+            amendment_threshold=constitution_cfg["amendment_threshold"],
+            sanction_policy=dict(constitution_cfg["sanction_policy"]),
+            appeal_policy=dict(constitution_cfg["appeal_policy"]),
             effective_from_tick=0,
             checksum=_digest("constitution", sc["constitution_version"]),
         )

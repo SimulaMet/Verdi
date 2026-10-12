@@ -4,25 +4,48 @@ Status: **PROPOSED / NOT YET EXECUTED**. Created after review of dev a118160 and
 
 ## Quickstart — run one simulation in 3 commands
 
+The scenario JSON is the **single, self-contained definition** of a simulation:
+world resources, universal law, constitution (quorum / amendment threshold /
+sanction & appeal policies), probe points, and agents. No other config file.
+
 ```bash
 # 1. One-time setup (already done on this machine): venv + endpoint config
 source .venv/bin/activate
 #    .env must contain VERDI_VLLM_BASE_URL / VERDI_VLLM_MODEL / VERDI_VLLM_API_KEY
 
-# 2. Launch the smallest real run (5 agents x 60 ticks, ~2-4 min at concurrency 10)
+# 2. Launch the minimal real run (3 agents x 15 ticks, ~1-2 min)
 set -a && . ./.env && set +a
 python -m verdi.society.live \
-  --scenario experiments/scenarios/society_v2_quick_5x50.json \
+  --scenario experiments/scenarios/society_v2_minimal.json \
   --run-dir runs/society-v2/my-run \
-  --concurrency 10
+  --concurrency 4
 
 # 3. Watch progress while it runs (liveness = model_calls.jsonl line growth)
 watch -n 10 'wc -l runs/society-v2/my-run/model_calls.jsonl runs/society-v2/my-run/events.jsonl'
 ```
 
-Larger scenarios: `society_v2_stageA.json` (6x12), `society_v2_stageB.json` (12x30),
-`society_v2_stageC1.json` (24x60), `society_v2_stageC2.json` (48x100).
-Use a FRESH `--run-dir` per run (reusing a dir appends to its logs).
+### All the knobs (one file)
+
+`experiments/scenarios/society_v2_minimal.json` shows every section:
+
+| Key | Meaning |
+|---|---|
+| `total_ticks`, `assemblies` | timeline length; ticks at which constitutional assemblies meet |
+| `law.invariants` | universal-law invariants no amendment may override |
+| `constitution.rules/quorum/amendment_threshold` | base constitution text + voting thresholds |
+| `constitution.sanction_policy` / `appeal_policy` | max sanction duration; appeal deadline (ticks) |
+| `world_resources` | shared world resource pool at t0 |
+| `agents[].resources` / `rights` / `social_edges` / `declared_values` | per-agent start state |
+| `lifecycle` | probe points (baseline / pre-meeting / post-assembly / final) |
+| `run_seed` | deterministic seed for task tape + probes |
+
+Omitting `law` or `constitution` falls back to the standard defaults
+(same values as before Tranche 12k), so older scenario files still work.
+
+Larger scenarios: `society_v2_quick_5x50.json` (5x60), `society_v2_stageA.json`
+(6x12), `society_v2_stageB.json` (12x30), `society_v2_stageC1.json` (24x60),
+`society_v2_stageC2.json` (48x100). Use a FRESH `--run-dir` per run
+(reusing a dir appends to its logs).
 
 ### Where to find results
 

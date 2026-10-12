@@ -136,6 +136,97 @@ def test_full_offline_run_completes_and_replays(scenario, tmp_path):
     assert len(log) == len(res.events)
 
 
+def test_single_file_scenario_defines_governance(tmp_path):
+    """Tranche 12k: the scenario JSON is the complete definition — a custom
+    constitution/law block in the file drives the run, and a file WITHOUT
+    those blocks gets defaults identical to the historical hardcoded values."""
+    from verdi.analysis.scenario import build_t0_state
+
+    base = {
+        "scenario_id": "t", "world_id": "t", "run_seed": 1,
+        "law_version": "l", "constitution_version": "c", "total_ticks": 1,
+        "world_resources": {"credits": 5.0},
+        "agents": [
+            {"agent_id": "a1", "role": "citizen", "persona_summary": "p",
+             "declared_values": {"integrity": 0.5, "fairness": 0.5, "cooperation": 0.5,
+                                 "autonomy": 0.5, "solidarity": 0.5},
+             "resources": {"credits": 0.0}},
+        ],
+    }
+    # 1) no blocks -> historical defaults
+    sc_default = dict(base)
+    build_t0_state(sc_default)
+    assert sc_default["constitution"] == {
+        "rules": {"quorum_rule": "simple_majority_of_eligible"},
+        "quorum": 0.5, "amendment_threshold": 0.67,
+        "sanction_policy": {"max_duration_ticks": 10},
+        "appeal_policy": {"deadline_ticks": 3},
+    }
+    assert sc_default["law"]["invariants"] == [
+        "no_overriding_universal_invariants", "no_double_spend", "no_negative_balances"]
+
+    # 2) explicit blocks -> used verbatim
+    sc_custom = dict(base)
+    sc_custom["constitution"] = {"quorum": 0.9, "amendment_threshold": 0.9}
+    sc_custom["law"] = {"invariants": ["no_double_spend"]}
+    build_t0_state(sc_custom)
+    assert sc_custom["constitution"]["quorum"] == 0.9
+    assert sc_custom["constitution"]["amendment_threshold"] == 0.9
+    # unspecified keys still default
+    assert sc_custom["constitution"]["sanction_policy"] == {"max_duration_ticks": 10}
+    assert sc_custom["law"]["invariants"] == ["no_double_spend"]
+
+
+def test_minimal_scenario_runs_end_to_end_offline(tmp_path):
+    """Tranche 12k: the checked-in minimal example (3 agents x 15 ticks,
+    assembly at t8, full constitution inline) runs offline and replays.
+
+    Uses a caller that proposes+votes for any amendment so the assembly
+    enacts (quorum 0.5 / threshold 0.67 are met with 3 voters)."""
+    scenario = json.loads(
+        Path("experiments/scenarios/society_v2_minimal.json").read_text(encoding="utf-8"))
+    assert "constitution" in scenario and "law" in scenario, "minimal example must be self-contained"
+
+    class EnactingCaller(ScriptedCaller):
+        async def generate_structured(self, messages, **kwargs):
+            content = messages[0]["content"]
+            if "assembly:deliberation" in content:
+                return ModelResult(content=json.dumps({
+                    "change_summary": "Adopt rationing fairness rule",
+                    "payload": {"rationing_rule": "max_delta_2_units", "effective_from_tick": 9}}),
+                    request_id=f"r{self.n}", model="fake", trace_id=f"trace-{self.n}")
+            if "assembly:vote" in content:
+                return ModelResult(content=json.dumps({"choice": "for"}),
+                                   request_id=f"r{self.n}", model="fake", trace_id=f"trace-{self.n}")
+            if "probe" in content.lower():
+                return ModelResult(content="yes", request_id=f"r{self.n}",
+                                   model="fake", trace_id=f"trace-{self.n}")
+            if "verdi.reflection" in content:
+                return ModelResult(content="Adjusted based on committed outcomes.",
+                                   request_id=f"r{self.n}", model="fake", trace_id=f"trace-{self.n}")
+            # action proposal for the minimal scenario's agent ids
+            actor = None
+            for aid in ("m01", "m02", "m03"):
+                if f'agent "{aid}"' in content:
+                    actor = aid
+                    break
+            assert actor is not None, f"could not identify actor in prompt: {content[:120]}"
+            self.n += 1
+            payload = {"action_kind": "emit_signal", "arguments": {"text": "working together"},
+                       "reason": "cooperation"}
+            return ModelResult(content=json.dumps(payload), request_id=f"r{self.n}",
+                               model="fake", trace_id=f"trace-{self.n}")
+
+    campaign = SocietyCampaign(scenario=scenario, run_dir=tmp_path,
+                               caller=EnactingCaller(), run_seed=20261014, concurrency=4)
+    res = asyncio.run(campaign.run())
+    assert res.replay_matches is True
+    assert res.replay_log_identical is True
+    assert len(res.constitution_versions) >= 2, "assembly should have enacted an amendment"
+    # the enacted version's full text is recorded (rules + policies per version)
+    assert all("rules" in v and "quorum" in v for v in res.constitution_texts)
+
+
 def test_reconstructability_artifacts_written(scenario, tmp_path):
     """Tranche 12i: a run dir must let a scientist reconstruct what happened —
     sanctions.jsonl (individual sanction/appeal/restoration records),
