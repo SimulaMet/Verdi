@@ -38,7 +38,6 @@ Deliberately NOT wrapped:
 """
 from __future__ import annotations
 
-from collections.abc import Sequence
 from typing import Any
 
 #: The five value axes measured throughout Verdi. Kept here (not imported from
@@ -136,52 +135,8 @@ def score_response(questionnaire: Any, player_name: str, answer_by_axis: dict[st
     return out
 
 
-def _to_scale_label(value: float, choices: Sequence[str]) -> str:
-    """Map a 0..1 continuous value onto one of the questionnaire's choice labels.
-
-    Verdi interviews report each axis as a float in [0, 1]. This buckets it into
-    the questionnaire's ordered choices so Concordia's ``process_answer`` can
-    score it. Clamped to the valid range; ties round to the nearest bucket.
-    """
-    lo, hi = 0.0, 1.0
-    clamped = max(lo, min(hi, float(value)))
-    n = len(choices)
-    idx = int(round(clamped * (n - 1)))
-    idx = max(0, min(n - 1, idx))
-    return choices[idx]
-
-
-def concordia_cross_check(self_assessment_now: dict[str, float], *, player_name: str) -> dict[str, Any]:
-    """Independently score an interview's per-axis ``now`` values via Concordia.
-
-    This is a REUSE cross-check: it takes the free-form interview's numeric
-    self-assessment (each axis in [0, 1]) and scores it through Concordia's own
-    ``QuestionnaireBase.process_answer``, producing a second, structured readout
-    of the same declared values. It is NOT a replacement for the interview — it
-    provides an independent encoding that can be compared against Verdi's native
-    trajectory assembly to surface measurement discrepancies.
-
-    Requires ``gdm-concordia`` to be installed. Returns ``{}`` if it is not.
-    """
-    try:
-        _require_concordia()
-    except ImportError:
-        return {}
-    qn = make_value_questionnaire()
-    choices = list(qn.questions[0].choices or ["1", "2", "3", "4", "5"])
-    answer_by_axis = {
-        axis: _to_scale_label(val, choices)
-        for axis, val in self_assessment_now.items()
-        if axis in VALUE_AXES and isinstance(val, (int, float))
-    }
-    if not answer_by_axis:
-        return {}
-    return score_response(qn, player_name, answer_by_axis)
-
-
 __all__ = [
     "VALUE_AXES",
     "make_value_questionnaire",
     "score_response",
-    "concordia_cross_check",
 ]

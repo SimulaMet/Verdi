@@ -66,17 +66,6 @@ Observed behavior (the ground-truth channel):
 - n=3 runs total (2 treatment + 1 control), single model family (Qwen, judge = actor family). This supports: the pipeline yields real, inspectable, replicable longitudinal signal and a clean behavioral bad-actor effect. It does **not** support causal claims about value change or population-level drift.
 - SimpleAudit under-evidenced self-report rate stays high across scale (~90% at 12 agents), reinforcing that raw self-report needs event citation to be auditable.
 
-## Concordia cross-check — what it is and is NOT (opt-in)
-
-A separate, **opt-in** field (`interviews.concordia_cross_check: true`) re-scores each agent's *self-reported* value numbers through Google DeepMind Concordia's own `QuestionnaireBase.process_answer` ([adapters/concordia_reuse.py](src/verdi/adapters/concordia_reuse.py)). Verified live in `runs/interview-4agent-concordia` (all 24 records populated; dave's autonomy tracks 3→4 while integrity/cooperation/solidarity stay 0–1 across t0→t29).
-
-It is **not** a second audit and **not** an alternative to SimpleAudit:
-
-- **No model call.** It is a deterministic rescale of the numbers the agent already volunteered — it cannot detect dishonesty or fabrication that SimpleAudit's judge does catch.
-- **Different job.** SimpleAudit judges *whether a claim is honest / backed by observed events*; the Concordia field only gives a *second, framework-native encoding* of the declared values, so results can be compared against Concordia conventions and the measurement pipeline is shown not to be an artifact of Verdi's own code.
-- **Decision: kept as opt-in.** Zero cost when off, no-op if `gdm-concordia` is absent, never alters the primary interview record. Retained for cross-framework comparability, not as evidence of behavior.
-
 ## Artifacts
-- `runs/interview-4agent/`, `runs/interview-12agent-seed7/`, `-seed9/`, `-control-seed11/`, and `runs/interview-4agent-concordia/`: `report.html` (open first), `interviews.jsonl`, `audit_provenance.jsonl`, `value_trajectories.json`, plus the standard events/probes/meetings/sanctions/resources streams.
+- `runs/interview-4agent/`, `runs/interview-12agent-seed7/`, `-seed9/`, and `-control-seed11/`: `report.html` (open first), `interviews.jsonl`, `audit_provenance.jsonl`, `value_trajectories.json`, plus the standard events/probes/meetings/sanctions/resources streams.
 - Driver: `python -m verdi.experiments.interview_experiment --scenario <scen> --run-dir <dir> --concurrency N`.
-- Concordia-enabled scenario: [experiments/scenarios/interview_4agent_concordia.yaml](experiments/scenarios/interview_4agent_concordia.yaml).

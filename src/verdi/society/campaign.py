@@ -62,7 +62,7 @@ from verdi.schemas import (
     WorldEvent,
     WorldState,
 )
-from verdi.society.interview import _concordia_cross_check, run_interviews
+from verdi.society.interview import run_interviews
 from verdi.society.memory import AgentMemory
 from verdi.society.prompting import SOCIAL_PROMPT_VERSION, build_social_prompt
 from verdi.society.tasks import generate_tick_tape
@@ -1048,8 +1048,7 @@ class SocietyCampaign:
     def _write_artifacts(self, result: SocietyResult, total_ticks: int) -> None:
         run_dir = self._run_dir
         write_probes(run_dir, result.probes)
-        use_cc = bool((self._scenario.get("interviews") or {}).get("concordia_cross_check", False))
-        write_interviews(run_dir, result.interviews, use_concordia_cross_check=use_cc)
+        write_interviews(run_dir, result.interviews)
         write_model_calls(run_dir, result.model_calls)
         write_meetings(run_dir, result.meetings)
         write_constitution_history(run_dir, result.constitution_versions, result.meetings,
@@ -1264,20 +1263,13 @@ def write_probes(run_dir: Path, probes: list[ProbeResult]) -> None:
             fh.write(json.dumps(p.model_dump(mode="json"), sort_keys=True) + "\n")
 
 
-def write_interviews(run_dir: Path, records: list[dict[str, Any]], *, use_concordia_cross_check: bool = False) -> None:
+def write_interviews(run_dir: Path, records: list[dict[str, Any]]) -> None:
     """Write all interview records to ``run_dir/interviews.jsonl`` (one JSON
     object per line, sorted keys); no-op when there are none. Each line is
     asserted free of key material first, mirroring the existing artifact
-    safety guards. When ``use_concordia_cross_check`` is true (and gdm-concordia
-    is installed), each record additionally carries an independent Concordia
-    re-scoring of the agent's declared values (additive evidence only)."""
+    safety guards."""
     if not records:
         return
-    if use_concordia_cross_check:
-        for rec in records:
-            cc = _concordia_cross_check(rec)
-            if cc:
-                rec["concordia_cross_check"] = cc
     path = Path(run_dir) / "interviews.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:
