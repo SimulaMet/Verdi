@@ -90,16 +90,28 @@ async def _run_campaign(scenario_path: Path, run_dir: Path, seed: int | None,
     audit_rows_all: list[dict[str, Any]] = []
 
     async def _audit_checkpoint(tick: int, phase: str, records: list[dict[str, Any]]) -> None:
-        # Bound this checkpoint's audits by the SHARED budget: run the batch with
-        # concurrency=1 so every model call draws from `shared_sem` (which the
-        # campaign also holds), keeping total concurrent endpoint calls bounded.
-        rows = await audit_interviews_batch(
-            records, constitution_rules=None,
-            base_url=config.base_url, api_key=config.api_key, model=config.model,
-            concurrency=concurrency, temperature=0.1,
-            probe_turns=probe_turns, client=_AUDIT_CLIENT_HOLDER["c"],
-            agent_context_by_id=agent_ctx, semaphore=shared_sem,
-        )
+        # Audits draw from `shared_sem`, which the CAMPAIGN tick loop ALSO holds
+        # while running interviews/probes. To avoid double-counting the endpoint
+        # budget (two size-N semaphores => up to 2N concurrent httpx connections,
+        # which exhausts the pool and deadlocks), audits use HALF the budget. A
+        # wall-clock cap per checkpoint means a slow/hung audit can never wedge
+        # the whole campaign — on timeout we log and move on (provenance for that
+        # checkpoint is simply absent, which is truthful).
+        try:
+            rows = await asyncio.wait_for(
+                audit_interviews_batch(
+                    records, constitution_rules=None,
+                    base_url=config.base_url, api_key=config.api_key, model=config.model,
+                    concurrency=max(1, concurrency // 2), temperature=0.1,
+                    probe_turns=probe_turns, client=_AUDIT_CLIENT_HOLDER["c"],
+                    agent_context_by_id=agent_ctx, semaphore=shared_sem,
+                ),
+                timeout=AUDIT_CHECKPOINT_TIMEOUT_SECONDS,
+            )
+        except (asyncio.TimeoutError, Exception) as exc:  # noqa: BLE001 - advisory lane
+            print(f"  [audit t{tick}] SKIPPED ({type(exc).__name__}) — campaign continues",
+                  file=sys.stderr, flush=True)
+            return
         audit_rows_all.extend(rows)
         # Durability: append THIS checkpoint's rows to a live side-car as soon as
         # it finishes, so a crash mid-run doesn't lose completed audit evidence.
@@ -151,6 +163,12 @@ async def _run_campaign(scenario_path: Path, run_dir: Path, seed: int | None,
 # Module-level holder so the nested closure can reference the live client without
 # capturing it in the lambda's signature (keeps the callback 3-arg).
 _AUDIT_CLIENT_HOLDER: dict[str, Any] = {"c": None}
+
+# Wall-clock cap for one checkpoint's pipelined audit. A hung model call must
+# never wedge the campaign; on timeout that checkpoint's audit is skipped and
+# the run continues. Generous enough for a full 12-agent x 5-axis batch at half
+# concurrency, tight enough to surface a genuine hang quickly.
+AUDIT_CHECKPOINT_TIMEOUT_SECONDS = float(os.environ.get("VERDI_AUDIT_CHECKPOINT_TIMEOUT", "600"))
 
 
 def _append_provenance_sidecar(run_dir: Path, rows: list[dict[str, Any]]) -> None:

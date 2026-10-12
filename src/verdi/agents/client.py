@@ -69,7 +69,31 @@ class ModelClient:
         self._client = httpx.AsyncClient(
             base_url=config.base_url,
             headers={"Authorization": f"Bearer {config.api_key}"},
-            timeout=config.timeout_seconds,
+            # Bounded pool + FINITE pool_timeout. Without an explicit
+            # pool_timeout, httpx waits FOREVER for a free connection when the
+            # pool is exhausted (the request `timeout` only covers the actual
+            # request, not pool acquisition). Under sustained concurrent load
+            # against a slow inference endpoint this deadlocked whole campaign
+            # ticks. A finite pool_timeout turns that into a retryable
+            # TransportError instead.
+            # Explicit read/write/connect bounds so a no-bytes hang (dead
+            # socket) always trips the read timeout and becomes retryable,
+            # rather than blocking indefinitely.
+            timeout=httpx.Timeout(
+                connect=15.0, read=config.timeout_seconds,
+                write=config.timeout_seconds, pool=30.0,
+            ),
+            # Disable keepalive REUSE: the SimulaChat endpoint (behind
+            # Cloudflare) closes idle origin connections, leaving our pooled
+            # sockets in CLOSE_WAIT. Reusing a dead pooled socket hangs the
+            # read forever (no bytes ever arrive, so even the request
+            # timeout never fires). Forcing a fresh connection per request
+            # makes that failure mode impossible; the request timeout still
+            # bounds the actual transfer.
+            limits=httpx.Limits(
+                max_connections=max(20, config.max_concurrency * 2),
+                max_keepalive_connections=0,
+            ),
             transport=transport,
         )
 
