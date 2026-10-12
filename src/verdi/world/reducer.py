@@ -34,6 +34,10 @@ from verdi.world.canonical import canonical_sha256
 
 GENESIS_HASH = "genesis"
 
+#: Maximum public signals retained per agent (oldest dropped).
+#: Prevents unbounded prompt growth from accumulated signals.
+_MAX_PUBLIC_SIGNALS = 20
+
 #: Accepted action kinds that mutate substantive state. Any other accepted
 #: kind is record-only (validated, logged, no state mutation).
 MUTATING_KINDS = frozenset({"transfer", "deposit", "withdraw", "produce", "emit_signal"})
@@ -180,7 +184,7 @@ class WorldReducer:
             agents[action.actor_id] = agent.model_copy(update={"resources": resources})
         elif kind == "emit_signal":
             text = _arg(action.arguments, "text")
-            signals = [*agent.public_signals, str(text)]
+            signals = [*agent.public_signals, str(text)][-_MAX_PUBLIC_SIGNALS:]
             agents[action.actor_id] = agent.model_copy(update={"public_signals": signals})
         # Any other accepted kind is record-only: no substantive mutation.
 
