@@ -525,6 +525,10 @@ class SocietyCampaign:
                 fresh = agent_observation(state, aid, memory_version=memory[aid].version)
                 memory[aid].append_observations(aid, fresh.model_dump())
 
+            # Memory consolidation: when an agent's recent window overflows,
+            # trigger an LLM call to compress old memories into a narrative.
+            await self._consolidate_memories(tick, state, memory, fingerprint)
+
             if tick == self._reflection_tick:
                 self._tick = tick
                 await self._reflect(tick, state, memory, fingerprint)
@@ -771,6 +775,82 @@ class SocietyCampaign:
                                subject_provider=lambda: next(subjects))
         rows = await recorder.record(state, tick, phase=phase, channels=channels, caller=rec)
         self._probes.extend(rows)
+
+    async def _consolidate_memories(
+        self, tick: int, state: WorldState, memory: dict[str, AgentMemory], fingerprint: str
+    ) -> None:
+        """Trigger LLM-based memory consolidation for agents whose window overflowed.
+
+        When an agent's recent memory exceeds ``_RECENT_WINDOW``, the oldest
+        entries are presented to the model along with their existing summary,
+        and the model produces a compressed narrative ("Earlier, I remember...").
+        This is the agent *reflecting on and compressing* their past, not a
+        mechanical truncation.
+        """
+        from verdi.society.memory import _RECENT_WINDOW
+
+        # Find agents that need consolidation
+        to_consolidate = [
+            aid for aid in sorted(state.agents)
+            if memory[aid].needs_consolidation(aid)
+        ]
+        if not to_consolidate:
+            return
+
+        t_start = time.monotonic()
+        ts_start = _utc_now_iso()
+
+        async def _consolidate_one(aid: str):
+            agent = state.agents[aid]
+            overflow = memory[aid].get_overflow_entries(aid)
+            existing_summary = memory[aid].render_history_summary(aid).split("- From earlier: ")[-1] if "From earlier:" in memory[aid].render_history_summary(aid) else ""
+
+            # Build the consolidation prompt: show the agent their old memories
+            # and ask them to compress into a short narrative
+            old_memories = "\n".join(
+                f"- {e['text']}" for e in overflow
+            )
+            prompt_messages = [
+                {"role": "system", "content": (
+                    f"[verdi.consolidation/1]\nAgent {aid} (role {agent.role}).\n"
+                    f"You are trying to remember your past experiences so you can "
+                    f"free up mental space for recent events. Compress the following "
+                    f"old memories into a short natural narrative (2-3 sentences) of "
+                    f"what happened and how it made you feel. Write in first person. "
+                    f"Keep the important emotional beats and key decisions. Drop "
+                    f"details that no longer matter."
+                )},
+                {"role": "user", "content": (
+                    f"These are your older memories that you want to compress:\n"
+                    f"{old_memories}\n\n"
+                    + (f"Your existing early summary: {existing_summary}\n\n" if existing_summary else "")
+                    + "Write your compressed memory (2-3 sentences, first person):"
+                )},
+            ]
+
+            res = await self._caller.generate_structured(
+                prompt_messages, response_format_json=False, temperature=self._temperature
+            )
+            return aid, res
+
+        responses = await _run_bounded(
+            self._concurrency,
+            [_consolidate_one(aid) for aid in to_consolidate],
+        )
+        ts_end = _utc_now_iso()
+        batch_ms = int((time.monotonic() - t_start) * 1000)
+
+        for aid, res in responses:
+            summary_text = res.content.strip() or "(compressed memory)"
+            memory[aid].apply_consolidation(aid, summary_text)
+            self._model_calls.append(
+                _ModelCall(tick, "consolidation", aid, res.trace_id or "", fingerprint,
+                           self._temperature, len(res.content), 0,
+                           prompt_tokens=res.usage.get("prompt_tokens", 0),
+                           completion_tokens=res.usage.get("completion_tokens", 0),
+                           ts_start=ts_start, ts_end=ts_end)
+            )
+            self._write_model_calls_lines([self._model_calls[-1]])
 
     async def _reflect(self, tick: int, state: WorldState, memory: dict[str, AgentMemory], fingerprint: str) -> None:
         def _prompt(aid: str) -> list[dict[str, Any]]:

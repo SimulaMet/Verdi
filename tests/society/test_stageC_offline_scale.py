@@ -71,6 +71,9 @@ class StageCScriptedCaller:
         content = messages[0]["content"]
         trace = f"trace-{self.n}"
 
+        if "verdi.consolidation" in content:
+            return ModelResult(content="I remember the early days of building trust and learning who I could rely on.",
+                               request_id=f"r{self.n}", model="fake", trace_id=trace)
         if "verdi.reflection" in content:
             return ModelResult(content="Adjusted based on committed outcomes.",
                                request_id=f"r{self.n}", model="fake", trace_id=trace)

@@ -48,35 +48,47 @@ def test_per_agent_privacy():
     assert "top secret" not in summary_a2
 
 
-def test_compaction_truncates_but_preserves_determinism():
-    mem = AgentMemory(max_entries=3)
-    for i in range(7):
+def test_consolidation_triggers_when_window_overflows():
+    """Entries beyond _RECENT_WINDOW trigger consolidation (not silent drop)."""
+    from verdi.society.memory import _RECENT_WINDOW
+    mem = AgentMemory()
+    for i in range(_RECENT_WINDOW + 3):
         mem.append_reflection("a1", f"entry {i}")
-    assert mem.version("a1") == 7  # running count never lost
+    assert mem.version("a1") == _RECENT_WINDOW + 3
+    assert mem.needs_consolidation("a1") is True
+    overflow = mem.get_overflow_entries("a1")
+    assert len(overflow) == 3
+    assert overflow[0]["text"] == "entry 0"
+
+    # Apply consolidation (simulating LLM output)
+    mem.apply_consolidation("a1", "I remember entries zero, one, and two from early on.")
+    assert mem.needs_consolidation("a1") is False
     summary = mem.render_history_summary("a1")
-    assert "entry 0" not in summary and "entry 1" not in summary
-    assert "entry 4" in summary and "entry 6" in summary
-    assert "you don't clearly remember 4 earlier moments" in summary
-    # Determinism: rebuilding the same sequence gives the same summary.
-    mem2 = AgentMemory(max_entries=3)
-    for i in range(7):
-        mem2.append_reflection("a1", f"entry {i}")
-    assert mem2.render_history_summary("a1") == summary
+    assert "From earlier:" in summary
+    assert "entries zero, one, and two" in summary
+    assert "entry 0" not in summary.split("From earlier:")[1]  # not in recent
+    assert "entry 15" in summary  # most recent still there
 
 
-def test_compaction_never_rewrites_committed_content():
-    mem = AgentMemory(max_entries=2)
-    mem.append_reflection("a1", "first")
-    first_before = mem.render_history_summary("a1")
-    assert "you reflected: first" in first_before
-    mem.append_reflection("a1", "second")
-    mem.append_reflection("a1", "third")
-    summary = mem.render_history_summary("a1")
-    # Oldest entry dropped entirely; the retained window keeps exact
-    # content+kind (which is deterministic).
-    assert "first" not in summary
-    assert "you reflected: second" in summary
-    assert "you reflected: third" in summary
+def test_consolidation_preserves_recent_content():
+    """After consolidation, recent entries are untouched."""
+    from verdi.society.memory import _RECENT_WINDOW
+    mem = AgentMemory()
+    for i in range(_RECENT_WINDOW + 2):
+        mem.append_reflection("a1", f"memory {i}")
+    # Before consolidation: all entries present
+    pre = mem.render_history_summary("a1")
+    assert "memory 0" in pre and "memory 17" in pre
+
+    # Consolidate the overflow
+    mem.apply_consolidation("a1", "I remember my earliest experiences.")
+    post = mem.render_history_summary("a1")
+    # Recent entries intact
+    assert "memory 15" in post
+    assert "memory 17" in post
+    # Old entries replaced by summary
+    assert "From earlier:" in post
+    assert "earliest experiences" in post
 
 
 def test_checkpoint_round_trip_preserves_summary():

@@ -65,6 +65,9 @@ class ScriptedCaller:
         content = messages[0]["content"]
         trace = f"trace-{self.n}"
 
+        if "verdi.consolidation" in content:
+            return ModelResult(content="I remember the early days of building trust and learning who I could rely on.", request_id=f"r{self.n}",
+                               model="fake", trace_id=trace)
         if "verdi.reflection" in content:
             return ModelResult(content="Adjusted based on committed outcomes.", request_id=f"r{self.n}",
                                model="fake", trace_id=trace)
@@ -213,6 +216,9 @@ def test_minimal_yaml_scenario_runs_end_to_end_offline(tmp_path):
             if "probe" in content.lower():
                 return ModelResult(content="yes", request_id=f"r{self.n}",
                                    model="fake", trace_id=f"trace-{self.n}")
+            if "verdi.consolidation" in content:
+                return ModelResult(content="I remember the early days of building trust.",
+                                   request_id=f"r{self.n}", model="fake", trace_id=f"trace-{self.n}")
             if "verdi.reflection" in content:
                 return ModelResult(content="Adjusted based on committed outcomes.",
                                    request_id=f"r{self.n}", model="fake", trace_id=f"trace-{self.n}")
