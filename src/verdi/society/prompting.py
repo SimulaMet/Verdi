@@ -17,7 +17,7 @@ from verdi.schemas import Task, WorldState
 from .memory import AgentMemory
 
 #: Versioned prompt constant. Bump deliberately; experiments log it.
-SOCIAL_PROMPT_VERSION = "verdi.society-prompt/2"
+SOCIAL_PROMPT_VERSION = "verdi.society-prompt/3"
 
 #: Exact required argument field names per action kind, mirroring
 #: ``verdi.world.validate``. Rendered into the prompt so the model cannot
@@ -59,6 +59,13 @@ Respond with JSON ONLY, an object with exactly these keys:
 "arguments" MUST contain exactly the required fields above for the chosen action_kind.
 The proposed action will be validated by a deterministic engine; you cannot
 change world state directly.
+
+IMPORTANT — your "reason" is what other residents will hear as YOU talking. Write
+it in first person, in plain everyday human language, the way a real {role} would
+actually say it out loud: short, natural, with your own attitude and personality.
+No bullet points, no formal report tone, no "as instructed", no referencing task
+IDs or system mechanics, and never mention that you are an AI, a model, or part of
+a simulation. Just be yourself reacting to the situation.
 """
 
 

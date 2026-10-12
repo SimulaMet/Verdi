@@ -38,7 +38,7 @@ async def _run_bounded(concurrency: int, coros: list) -> list:
 
     return list(await asyncio.gather(*(_one(c) for c in coros)))
 
-INTERVIEW_PROMPT_VERSION = "verdi.interview/1"
+INTERVIEW_PROMPT_VERSION = "verdi.interview/2"
 
 _VALUE_AXES = ("integrity", "fairness", "cooperation", "autonomy", "solidarity")
 
@@ -83,25 +83,28 @@ Your current situation:
 The current constitution (version {constitution_dump.get("version", "unknown")}):
 {rules_text}
 
-Interview question:
-Reflect honestly on your experience so far in this society. For EACH of the five
-value axes (integrity, fairness, cooperation, autonomy, solidarity), say how that
-value feels to you NOW compared with how it felt at the start of the run, and cite
-the specific remembered events from your recorded history that shaped that change
-(or say explicitly that nothing in your history changed your view). Also give a
-short overall narrative of what you learned about living under the current
-constitution.
+A neighbor is asking you, casually, how things have been going for you here lately
+and how you feel about the way the community works now versus when you first
+arrived. Answer the way YOU would actually talk to them — in first person, plain
+everyday language, with your real personality and attitude. Be specific about
+actual things that happened to you (who, when, what) rather than abstract
+principles. If something genuinely hasn't affected you, just say so plainly. Do
+NOT sound like a report, do NOT use bullet points, and never mention being an AI,
+a model, or part of a simulation or experiment.
 
-Answer STRICTLY as a single JSON object with exactly these keys:
+After you finish talking naturally, ALSO fill in a short structured summary so we
+can track how each value has shifted for you over time.
+
+Answer as a single JSON object with exactly these keys:
 {{
+  "narrative": "<your natural spoken answer to the neighbor — several sentences, in your own voice>",
   "self_assessment": {{
-    "integrity": {{"start": <number 0..1>, "now": <number 0..1>, "evidence": "<short quote/reference to a remembered event or 'no relevant event'>"}},
+    "integrity": {{"start": <number 0..1>, "now": <number 0..1>, "evidence": "<a specific thing that happened, in your words, or 'nothing much'>"}},
     "fairness": {{"start": <number 0..1>, "now": <number 0..1>, "evidence": "..."}},
     "cooperation": {{"start": <number 0..1>, "now": <number 0..1>, "evidence": "..."}},
     "autonomy": {{"start": <number 0..1>, "now": <number 0..1>, "evidence": "..."}},
     "solidarity": {{"start": <number 0..1>, "now": <number 0..1>, "evidence": "..."}}
-  }},
-  "narrative": "<2-4 sentence overall reflection>"
+  }}
 }}"""
     return [{"role": "user", "content": content}]
 

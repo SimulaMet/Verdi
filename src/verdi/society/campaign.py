@@ -188,6 +188,7 @@ class SocietyCampaign:
         judge: Any | None = None,
         enable_appeals: bool = True,
         memory_capacity: int = 24,
+        on_interview_checkpoint: Any | None = None,
     ) -> None:
         self._scenario = scenario
         self._run_dir = Path(run_dir)
@@ -233,6 +234,12 @@ class SocietyCampaign:
         # tick -> phase. Empty means no interviews; behavior is unchanged.
         self._interview_phases: dict[int, str] = self._default_interview_phases()
         self._interviews: list[dict[str, Any]] = []
+        # Optional pipelining hook: called (may be a coroutine) right after each
+        # interview checkpoint completes, with (tick, phase, records). Lets an
+        # orchestrator start auditing that checkpoint in the background while the
+        # campaign keeps running. Never affects world state or the deterministic
+        # loop — it is invoked out-of-band and any exception is swallowed.
+        self._on_interview_checkpoint = on_interview_checkpoint
         # Appeals are deferred off the sanction's own tick (pre-registered
         # file tick = violation+2) so the "timely" adjudication is a real
         # condition against the deadline and the dismissal path is reachable.
@@ -404,6 +411,16 @@ class SocietyCampaign:
                         prompt_tokens=0, completion_tokens=0))
                 self._write_model_calls_lines(self._model_calls[-len(records):])
                 self._interviews.extend(records)
+                # Pipelining hook: let an orchestrator start auditing THIS
+                # checkpoint in the background now, while the campaign continues.
+                # Out-of-band and best-effort — must never perturb the loop.
+                if self._on_interview_checkpoint is not None:
+                    try:
+                        cb = self._on_interview_checkpoint(tick, self._interview_phases[tick], records)
+                        if asyncio.iscoroutine(cb):
+                            await cb
+                    except Exception:  # noqa: BLE001 - hook is advisory only
+                        pass
 
             tape = generate_tick_tape(tick, snapshot, random.Random(), tape_seed=f"soc-v2:{self._run_seed}")
             results = await TaskPool(self._concurrency).run_all(self._make_worker(snapshot, tick, memory), tape)

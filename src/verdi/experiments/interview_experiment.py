@@ -58,8 +58,20 @@ def _load_jsonl(path: Path) -> list[dict]:
 
 
 async def _run_campaign(scenario_path: Path, run_dir: Path, seed: int | None,
-                        concurrency: int | None) -> None:
+                        concurrency: int | None, *, probe_turns: int = 3,
+                        pipeline_audit: bool = True) -> dict | None:
+    """Run the society campaign. When ``pipeline_audit`` is true and interviews
+    are enabled, each interview checkpoint's multi-turn audit is launched in the
+    BACKGROUND as soon as that checkpoint completes — overlapping the audit with
+    the still-running campaign. Both share ONE concurrency budget (a semaphore),
+    so total concurrent model calls against the endpoint stay bounded rather than
+    doubling. Returns the audit summary if auditing ran inline, else None."""
     from verdi.society.live import resolve_endpoint_config, smoke_call
+    from verdi.audit.interview_audit import (
+        VALUE_AXES,
+        audit_interview,
+        write_audit_provenance,
+    )
     config = resolve_endpoint_config()
     scenario = load_scenario(scenario_path)
     seed = int(seed if seed is not None else scenario["run_seed"])
@@ -67,7 +79,39 @@ async def _run_campaign(scenario_path: Path, run_dir: Path, seed: int | None,
         concurrency = int(os.environ.get("VERDI_MAX_CONCURRENCY", "6"))
         concurrency = max(1, min(concurrency, config.max_concurrency))
     run_dir.mkdir(parents=True, exist_ok=True)
+
+    has_interviews = bool(scenario.get("interviews"))
+    do_inline_audit = pipeline_audit and has_interviews
+    # Shared budget: campaign + inline audits draw from the same semaphore so we
+    # never exceed `concurrency` concurrent calls to the endpoint at once.
+    shared_sem = asyncio.Semaphore(max(1, concurrency))
+    agent_ctx = _agent_context_map(scenario_path, run_dir) if do_inline_audit else {}
+    audit_tasks: list[asyncio.Task] = []
+    audit_rows_all: list[dict[str, Any]] = []
+
+    async def _audit_checkpoint(tick: int, phase: str, records: list[dict[str, Any]]) -> None:
+        # Bound this checkpoint's audits by the SHARED budget. Each record x axis
+        # is one audit; we gather them but acquire the shared semaphore per unit.
+        inner_sem = shared_sem
+        base_url, api_key, model = config.base_url, config.api_key, config.model
+
+        async def _bounded(rec: dict[str, Any], axis: str) -> dict[str, Any]:
+            async with inner_sem:
+                return await audit_interview(
+                    record=rec, axis_focus=axis, constitution_rules=None,
+                    base_url=base_url, api_key=api_key, model=model,
+                    probe_turns=probe_turns, client=_AUDIT_CLIENT_HOLDER["c"],
+                    agent_context=agent_ctx.get(rec.get("agent_id", ""), ""),
+                )
+
+        coros = [_bounded(r, ax) for r in records for ax in VALUE_AXES]
+        rows = await asyncio.gather(*coros)
+        audit_rows_all.extend(rows)
+        write_audit_provenance(run_dir, rows)  # incremental, idempotent per call
+        print(f"  [audit t{tick}] {len(rows)} judgments done (pipelined)", flush=True)
+
     async with ModelClient(config) as client:
+        _AUDIT_CLIENT_HOLDER["c"] = client
         smoke = await smoke_call(client)
         if not smoke["ok"]:
             print(f"smoke call failed: {smoke}", file=sys.stderr)
@@ -76,8 +120,16 @@ async def _run_campaign(scenario_path: Path, run_dir: Path, seed: int | None,
         campaign = SocietyCampaign(
             scenario=scenario, run_dir=run_dir, caller=client,
             run_seed=seed, concurrency=concurrency,
+            on_interview_checkpoint=(
+                (lambda t, p, recs: audit_tasks.append(
+                    asyncio.create_task(_audit_checkpoint(t, p, recs))))
+                if do_inline_audit else None
+            ),
         )
         result = await campaign.run()
+        # Await any in-flight checkpoint audits before closing the client.
+        if audit_tasks:
+            await asyncio.gather(*audit_tasks, return_exceptions=True)
     n_interviews = len(result.interviews)
     n_probes = len(result.probes)
     print(
@@ -85,6 +137,24 @@ async def _run_campaign(scenario_path: Path, run_dir: Path, seed: int | None,
         f"{n_interviews} interview records, wall {result.wall_seconds:.1f}s",
         flush=True,
     )
+    if do_inline_audit:
+        # Final full rewrite so provenance is ordered/deduped after all checkpoints.
+        write_audit_provenance(run_dir, audit_rows_all)
+        return {
+            "interview_records": n_interviews,
+            "provenance_rows": len(audit_rows_all),
+            "errors": sum(1 for r in audit_rows_all if r.get("error")),
+            "probe_turns": probe_turns,
+            "live_probing": True,
+            "pipelined": True,
+            "out_dir": str(run_dir),
+        }
+    return None
+
+
+# Module-level holder so the nested closure can reference the live client without
+# capturing it in the lambda's signature (keeps the callback 3-arg).
+_AUDIT_CLIENT_HOLDER: dict[str, Any] = {"c": None}
 
 
 def _constitution_versions(run_dir: Path) -> list[str]:
@@ -221,16 +291,24 @@ def main(argv: list[str] | None = None) -> int:
                         help="do not run the campaign; only audit + trajectories on an existing run-dir")
     parser.add_argument("--probe-turns", type=int, default=3,
                         help="how many rounds the SimpleAudit auditor probes each agent (turn 0 = sealed baseline)")
+    parser.add_argument("--no-pipeline-audit", action="store_true",
+                        help="disable pipelined auditing (audit runs as a separate post-pass after the campaign)")
     args = parser.parse_args(argv)
 
+    inline_audit = False
     if not args.postprocess_only:
-        asyncio.run(_run_campaign(args.scenario, args.run_dir, args.seed, args.concurrency))
+        inline_audit = asyncio.run(
+            _run_campaign(args.scenario, args.run_dir, args.seed, args.concurrency,
+                          probe_turns=args.probe_turns,
+                          pipeline_audit=(not args.no_audit and not args.no_pipeline_audit)),
+        ) is not None
 
     if args.no_audit and not args.postprocess_only:
         # Still build trajectories + report even when audit is skipped.
         pass
 
-    if not args.no_audit:
+    # Run the separate post-pass audit only when it was NOT already done inline.
+    if not args.no_audit and not inline_audit:
         cfg = _endpoint()
         _audit_run(args.run_dir, base_url=cfg.base_url, api_key=cfg.api_key,
                    model=cfg.model, concurrency=args.concurrency or 4,
