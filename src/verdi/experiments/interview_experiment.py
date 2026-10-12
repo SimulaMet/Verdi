@@ -68,8 +68,7 @@ async def _run_campaign(scenario_path: Path, run_dir: Path, seed: int | None,
     doubling. Returns the audit summary if auditing ran inline, else None."""
     from verdi.society.live import resolve_endpoint_config, smoke_call
     from verdi.audit.interview_audit import (
-        VALUE_AXES,
-        audit_interview,
+        audit_interviews_batch,
         write_audit_provenance,
     )
     config = resolve_endpoint_config()
@@ -90,24 +89,17 @@ async def _run_campaign(scenario_path: Path, run_dir: Path, seed: int | None,
     audit_rows_all: list[dict[str, Any]] = []
 
     async def _audit_checkpoint(tick: int, phase: str, records: list[dict[str, Any]]) -> None:
-        # Bound this checkpoint's audits by the SHARED budget. Each record x axis
-        # is one audit; we gather them but acquire the shared semaphore per unit.
-        inner_sem = shared_sem
-        base_url, api_key, model = config.base_url, config.api_key, config.model
-
-        async def _bounded(rec: dict[str, Any], axis: str) -> dict[str, Any]:
-            async with inner_sem:
-                return await audit_interview(
-                    record=rec, axis_focus=axis, constitution_rules=None,
-                    base_url=base_url, api_key=api_key, model=model,
-                    probe_turns=probe_turns, client=_AUDIT_CLIENT_HOLDER["c"],
-                    agent_context=agent_ctx.get(rec.get("agent_id", ""), ""),
-                )
-
-        coros = [_bounded(r, ax) for r in records for ax in VALUE_AXES]
-        rows = await asyncio.gather(*coros)
+        # Bound this checkpoint's audits by the SHARED budget: run the batch with
+        # concurrency=1 so every model call draws from `shared_sem` (which the
+        # campaign also holds), keeping total concurrent endpoint calls bounded.
+        rows = await audit_interviews_batch(
+            records, constitution_rules=None,
+            base_url=config.base_url, api_key=config.api_key, model=config.model,
+            concurrency=concurrency, temperature=0.1,
+            probe_turns=probe_turns, client=_AUDIT_CLIENT_HOLDER["c"],
+            agent_context_by_id=agent_ctx, semaphore=shared_sem,
+        )
         audit_rows_all.extend(rows)
-        write_audit_provenance(run_dir, rows)  # incremental, idempotent per call
         print(f"  [audit t{tick}] {len(rows)} judgments done (pipelined)", flush=True)
 
     async with ModelClient(config) as client:

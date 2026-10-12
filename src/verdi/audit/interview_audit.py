@@ -474,6 +474,7 @@ async def audit_interviews_batch(
     probe_turns: int = 3,
     client: Any = None,
     agent_context_by_id: dict[str, str] | None = None,
+    semaphore: "asyncio.Semaphore | None" = None,
 ) -> list[dict[str, Any]]:
     """Audit many interview records x axes with bounded concurrency, preserving
     input order (record-major, then axis order). One provenance row per
@@ -481,8 +482,10 @@ async def audit_interviews_batch(
     (SimpleAudit's own ``max_workers`` is kept at 1 per call since each call is
     already a single scenario); ``probe_turns`` sets how many rounds the auditor
     probes each agent; ``client`` enables live re-querying of the actual agent on
-    follow-up turns (else falls back to sealed replay)."""
-    sem = asyncio.Semaphore(max(1, int(concurrency)))
+    follow-up turns (else falls back to sealed replay). Pass ``semaphore`` to draw
+    from a SHARED budget (e.g. one also held by the campaign) instead of creating
+    a private one — used for pipelined auditing."""
+    sem = semaphore if semaphore is not None else asyncio.Semaphore(max(1, int(concurrency)))
     ctx_map = agent_context_by_id or {}
 
     async def _one(rec: dict[str, Any], axis: str) -> dict[str, Any]:
