@@ -541,3 +541,17 @@ instead of re-running the identical command.
    `law:unknown_kind` and quarantined it. The system handled the malformed
    model output exactly as designed (reject + quarantine + count) — a clean
    observable of the model "talking back" to the law, not an engine defect.
+
+## HTML report feature / base dev 20c6e70 / 2026-10-12
+- Independent review found whitelist-only output protection could overwrite other
+  evidence via --output. Regression reproduced (1 failed / 3 passed); correction
+  requires .html output and refuses existing nonreport files. Five feature tests
+  now pass, including Node execution of 10,001-tick report transforms.
+- Review also caught governance subject_id/appellant_id missing from agent
+  resolution, and unbounded governance markers. Both corrected and re-reviewed;
+  governance sampling is disclosed separately from extrema-preserving lines.
+- Host restrictions: original .git read-only, shell DNS unavailable; cloned dev
+  to /private/tmp/verdi-html-work and made feature branch there. Actual report
+  generated in explicit CDN mode; offline asset embedding tested with fixture
+  assets, actual external downloads unverified. Browser file:// preview rejected
+  by URL policy; no workaround attempted. Node behavior testing is not visual QA.

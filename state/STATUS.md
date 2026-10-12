@@ -1149,3 +1149,27 @@ No blockers. Note: two code-review subagent launches were cancelled by infrastru
 
 ## 2026-10-12 11:45 (UTC) — Tranche 12n: lessons
 - See state/LESSONS.md 2026-10-12 entry (sanctions measured-not-suspended; a sanction must not be an invisibility cloak; byte-identity requires the no-sanction tape branch to be provably unchanged).
+
+## 2026-10-12 — standalone HTML report feature (not integrated)
+- Base dev SHA: 20c6e70. Owner: root; isolated branch
+  feat/society-v2-html-report in /private/tmp/verdi-html-work. Original dev and
+  main unchanged. Git write restrictions prevent integration into original repo.
+- Artifacts: src/verdi/analysis/html_report.py, tests/analysis/test_html_report.py,
+  docs/SOCIETY_HTML_REPORT.md. Standalone artifact copy at
+  runs/society-v2/generate_report.py; online preview generated at
+  runs/society-v2/quickstart-minimal-v2/report.html (original workspace).
+- Verification: full suite before review corrections 532 passed / 2 skipped
+  (50.01s), ruff clean. Corrected feature tests 5 passed, ruff clean. Node test
+  executes report transforms with mocked DOM/Plotly: 10,001 ticks, point budget,
+  narrow exact window, latest-100 navigation, governance filtering.
+- Independent reviewer /root/review_html: initial BLOCK output overwrite;
+  regression reproduced, fixed; re-review no remaining blocking findings.
+- Blockers/limits: direct library downloads and visual browser QA unavailable;
+  generated preview requires internet. Default generator embeds cached pinned
+  assets for offline use; evidence storage remains O(records). No scientific
+  acceptance gate or public release status changed.
+- Next 3: review feature patch and integrate serially to dev; generate default
+  offline report where dependency downloads work; visually inspect report.
+- Final corrected full suite: 534 passed / 2 skipped (48.62s), exit 0;
+  `ruff check .` exit 0. Visual QA and actual offline library fetch remain
+  unverified; CDN preview and copied generator paths above exist.
