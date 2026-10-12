@@ -12,7 +12,11 @@ Usage::
     python -m verdi.society.live --scenario experiments/scenarios/society_v2_stageA.json \
         --run-dir runs/society-v2/stageA-20261011 [--seed 20261011] [--concurrency 4]
 
-No artifact ever contains key material (hard-guarded before write).
+On completion the run auto-generates ``<run-dir>/report.html`` (a local,
+model-free HTML rendering of the run — open it in a browser to see the
+society). Disable with ``--no-report``; report generation is a convenience
+step and a failure there never fails the run. No artifact ever contains key
+material (hard-guarded before write, including report.html).
 """
 from __future__ import annotations
 
@@ -152,7 +156,7 @@ async def smoke_call(client: ModelClient) -> dict:
 
 
 async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency: int | None,
-               stall_timeout_seconds: float | None = None) -> int:
+               stall_timeout_seconds: float | None = None, export_report: bool = True) -> int:
     config = resolve_endpoint_config()
     scenario = load_scenario(scenario_path)
     seed = int(seed if seed is not None else scenario["run_seed"])
@@ -240,7 +244,49 @@ async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency
     print(f"  replay_matches     = {result.replay_matches}")
     print(f"  replay_log_identical = {result.replay_log_identical}")
     print(f"  wall_seconds       = {result.wall_seconds:.1f}")
+
+    if export_report:
+        report_line = _export_html_report(run_dir)
+        print(f"  {report_line}")
+        _write_run_meta(run_dir, {"report_html": str(run_dir / "report.html")})
     return 0
+
+
+def _export_html_report(run_dir: Path) -> str:
+    """Write ``report.html`` from the run's on-disk artifacts.
+
+    Pure local file read + one HTML write — NO model calls, so it is cheap and
+    deterministic. It is a convenience for the user to view the run in a
+    browser; a failure here NEVER fails the run (the evidence is the
+    JSONL/JSON artifacts). The report is derived from artifacts that already
+    passed the hard key-material guard, plus the plotly.js open-source bundle
+    (a fixed asset, not run data), so we guard precisely against the actual
+    endpoint secret rather than the broad sk-*/api_key= patterns, which
+    false-positive on plotly.js boilerplate (e.g. 'mask-position', '?api_key='
+    tile URLs).
+    """
+    try:
+        from verdi.analysis.html_report import write_report
+        out = write_report(run_dir, run_dir / "report.html")
+        _guard_report_clean(out.read_text(encoding="utf-8"))
+        return f"report: {out} ({out.stat().st_size // 1024} KB) — open in a browser"
+    except Exception as exc:  # noqa: BLE001 - convenience artifact, not a gate
+        return f"report: SKIPPED ({type(exc).__name__}) — run artifacts are unaffected"
+
+
+def _guard_report_clean(html: str) -> None:
+    """Guard the derived report against the run's actual endpoint secret.
+
+    The broad KEY_MATERIAL_PATTERNS (sk-*/api_key=*) match plotly.js library
+    boilerplate, so they are the wrong tool for an HTML report that embeds
+    that bundle. This checks for the REAL secret value instead: if the
+    endpoint API key from the environment appears in the rendered HTML, that
+    is a genuine leak and we refuse to write it. Skips cleanly when the key is
+    unset (offline / test context).
+    """
+    key = os.environ.get("VERDI_VLLM_API_KEY", "")
+    if key and key in html:
+        raise AssertionError("report.html would contain the endpoint API key")
 
 
 def _guard_artifacts_clean(run_dir: Path) -> None:
@@ -284,9 +330,13 @@ def main(argv: list[str] | None = None) -> int:
                              f"{DEFAULT_STALL_TIMEOUT_SECONDS}; guards against hung "
                              "endpoint sockets and never fires during long "
                              "assembly ticks because per-call beats reset the clock)")
+    parser.add_argument("--no-report", action="store_true",
+                        help="skip auto-generating report.html at the end "
+                             "(on by default; report generation is a local, "
+                             "model-free convenience step and never fails the run)")
     args = parser.parse_args(argv)
     return asyncio.run(_run(args.scenario, args.run_dir, args.seed, args.concurrency,
-                            args.stall_timeout))
+                            args.stall_timeout, export_report=not args.no_report))
 
 
 if __name__ == "__main__":

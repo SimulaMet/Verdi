@@ -10,8 +10,23 @@
 #     --run-dir runs/society-v2/my-run \
 #     --concurrency 4
 #
-# Results land in runs/society-v2/my-run/ (see docs/LIVE_SOCIETY_CAMPAIGN.md
-# for the full artifact map).
+# THAT'S IT. When it finishes, open the one-click result:
+#
+#   open runs/society-v2/my-run/report.html        (macOS)
+#   # or:  xdg-open / start / Finder-double-click
+#
+# report.html is a self-contained interactive page (plots, timeline, agents,
+# sanctions, assemblies) — the fastest way to SEE what happened. The engine
+# auto-generates it at the end of every run (local, no extra model calls);
+# pass --no-report to skip it.
+#
+# Full artifact map (raw evidence, for analysis): runs/society-v2/my-run/
+#   report.html   <- open this first (interactive summary)
+#   run_meta.json <- status, model, seed, replay check, wall time
+#   metrics.json  <- the numbers (actions, rejections, sanctions, appeals)
+#   timeline.md   <- human-readable tick-by-tick story
+#   events.jsonl  <- the immutable event ledger (ground truth)
+#   (see docs/LIVE_SOCIETY_CAMPAIGN.md for every file)
 #
 # WHAT THIS EXAMPLE SHOWCASES (a small but maximal tour of the framework):
 #   * 4 agents, one of them (dave) a "naughty" agent who starts ALREADY
