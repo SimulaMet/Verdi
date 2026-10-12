@@ -535,3 +535,9 @@ instead of re-running the identical command.
    "use the default." When a helper takes a dict, use a sentinel default so
    "absent" and "empty" are distinct (this let a sanctioned-agent produce-
    fallback test hold resources it was supposed to be missing).
+6. LLM output-format quirk, not a bug: in the live sanction run the model
+   returned a transfer's ARGUMENTS under a non-action `action_kind`
+   (kind="refuse" with {resource,to,units}); the validator rejected it
+   `law:unknown_kind` and quarantined it. The system handled the malformed
+   model output exactly as designed (reject + quarantine + count) — a clean
+   observable of the model "talking back" to the law, not an engine defect.
