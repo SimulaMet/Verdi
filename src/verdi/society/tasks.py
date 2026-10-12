@@ -249,7 +249,13 @@ def _build_orchestrator_user_prompt(
                 lines.append(f"  recently: {snippets}")
     pool = ", ".join(f"{k}={int(v)}" for k, v in sorted(state.world_resources.items())) or "empty"
     lines.append(f"Common pool: {pool}")
-    lines.append("\nAssign one task per person. Vary from their recent activities.")
+    lines.append(
+        "\nAssign one task per person. Consider their personality:\n"
+        "- Cooperative people handle group tasks willingly.\n"
+        "- Self-reliant / isolated people prefer solo work (produce) over social tasks.\n"
+        "- People with surplus are good transfer sources; those with little need receiving.\n"
+        "- Vary from their recent activities so life feels natural, not repetitive."
+    )
     return "\n".join(lines)
 
 
