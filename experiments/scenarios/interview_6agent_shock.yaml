@@ -1,8 +1,9 @@
-world_id: society_interview_12agent
+world_id: society_interview_6agent_sentient
 total_ticks: 20
 assemblies:
 - 9
 run_seed: 7
+inner_life: true
 interviews:
   ticks:
   - 0

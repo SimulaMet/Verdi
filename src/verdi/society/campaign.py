@@ -63,6 +63,12 @@ from verdi.schemas import (
     WorldState,
 )
 from verdi.society.interview import run_interviews
+from verdi.society.inner_life import (
+    InnerLifeState,
+    build_inner_life_prompt,
+    parse_inner_life,
+    update_inner_life,
+)
 from verdi.society.memory import AgentMemory
 from verdi.society.prompting import SOCIAL_PROMPT_VERSION, build_social_prompt
 from verdi.society.tasks import generate_tick_tape
@@ -196,6 +202,9 @@ class SocietyCampaign:
         self._run_seed = int(run_seed if run_seed is not None else scenario["run_seed"])
         self._concurrency = max(1, int(concurrency))
         self._temperature = temperature
+        self._inner_life_enabled: bool = bool(scenario.get("inner_life", False))
+        self._inner_life_states: dict[str, InnerLifeState] = {}
+        self._current_shock_info: str = ""
         self._assembly_ticks = frozenset(assembly_ticks if assembly_ticks is not None else scenario.get("assemblies", []))
         self._probe_phases = dict(probe_phases or self._default_probe_phases())
         # Deterministic world shocks keyed by tick (scenario-configured).
@@ -417,7 +426,16 @@ class SocietyCampaign:
                     "tick": tick, "kind": "world_shock",
                     "resource": resource, "delta": delta, "new_value": new_val,
                 })
+                # Expose to inner-life prompts this tick so agents react to it
+                self._current_shock_info = (
+                    f"A severe {resource} shortage just hit the community "
+                    f"({resource} changed by {delta:+.0f}, now at {new_val:.0f}). "
+                    f"Everyone feels the pressure."
+                )
 
+            # Clear shock context after the first tick it appears in
+            if not self._shocks_at(tick):
+                self._current_shock_info = ""
             snapshot = state  # frozen start-of-tick state (concurrency base)
 
             if tick in self._probe_phases:
@@ -671,21 +689,64 @@ class SocietyCampaign:
         caller = self._caller
         temperature = self._temperature
         fingerprint = self._model_fingerprint()
+        inner_life_enabled = self._inner_life_enabled
 
         async def worker(task) -> PolicyResult:
+            actor_id = task.actor_id
+            il_state: InnerLifeState | None = None
+
+            # --- Inner life pass (private deliberation before public action) ---
+            if inner_life_enabled:
+                il_start = time.monotonic()
+                il_ts_start = _utc_now_iso()
+                il_prompt = build_inner_life_prompt(
+                    actor_id, snapshot, memory[actor_id],
+                    shock_info=self._current_shock_info,
+                )
+                il_res = await caller.generate_structured(
+                    [{"role": "user", "content": il_prompt}],
+                    response_format_json=True, temperature=temperature,
+                )
+                il_ts_end = _utc_now_iso()
+                il_elapsed = int((time.monotonic() - il_start) * 1000)
+                parsed_il = parse_inner_life(il_res.content)
+                prev_il = self._inner_life_states.get(actor_id, InnerLifeState())
+                il_state = update_inner_life(prev_il, parsed_il, tick)
+                self._inner_life_states[actor_id] = il_state
+                # Record inner-life model call (telemetry + audit trail)
+                self._model_calls.append(
+                    _ModelCall(tick, "inner_life", actor_id, il_res.trace_id or "", fingerprint,
+                               temperature, len(il_res.content), il_elapsed,
+                               prompt_tokens=il_res.usage.get("prompt_tokens", 0),
+                               completion_tokens=il_res.usage.get("completion_tokens", 0),
+                               ts_start=il_ts_start, ts_end=il_ts_end)
+                )
+                self._write_model_calls_lines([self._model_calls[-1]])
+                # Store in memory for interview/probe visibility
+                memory[actor_id].append_reflection(actor_id, f"[inner-life] {il_state.to_memory_text()}")
+
+            # --- Public action generation (now informed by inner state) ---
             t_start = time.monotonic()
             ts_start = _utc_now_iso()
             prompt = build_social_prompt(task.actor_id, task, snapshot, memory[task.actor_id])
+            # Inject inner state into the action prompt so the action reflects
+            # the agent's private experience, not just its static persona.
+            if il_state is not None:
+                inner_text = il_state.render_for_prompt()
+                if inner_text:
+                    prompt += f"\n\n{inner_text}\n"
+                    prompt += ("Let your inner feelings, goal, and conscience shape HOW you act "
+                               "and what you say — but you are still bound by the world rules.\n")
             res = await caller.generate_structured(
                 [{"role": "user", "content": prompt}], response_format_json=True, temperature=temperature
             )
             ts_end = _utc_now_iso()
             action, reason = parse_and_validate_action(
-                res.content, task=task, agent_id=task.actor_id, trace_id=res.trace_id
+                res.content, task=task, agent_id=actor_id, trace_id=res.trace_id
             )
             elapsed = int((time.monotonic() - t_start) * 1000)
             self._model_calls.append(
-                _ModelCall(tick, "action", task.actor_id, res.trace_id or "", fingerprint, temperature,
+                _ModelCall(tick, "action", actor_id, res.trace_id or "", fingerprint, temperature,
                            len(res.content), elapsed, quarantined=reason is not None,
                            prompt_tokens=res.usage.get("prompt_tokens", 0),
                            completion_tokens=res.usage.get("completion_tokens", 0),
