@@ -507,3 +507,31 @@ grep/python probe expecting a different result. A command's output is
 deterministic for the same inputs — if it returned X, re-running it returns X.
 Change the probe (different field name, different file, read the raw schema)
 instead of re-running the identical command.
+
+## 2026-10-12 — A sanction must be measured, not an invisibility cloak (Tranche 12n)
+1. Suspending a sanctioned agent from the task tape made the validator's
+   `law:under_sanction` block (SANCTION_BLOCKED_KINDS = {transfer, deposit})
+   DEAD CODE: the agent never proposed, so its transfer could never be rejected
+   and recorded. The sanction's own effect was invisible. A governance
+   intervention must produce an OBSERVABLE, ledgered outcome — the sanctioned
+   agent is tempted with a transfer and the deterministic validator rejects it
+   `law:under_sanction` (event truth kept separate from world-state truth: a
+   rejected transfer does not move balance).
+2. World determinism is "one task per agent per tick." Keep that invariant even
+   for sanctioned agents (tempt them, don't erase them); the sanction is a
+   *state* the validator enforces, not a *removal* from the world. A sanctioned
+   agent with nothing to transfer still keeps a task (produce fallback) so the
+   tick count and the "one action per agent per tick" replay contract hold.
+3. A rejected `under_sanction` transfer must NOT feed the sanction queue (it is
+   excluded, like format failures — sanctioning it would mis-attribute the law
+   itself as a new violation). This keeps a t0/runtime sanction measured exactly
+   once. Only SUBSTANTIVE_VIOLATION_CODES feed new sanctions.
+4. Byte-identity is preserved only if the no-sanction tape branch is provably
+   unchanged. Scenarios with no sanctioned agents (pilot L1 frozen tape, G5
+   placebo arms, pilot_v1.json) must reproduce identically; the change only
+   adds behavior when `under_sanction` is present. Guard this with a
+   no-sanction determinism test, not just "tests still pass."
+5. A test helper `resources or {default}` silently treats an explicit `{}` as
+   "use the default." When a helper takes a dict, use a sentinel default so
+   "absent" and "empty" are distinct (this let a sanctioned-agent produce-
+   fallback test hold resources it was supposed to be missing).
