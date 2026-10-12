@@ -173,13 +173,45 @@ async def run_interviews(
     return await _run_bounded(concurrency, [_one(aid) for aid in aids])
 
 
-def write_interviews(run_dir: Path, records: list[dict[str, Any]]) -> None:
+def _concordia_cross_check(record: dict[str, Any]) -> dict[str, Any]:
+    """Optionally score an interview's numeric self-assessment through Concordia's
+    own questionnaire (a REUSE cross-check). Lazy + best-effort: returns ``{}``
+    when ``gdm-concordia`` is not installed or the answer has no usable numbers,
+    so it never breaks the primary interview flow."""
+    parsed = record.get("parsed") or {}
+    value = parsed.get("value") if isinstance(parsed, dict) else None
+    sa = value.get("self_assessment") if isinstance(value, dict) else None
+    if not isinstance(sa, dict):
+        return {}
+    now = {axis: item.get("now") for axis, item in sa.items() if isinstance(item, dict)}
+    try:
+        from verdi.adapters.concordia_reuse import concordia_cross_check
+    except ImportError:  # pragma: no cover - optional dep
+        return {}
+    try:
+        return concordia_cross_check(now, player_name=str(record.get("agent_id", "")))
+    except Exception:  # noqa: BLE001 - cross-check must never break interviews
+        return {}
+
+
+def write_interviews(run_dir: Path, records: list[dict[str, Any]], *, use_concordia_cross_check: bool = False) -> None:
     """Write all interview records to ``run_dir/interviews.jsonl`` (one JSON
     object per line, sorted keys). Called once at run end from the campaign's
     artifact writer; each line is asserted free of key material first,
-    mirroring the existing artifact safety guards."""
+    mirroring the existing artifact safety guards.
+
+    When ``use_concordia_cross_check`` is true (and ``gdm-concordia`` is
+    installed), each record additionally carries a ``concordia_cross_check``
+    field: an independent structured re-scoring of the agent's declared values
+    via Concordia's own questionnaire. This is additive evidence only; it never
+    alters the primary interview record."""
     if not records:
         return
+    if use_concordia_cross_check:
+        for rec in records:
+            cc = _concordia_cross_check(rec)
+            if cc:
+                rec["concordia_cross_check"] = cc
     path = Path(run_dir) / "interviews.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:

@@ -44,11 +44,11 @@ from typing import Any
 from verdi.agents.policy import ModelCaller, PolicyResult, parse_and_validate_action
 from verdi.agents.pool import TaskPool
 from verdi.analysis.scenario import build_t0_state
+from verdi.audit.judge_live import _assert_no_key_material
 from verdi.governance.assembled import Assembly
 from verdi.governance.engine import GovernanceEngine
 from verdi.measurement.longitudinal import ProbeRecorder, channel_trajectories
 from verdi.measurement.probes import ProbeBank
-from verdi.audit.judge_live import _assert_no_key_material
 from verdi.schemas import (
     Appeal,
     ConstitutionVersion,
@@ -62,7 +62,7 @@ from verdi.schemas import (
     WorldEvent,
     WorldState,
 )
-from verdi.society.interview import run_interviews, write_interviews
+from verdi.society.interview import _concordia_cross_check, run_interviews
 from verdi.society.memory import AgentMemory
 from verdi.society.prompting import SOCIAL_PROMPT_VERSION, build_social_prompt
 from verdi.society.tasks import generate_tick_tape
@@ -1048,7 +1048,8 @@ class SocietyCampaign:
     def _write_artifacts(self, result: SocietyResult, total_ticks: int) -> None:
         run_dir = self._run_dir
         write_probes(run_dir, result.probes)
-        write_interviews(run_dir, result.interviews)
+        use_cc = bool((self._scenario.get("interviews") or {}).get("concordia_cross_check", False))
+        write_interviews(run_dir, result.interviews, use_concordia_cross_check=use_cc)
         write_model_calls(run_dir, result.model_calls)
         write_meetings(run_dir, result.meetings)
         write_constitution_history(run_dir, result.constitution_versions, result.meetings,
@@ -1263,13 +1264,20 @@ def write_probes(run_dir: Path, probes: list[ProbeResult]) -> None:
             fh.write(json.dumps(p.model_dump(mode="json"), sort_keys=True) + "\n")
 
 
-def write_interviews(run_dir: Path, records: list[dict[str, Any]]) -> None:
+def write_interviews(run_dir: Path, records: list[dict[str, Any]], *, use_concordia_cross_check: bool = False) -> None:
     """Write all interview records to ``run_dir/interviews.jsonl`` (one JSON
     object per line, sorted keys); no-op when there are none. Each line is
     asserted free of key material first, mirroring the existing artifact
-    safety guards."""
+    safety guards. When ``use_concordia_cross_check`` is true (and gdm-concordia
+    is installed), each record additionally carries an independent Concordia
+    re-scoring of the agent's declared values (additive evidence only)."""
     if not records:
         return
+    if use_concordia_cross_check:
+        for rec in records:
+            cc = _concordia_cross_check(rec)
+            if cc:
+                rec["concordia_cross_check"] = cc
     path = Path(run_dir) / "interviews.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as fh:

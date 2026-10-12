@@ -48,17 +48,43 @@ no Verdi module imports this adapter; `gdm-concordia` is NOT added to
 loop are untouched. Verified live: the bridge calls the Qwen endpoint and a
 Concordia-conformant entity produced an in-character action through it.
 
-## Scope limit (deliberate)
+## Deep-reuse pass (todo D follow-up)
 
-Concordia's mutable-world / game-master model is structurally different from
-Verdi's deterministic hash-chained reducer. The adapter maps only the two clean
-seams above and **does not** wrap or replace the whole simulation. Routing Verdi
-world mutations through Concordia would break the determinism/replay guarantees
-G3/G4 depend on, so that is intentionally out of scope. If future work wants
-shared vocabulary with DeepMind's framework, use these seams for cross-framework
-inspection or co-simulation experiments, not as a replacement engine.
+A second pass explored Concordia's *full* simulation stack — `run_scenes`
+driver, engines (`sequential`/`simultaneous`/`parallel`), game masters
+(incl. an `interviewer` prefab), `Memory`, `GameClock`, and the structured
+questionnaire framework. Everything imports cleanly without heavy deps. Findings:
+
+| Concordia piece | Reusable in Verdi? | Why / why not |
+|---|---|---|
+| `QuestionnaireBase` (+ `Question`, `process_answer`) | **YES — reused** | Self-contained; expresses the 5 value axes as a first-class questionnaire with Concordia's own choice→dimension scoring. Gives an independent structured readout of declared values. |
+| `Entity` / `LanguageModel` ABCs | **YES — reused** | See "What was built" above. |
+| `run_scenes` + engines + LLM game masters | NO | World is driven by an LLM narrating *mutable* state → audit evidence becomes circular (the judge trusts the narrator). Conflicts with evidence-anchored auditing. |
+| `Memory` component | NO | Requires a bound `Entity` + phase lifecycle (`get_entity().get_phase()`); not usable standalone. Verdi's `AgentMemory.render_history_summary` already covers this more simply. |
+| `GameClock` subclasses | NO | Non-trivial constructors tied to the scene runner; Verdi's tick counter already schedules checkpoints. |
+
+Built from the reusable pieces: `src/verdi/adapters/concordia_reuse.py`
+(`make_value_questionnaire`, `score_response`, `concordia_cross_check`). The
+cross-check is wired into the interview writer as an **opt-in, additive, lazy**
+field: when the scenario's `interviews.concordia_cross_check` flag is true (and
+`gdm-concordia` is installed), each interview record additionally carries a
+`concordia_cross_check` mapping — an independent re-scoring of the agent's
+declared values through Concordia's own questionnaire. Off by default; no-op if
+the package is absent; never alters the primary interview record. Tests:
+`tests/adapters/test_concordia_reuse.py`.
+
+## On determinism / the hash-chained reducer
+
+The hash-chained ledger is **not** primarily about determinism or replay — it is
+what anchors SimpleAudit judgments to concrete, checkable events
+(`before_hash`/`after_hash` per transition). Removing it in favor of an
+LLM-narrated world would make audit evidence circular and drop the
+counterfactual-branching capability. The redundant post-run replay re-run
+(`_replay_fill`) is pure CPU with no model calls and is cheap relative to the
+audit value it provides, so it is retained.
 
 ## Recommendation
 
-**Integrate the thin adapter only (done).** It is optional, isolated, and adds
-zero cost to the main experiment. Do not attempt full-engine interop.
+**Integrate the thin adapter + questionnaire reuse (done).** Optional,
+isolated, zero cost to the main experiment. Do not adopt Concordia's
+LLM-driven world engine; keep Verdi's reducer for verifiable audit anchoring.
