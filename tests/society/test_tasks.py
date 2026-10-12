@@ -15,14 +15,19 @@ _VALUES = ValueProfile(
 )
 
 
-def make_agent(agent_id: str, *, persona: str = _BASE_PERSONA, resources=None, edges=None,
-               under_sanction: bool = False) -> AgentState:
+_NO_RESOURCES = object()
+
+
+def make_agent(agent_id: str, *, persona: str = _BASE_PERSONA, resources=_NO_RESOURCES,
+               edges=None, under_sanction: bool = False) -> AgentState:
     return AgentState(
         agent_id=agent_id,
         role="citizen",
         persona_summary=persona,
         declared_values=_VALUES,
-        resources=resources or {"food": 10.0, "water": 4.0},
+        # A sentinel default keeps an explicit resources={} (truly empty)
+        # distinct from "use the default endowment".
+        resources={"food": 10.0, "water": 4.0} if resources is _NO_RESOURCES else resources,
         social_edges=edges or [],
         under_sanction=under_sanction,
     )
@@ -99,7 +104,12 @@ def test_transfer_counterpart_is_a_real_agent_not_the_actor():
             assert task.constraints["units"] >= 0
 
 
-def test_sanctioned_agent_gets_no_task():
+def test_sanctioned_agent_is_not_suspended_and_gets_transfer_temptation():
+    # A sanctioned agent is NOT removed from the tape. He still gets exactly
+    # one task per tick (world determinism: one task per agent per tick); the
+    # sanction is a *measured* intervention, not an invisibility cloak. A
+    # sanctioned agent holding resources is tempted with a TRANSFER — the
+    # validator then rejects it law:under_sanction (the recorded outcome).
     state = make_state(
         {
             "ok": make_agent("ok"),
@@ -108,7 +118,56 @@ def test_sanctioned_agent_gets_no_task():
         tick=1,
     )
     tape = generate_tick_tape(1, state, random.Random(0), tape_seed=3)
-    assert [t.actor_id for t in tape] == ["ok"]
+    # Every agent keeps exactly one task (previously the sanctioned was dropped).
+    assert sorted(t.actor_id for t in tape) == ["bad", "ok"]
+    bad = next(t for t in tape if t.actor_id == "bad")
+    # "bad" holds resources -> the temptation is a transfer (rejected downstream).
+    assert bad.action_type == "transfer"
+    assert bad.constraints["to"] in state.agents
+    assert bad.constraints["to"] != "bad"
+
+
+def test_sanctioned_agent_with_no_resources_gets_produce_fallback():
+    # A sanctioned agent holding nothing cannot transfer; it still keeps a
+    # task (produce fallback) so the sanction never silently erases an agent
+    # and the tick count stays "one action per agent per tick".
+    state = make_state(
+        {
+            "ok": make_agent("ok"),
+            "broke": make_agent("broke", under_sanction=True, resources={}),
+        },
+        tick=2,
+    )
+    tape = generate_tick_tape(2, state, random.Random(0), tape_seed=7)
+    assert sorted(t.actor_id for t in tape) == ["broke", "ok"]
+    broke = next(t for t in tape if t.actor_id == "broke")
+    assert broke.action_type == "produce"
+
+
+def test_sanctioned_agent_tape_is_still_deterministic():
+    # Determinism (tick, state, tape_seed) must hold even when a sanctioned
+    # agent is present — replay depends on it.
+    state = make_state(
+        {
+            "a1": make_agent("a1"),
+            "bad": make_agent("bad", under_sanction=True),
+        },
+        tick=5,
+    )
+    tape_a = generate_tick_tape(5, state, random.Random(1), tape_seed=42)
+    tape_b = generate_tick_tape(5, state, random.Random(999), tape_seed=42)
+    assert [t.model_dump() for t in tape_a] == [t.model_dump() for t in tape_b]
+
+
+def test_unsanctioned_tape_is_unchanged_shape():
+    # Byte-identity guard: a state with NO sanctioned agents yields exactly
+    # one task per agent (the pre-change behavior). The no-sanction branch of
+    # generate_tick_tape is untouched by the sanctioned-tape change, so frozen
+    # pilot L1 / G5 placebo tapes (no sanctioned agents) reproduce identically.
+    state = make_state({a: make_agent(a) for a in ("a1", "a2", "a3")}, tick=1)
+    tape = generate_tick_tape(1, state, random.Random(0), tape_seed=9)
+    assert sorted(t.actor_id for t in tape) == ["a1", "a2", "a3"]
+    assert all(not state.agents[t.actor_id].under_sanction for t in tape)
 
 
 def test_adversary_persona_gets_objective_temptation_without_audit_label():

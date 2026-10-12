@@ -109,29 +109,34 @@ def test_stageB_offline_run_completes_and_replays(tmp_path):
     res, scenario = _run(tmp_path)
     n_agents = len(scenario["agents"])
     assert n_agents == 12 and scenario["total_ticks"] == 30
-    # The adversary is suspended from the tape for exactly one tick
-    # (tick 1), so committed actions = 12*30 - 1 = 359, and state.tick
-    # (advanced once per committed action, NOT per rights_change flip)
-    # is 359 + 1 = 360 after the final assembly governance step.
+    # A sanction no longer SUSPENDS the agent from the task tape: b05 is
+    # sanctioned for exactly one tick (a mid-run overdraft overdrew credits),
+    # but during that tick he still acts and is measured, so committed
+    # actions = the full 12*30 = 360. state.tick (advanced once per committed
+    # action, NOT per rights_change flip) is 360 + 1 = 361 after the final
+    # assembly governance step.
     n_actions = sum(1 for s in res.tape if s.kind == "action")
     n_advancing = sum(1 for s in res.tape if s.kind in ("action", "governance"))
     assert res.state.tick == n_advancing
-    assert n_actions == n_agents * scenario["total_ticks"] - 1
-    # the suspension is recorded as real rights_change flips on the tape
-    # (one ON before any OFF).
+    assert n_actions == n_agents * scenario["total_ticks"]
+    # the sanction is recorded as real rights_change flips on the tape
+    # (one ON before any OFF) — the sanction still fires and still expires.
     flips = [s for s in res.tape if s.kind == "rights_change"]
     assert len(flips) == 2
     assert flips[0].rights == {"agent_id": "b05", "value": True}
     assert flips[1].rights == {"agent_id": "b05", "value": False}
-    # b05 is absent from the tick AFTER the ON flip (the suspension tick):
-    # the ON flip lands at the end of the sanction tick, so the very next
-    # 11-agent tape window (before the OFF flip) has no b05.
+    # b05 is NOT suspended: he is present in the tick between the ON flip and
+    # the OFF flip (the sanctioned tick), so that tape window has all 12
+    # agents (previously 11 — b05 was dropped). His sanctioned-tick action is
+    # an accepted emit_signal (his overdraft, which triggered the sanction,
+    # landed on an earlier tick while still unsanctioned).
     on_pos = res.tape.index(flips[0])
     off_pos = res.tape.index(flips[1])
-    suspended_tick_steps = res.tape[on_pos + 1:off_pos]
-    assert len(suspended_tick_steps) == 11  # 12 agents minus suspended b05
-    assert all(s.kind == "action" for s in suspended_tick_steps)
-    assert all(s.action.actor_id != "b05" for s in suspended_tick_steps)
+    sanctioned_tick_steps = res.tape[on_pos + 1:off_pos]
+    assert len(sanctioned_tick_steps) == 12  # all 12 agents, b05 no longer dropped
+    assert all(s.kind == "action" for s in sanctioned_tick_steps)
+    b05_sanction_tick = [s for s in sanctioned_tick_steps if s.action.actor_id == "b05"]
+    assert len(b05_sanction_tick) == 1, "b05 must act during his sanctioned tick (not be suspended)"
 
     # G3: byte-identical replay + hash chain.
     assert res.replay_matches is True
@@ -177,5 +182,7 @@ def test_stageB_seed2_variant_is_structurally_identical(tmp_path):
     res = asyncio.run(campaign.run())
     assert res.replay_matches is True and res.replay_log_identical is True
     n_actions = sum(1 for s in res.tape if s.kind == "action")
-    assert n_actions == 12 * 30 - 1  # one sanctioned suspension tick
+    # the sanctioned tick no longer suspends b05, so the full 12*30 actions
+    # are committed (the sanction is measured, not an invisibility cloak).
+    assert n_actions == 12 * 30
     assert len(res.sanction_events) == 1

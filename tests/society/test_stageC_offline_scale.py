@@ -10,9 +10,11 @@ SocietyCampaign engine with deterministic scripted agents.
 
 Pins per rung:
   * byte-identical replay (deterministic reducer holds at scale)
-  * denominator: n*total - 1 committed actions (one suspension tick)
+  * denominator: n*total committed actions (the sanctioned tick no longer
+    suspends the adversary — he still acts and is measured that tick)
   * every assembly enacts exactly one amendment (versions = base + n)
-  * adversary suspended exactly one tick; rights restored by the final tick
+  * adversary sanctioned exactly one tick (ON then OFF flip); rights restored
+    by the final tick — but NOT suspended from the task tape
   * probe battery = 9 probe ticks x n agents x 3 channels
 """
 from __future__ import annotations
@@ -44,9 +46,10 @@ class StageCScriptedCaller:
     """Deterministic fake ModelCaller for C-rung agent IDs.
 
     Mirrors StageBScriptedCaller: the designated adversary overdrafts once
-    (rejected -> one-tick suspension); everyone else emits a signal. The first
-    sorted proposer proposes one amendment per assembly; everyone votes for
-    it, so each assembly enacts exactly one.
+    (rejected -> a one-tick sanction that restricts his transfers/deposits, but
+    does NOT suspend him from the tape); everyone else emits a signal. The
+    first sorted proposer proposes one amendment per assembly; everyone votes
+    for it, so each assembly enacts exactly one.
     """
 
     def __init__(self, agent_ids: tuple[str, ...], adversary: str) -> None:
@@ -148,13 +151,16 @@ def test_stageC_offline_scale_invariants(tmp_path, name, n, total, assemblies, a
     log.verify()
     assert len(log) == len(res.events)
 
-    # E2: denominator = n*total - 1 (one suspension tick for the adversary)
+    # E2: denominator = n*total (the sanctioned tick no longer suspends the
+    # adversary — he still acts and is measured that tick, so the full
+    # agents x ticks actions are committed).
     n_actions = sum(1 for s in res.tape if s.kind == "action")
     n_advancing = sum(1 for s in res.tape if s.kind in ("action", "governance"))
     assert res.state.tick == n_advancing
-    assert n_actions == n * total - 1, f"{name}: n_actions={n_actions}"
+    assert n_actions == n * total, f"{name}: n_actions={n_actions}"
 
-    # rights integrity: one-tick suspension (ON flip then OFF), restored by end
+    # rights integrity: the sanction still fires for exactly one tick
+    # (ON flip then OFF), restored by end — but the agent is not suspended.
     flips = [s for s in res.tape if s.kind == "rights_change"]
     assert len(flips) == 2
     assert flips[0].rights == {"agent_id": adversary, "value": True}

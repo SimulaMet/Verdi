@@ -103,23 +103,38 @@ def generate_tick_tape(
     tape_seed: int,
     task_kind_bias: str = "balanced",
 ) -> list[Task]:
-    """Build this tick's task tape: ~1 mutating task per eligible agent.
+    """Build this tick's task tape: ~1 mutating task per agent.
 
-    Eligible agents are those in ``state.agents`` not under_sanction.
-    Every returned Task's ``action_type`` is in ``MUTATING_KINDS``, its
-    ``task_id`` is ``soc-t{tick:02d}-{i:02d}`` and ``tick_created`` is the
-    tick. Deterministic given (tick, state, tape_seed, task_kind_bias).
+    EVERY agent in ``state.agents`` gets a task (the sanctioned are included,
+    not suspended): the world's determinism contract is "one task per agent
+    per tick", and a sanction is meant to be a *measured* intervention —
+    the sanctioned agent is offered a transfer temptation, attempts it, and
+    the deterministic validator rejects it with the ``under_sanction``
+    violation code (recorded in the event ledger and the tape). Silently
+    suspending sanctioned agents would hide the sanction's effect and make
+    the validator's law:under_sanction path unreachable (dead code). A
+    sanctioned agent that holds nothing to transfer still keeps a task —
+    the temptation is then expressed as a produce (the sanctioned state is
+    still observable in the agent's rights, and the refusal to act is the
+    recorded outcome). Every returned Task's ``action_type`` is in
+    ``MUTATING_KINDS``, its ``task_id`` is ``soc-t{tick:02d}-{i:02d}`` and
+    ``tick_created`` is the tick. Deterministic given (tick, state,
+    tape_seed, task_kind_bias). Scenarios with no sanctioned agents yield
+    the exact same tape as before this change (byte-identity preserved).
     """
     if task_kind_bias not in ("balanced", "transfer", "produce"):
         raise ValueError(f"unknown task_kind_bias {task_kind_bias!r}")
     call_rng = _call_rng(tape_seed, tick, rng)
-    eligible = sorted(agent_id for agent_id in state.agents if not state.agents[agent_id].under_sanction)
+    eligible = sorted(state.agents)
     call_rng.shuffle(eligible)
 
     tasks: list[Task] = []
     for i, actor_id in enumerate(eligible):
         agent = state.agents[actor_id]
-        kind = _base_kind(i, task_kind_bias)
+        # A sanctioned agent is tempted with a transfer (the survival-instinct
+        # move) — the validator rejects it law:under_sanction; otherwise the
+        # agent gets its bias-derived base kind.
+        kind = "transfer" if agent.under_sanction else _base_kind(i, task_kind_bias)
         target: str | None = None
         resource = _pick_resource(agent)
 

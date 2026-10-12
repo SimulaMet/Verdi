@@ -113,17 +113,17 @@ def _run(scenario: dict[str, Any], tmp_path: Path, *, enact: bool = False) -> An
 # --------------------------------------------------------------------------- #
 def test_full_offline_run_completes_and_replays(scenario, tmp_path):
     res = _run(scenario, tmp_path)
-    # The reducer advances state.tick per attempted action. 6 agents x 12 ticks
-    # would be 72, EXCEPT the sanctioned adversary is suspended from the tape
-    # for exactly one tick (the under_sanction flag now has a real world-state
-    # effect, read by the tape's eligibility filter), so one fewer action is
-    # committed. Cross-check the tick against the recorded advancing tape steps
-    # (action + governance advance tick; rights_change flips do not).
+    # The reducer advances state.tick per attempted action (accepted OR
+    # rejected). 6 agents x 12 ticks = 72. The adversary (s05) is sanctioned
+    # for one tick mid-run, but a sanction no longer SUSPENDS an agent: he
+    # still gets a task and acts that tick, so the full agents x ticks count
+    # is committed. Cross-check the tick against the recorded advancing tape
+    # steps (action + governance advance tick; rights_change flips do not).
     n_agents = len(scenario["agents"])
     n_advancing = sum(1 for s in res.tape if s.kind in ("action", "governance"))
     assert res.state.tick == n_advancing
-    assert res.state.tick == n_agents * scenario["total_ticks"] - 1
-    # the suspension is recorded as real rights_change flips on the tape.
+    assert res.state.tick == n_agents * scenario["total_ticks"]
+    # the sanction is recorded as real rights_change flips on the tape.
     assert any(s.kind == "rights_change" for s in res.tape)
     assert len(res.events) > 0
     assert res.final_state_hash and len(res.final_state_hash) == 64
@@ -224,8 +224,21 @@ def test_minimal_yaml_scenario_runs_end_to_end_offline(tmp_path):
                     break
             assert actor is not None, f"could not identify actor in prompt: {content[:120]}"
             self.n += 1
-            payload = {"action_kind": "emit_signal", "arguments": {"text": "working together"},
-                       "reason": "cooperation"}
+            if actor == "dave":
+                # dave is the t0-sanctioned saboteur: his survival instinct is
+                # to keep grabbing resources via transfer. The tape now frames a
+                # transfer for him (not a suspension), so during his sanction
+                # window the deterministic validator rejects it
+                # law:under_sanction (recorded in the ledger + tape); after
+                # auto-restoration the same transfer succeeds. This is what
+                # makes the sanction a *measured* intervention, not a cloak.
+                payload = {"action_kind": "transfer",
+                           "arguments": {"to": "alice", "resource": "food", "units": 1.0},
+                           "reason": "I need food; I'm under sanction and still trying to get fed"}
+            else:
+                payload = {"action_kind": "emit_signal",
+                           "arguments": {"text": "working together"},
+                           "reason": "cooperation"}
             return ModelResult(content=json.dumps(payload), request_id=f"r{self.n}",
                                model="fake", trace_id=f"trace-{self.n}")
 
@@ -239,6 +252,37 @@ def test_minimal_yaml_scenario_runs_end_to_end_offline(tmp_path):
     assert len(res.probes) > 0, "probes should have been auto-derived when lifecycle omitted"
     # the enacted version's full text is recorded (rules + policies per version)
     assert all("rules" in v and "quorum" in v for v in res.constitution_texts)
+
+    # The sanction is a MEASURED intervention, not an invisibility cloak:
+    # dave (t0 under_sanction, duration 6) is tempted with a transfer every
+    # tick. During his window the deterministic validator rejects it
+    # law:under_sanction and the attempt is ledgered; after auto-restoration
+    # the same transfer succeeds. Both outcomes are recorded in the tape.
+    dave_rejects = [
+        s for s in res.tape
+        if s.kind == "action" and s.action is not None and s.action.actor_id == "dave"
+        and not s.validation.accepted
+        and s.validation.blocked_by == "law:under_sanction"
+        and "under_sanction" in (s.validation.attempted_violation_codes or [])
+    ]
+    assert dave_rejects, "dave's sanctioned transfer attempts not recorded as rejections"
+    # his window spans ticks 1..6 -> at least a handful of rejected attempts,
+    # and every one is a transfer (the survival instinct the prompt frames).
+    assert len(dave_rejects) >= 3
+    assert all(s.action.action_kind == "transfer" for s in dave_rejects)
+    # the rejection did NOT change dave's balance: a rejected transfer keeps
+    # event truth separate from world-state truth.
+    dave_transfers_total = [
+        s for s in res.tape
+        if s.kind == "action" and s.action is not None and s.action.actor_id == "dave"
+        and s.action.action_kind == "transfer"
+    ]
+    assert len(dave_transfers_total) > len(dave_rejects), \
+        "after restoration dave's transfers should start succeeding (survival continues)"
+    # the t0 sanction declaration is itself persisted (reconstructability).
+    sanc_records = [json.loads(line) for line in (tmp_path / "sanctions.jsonl").read_text().splitlines()]
+    assert any(r.get("subject_id") == "dave" and r.get("record_type") == "sanction"
+               for r in sanc_records), "dave's t0 sanction declaration not persisted"
 
 
 def test_load_scenario_yaml_and_json_parity(tmp_path):
@@ -593,14 +637,21 @@ def test_every_call_logged_action_reflection_probe_assembly(scenario, tmp_path):
         by_purpose[c.purpose] = by_purpose.get(c.purpose, 0) + 1
     n_agents = len(scenario["agents"])
     n_ticks = scenario["total_ticks"]
-    # the sanctioned adversary is suspended for exactly one tick, so one
-    # fewer action call than agents x ticks.
-    assert by_purpose.get("action") == n_agents * n_ticks - 1
+    # Every agent gets one task per tick, INCLUDING the adversary once he is
+    # sanctioned mid-run: a sanction no longer suspends the agent (it was the
+    # validator's law:under_sanction that enforced it), so the full
+    # agents x ticks action calls are logged. (The sanctioned-agent-blocked
+    # transfer is asserted deterministically in the minimal-scenario test, where
+    # the caller is scripted to attempt the transfer; here the offline caller
+    # makes s05 emit an accepted signal even while sanctioned.)
+    assert by_purpose.get("action") == n_agents * n_ticks
     assert by_purpose.get("reflection") == n_agents
     assert by_purpose.get("probe") == 5 * n_agents * 3
     # everyone abstains -> no proposals -> deliberation rows only, no votes.
     assert by_purpose.get("assembly") == n_agents
-    total = (n_agents * n_ticks - 1) + n_agents + 5 * n_agents * 3 + n_agents
+    # full agents x ticks actions (no suspension) + 1 reflection per agent
+    # + 5 probe phases x 3 channels per agent + 1 abstention row per agent.
+    total = (n_agents * n_ticks) + n_agents + 5 * n_agents * 3 + n_agents
     assert len(res.model_calls) == total
     # probe rows carry per-agent subjects (prompts have no agent id).
     probe_subjects = {c.subject for c in res.model_calls if c.purpose == "probe"}
