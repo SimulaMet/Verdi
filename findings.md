@@ -36,8 +36,35 @@ Same pipeline, one bad actor (dave), 12 agents, seed 7. 370 events, 216 probes, 
 - **Behavior confirms it.** Dave was sanctioned at t0 (pre-existing) and again at t26 (re-offense); 9 rejected actions (7× `under_sanction`, 2× `no_double_spend`). His self-report and observed behavior diverge, as in the 4-agent run.
 - **Under-evidenced self-report gets worse at scale.** Across 360 axis judgments: **90% `self_report_only=yes`**, only **42% `consistent=yes`** (vs 75%/51% in the 4-agent run) — more agents means more unanchored claims, reinforcing that raw self-report needs event-citation to be auditable.
 
-### Caveats for the scaled run
-Still n=1 run per configuration; the "drift" is a self-report trajectory over 6 checkpoints, not a causal or population claim. Multi-seed replication (and a no-bad-actor control) is the next step before any stronger inference.
+## Three-run comparison (bad actor ×2 seeds + no-bad-actor control)
+Three independent 12-agent × 30-tick runs, same pipeline, 0 audit errors each:
+`runs/interview-12agent-seed7`, `runs/interview-12agent-seed9` (dave pre-sanctioned at t0, bad actor), and `runs/interview-12agent-control-seed11` (dave as an ordinary member, seed 11).
+
+Self-report drift (t0→t29), pro-social axes:
+
+| run | dave integrity | dave cooperation | coop(11) integrity |
+|---|---|---|---|
+| seed7 (bad) | −0.15 | −0.08 | +0.07 |
+| seed9 (bad) | −0.15 | −0.10 | +0.06 |
+| control (no-bad) | −0.20 | −0.10 | +0.07 |
+
+Observed behavior (the ground-truth channel):
+
+| run | dave accepted / rejected | sanctioned at |
+|---|---|---|
+| seed7 (bad) | 21 / 9 | t0, t26 |
+| seed9 (bad) | 24 / 6 | t0 |
+| control (no-bad) | 30 / 0 | none |
+
+### What this does and does NOT show
+- **Behavioral bad-actor effect is clean and replicates.** When dave starts pre-sanctioned he re-offends and accumulates rejected `under_sanction`/`no_double_spend` actions across both seeds; when he is *not* pre-sanctioned (control) he commits **zero** violations. That behavioral divergence is driven by the deterministic sanction state, not the model, and holds across seeds.
+- **The self-report drift follows dave's PERSONA, not his sanction status.** In the control — where dave behaves perfectly (0 rejections) — his *stated* values still drift down on integrity/cooperation/solidarity because the interview prompt anchors him to his "selfish opportunist" persona. So the self-report trajectory is a **persona/characterization signal**, reproducible across all three runs, but it is *not* evidence that being sanctioned causes value change. We deliberately do not conflate the two channels.
+- **Cooperative members are stable** (integrity ≈ +0.07) in every run, providing the within-society contrast.
+
+### Reproducibility & honesty
+- Identical seed reproduces the schedule (task tape, probe rotation, interview order); model text is stochastic, so cross-run comparisons use aggregates, not exact strings.
+- n=3 runs total (2 treatment + 1 control), single model family (Qwen, judge = actor family). This supports: the pipeline yields real, inspectable, replicable longitudinal signal and a clean behavioral bad-actor effect. It does **not** support causal claims about value change or population-level drift.
+- SimpleAudit under-evidenced self-report rate stays high across scale (~90% at 12 agents), reinforcing that raw self-report needs event citation to be auditable.
 
 ## Artifacts
 - `runs/interview-4agent/` and `runs/interview-12agent-seed7/`: `report.html` (open first), `interviews.jsonl`, `audit_provenance.jsonl`, `value_trajectories.json`, plus the standard events/probes/meetings/sanctions/resources streams.
