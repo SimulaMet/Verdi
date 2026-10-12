@@ -110,6 +110,8 @@ class _ModelCall:
     response_chars: int
     duration_ms: int
     quarantined: bool = False
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
 
 
 @dataclass
@@ -938,6 +940,8 @@ class _RecordingCaller:
                 kwargs.get("temperature", 0.0),
                 len(res.content),
                 elapsed,
+                prompt_tokens=res.usage.get("prompt_tokens", 0),
+                completion_tokens=res.usage.get("completion_tokens", 0),
             )
         )
         return res
@@ -975,6 +979,7 @@ def _model_call_dict(c: _ModelCall) -> dict[str, Any]:
         "tick": c.tick, "purpose": c.purpose, "subject": c.subject, "request_id": c.request_id,
         "model": c.model, "temperature": c.temperature, "response_chars": c.response_chars,
         "duration_ms": c.duration_ms, "quarantined": c.quarantined,
+        "prompt_tokens": c.prompt_tokens, "completion_tokens": c.completion_tokens,
     }
 
 
