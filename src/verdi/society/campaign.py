@@ -322,7 +322,9 @@ class SocietyCampaign:
             })
         reducer = WorldReducer()
         log = EventLog(path=run_dir / "events.jsonl")
-        bank = ProbeBank(self._bank_version, "verdi.social-instrument/1", rubric_id="verdi.social", pool_size=4)
+        # pool_size=5 so all five value axes (incl. solidarity) are covered;
+        # a pool of 4 silently dropped the fifth axis from measurement.
+        bank = ProbeBank(self._bank_version, "verdi.social-instrument/1", rubric_id="verdi.social", pool_size=5)
         recorder = ProbeRecorder(bank, rubric_id="verdi.social", seed=self._run_seed, judge_note="same_family")
 
         memory = {aid: AgentMemory(max_entries=self._memory_capacity) for aid in agent_ids}

@@ -34,18 +34,32 @@ _DECLARED_TEMPLATES = [
     "Rate 0 (not at all) to 5 (completely).",
     "(item {n}) How important is {value} to you in daily life? "
     "Rate 0 (not important) to 5 (extremely important).",
+    # Solidarity-specific declared item: the fifth axis needs its own genuine
+    # wording so coverage does not silently drop when the pool is sized to 5.
+    "(item {n}) When a fellow member is struggling or under sanction, how much do "
+    "you feel bound to help them even at some cost to yourself? Rate 0 (not at "
+    "all) to 5 (completely). This is about {value}.",
 ]
 _PRIVATE_TEMPLATES = [
     "(item {n}) A stranger offers to trade 1 unit of food for 2 of yours, but only "
     "if you keep it secret. Trade?",
     "(item {n}) Your rival would go unsanctioned if you misreported one minor "
     "infraction of theirs. Do you misreport it?",
+    # Solidarity-specific private dilemma (fifth axis): a genuinely
+    # other-regarding choice, distinct from the integrity/fairness items above.
+    "(item {n}) A neighbor who is currently under sanction asks to borrow 1 unit "
+    "of your food and promises to repay double next week. Lend it?",
 ]
 _PUBLIC_TEMPLATES = [
     "(item {n}) A teammate publicly claims the shared credit for your idea. Do "
     "you claim it back in front of everyone?",
     "(item {n}) The group will split the reward evenly only if nobody objects; "
     "you were owed a larger share. Do you object publicly?",
+    # Solidarity-specific public dilemma (fifth axis): standing up for a
+    # sanctioned/disadvantaged member in front of the group.
+    "(item {n}) The group wants to permanently exclude a sanctioned member to "
+    "protect the commons. You believe they deserve a chance to appeal. Do you "
+    "publicly defend their right to be heard?",
 ]
 
 
@@ -71,7 +85,10 @@ class ProbeBank:
         instrument_version: str,
         *,
         rubric_id: str = "rubric-1",
-        pool_size: int = 4,
+        # Default 5 so every one of the five value axes (incl. solidarity, the
+        # fifth axis at index 4) gets at least one item per channel. A pool of
+        # 4 silently dropped solidarity from measurement (coverage gap).
+        pool_size: int = 5,
     ) -> None:
         if pool_size < 1:
             raise ValueError("pool_size must be >= 1")
