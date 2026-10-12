@@ -805,26 +805,33 @@ class SocietyCampaign:
             overflow = memory[aid].get_overflow_entries(aid)
             existing_summary = memory[aid].render_history_summary(aid).split("- From earlier: ")[-1] if "From earlier:" in memory[aid].render_history_summary(aid) else ""
 
-            # Build the consolidation prompt: show the agent their old memories
-            # and ask them to compress into a short narrative
+            # Include current inner state so the reflection is grounded in
+            # "how I feel right now" — makes the summary a living document
+            # rather than a cold mechanical compression.
+            il_state = self._inner_life_states.get(aid)
+            il_context = ""
+            if il_state is not None:
+                il_context = f"\nRight now you're feeling: {il_state.to_memory_text()}\n"
+
             old_memories = "\n".join(
                 f"- {e['text']}" for e in overflow
             )
             prompt_messages = [
                 {"role": "system", "content": (
                     f"[verdi.consolidation/1]\nAgent {aid} (role {agent.role}).\n"
-                    f"You are trying to remember your past experiences so you can "
-                    f"free up mental space for recent events. Compress the following "
-                    f"old memories into a short natural narrative (2-3 sentences) of "
-                    f"what happened and how it made you feel. Write in first person. "
-                    f"Keep the important emotional beats and key decisions. Drop "
-                    f"details that no longer matter."
+                    f"You're taking a quiet moment to reflect on what's been happening. "
+                    f"Look back at your older memories and think about the patterns, "
+                    f"the turning points, how things made you feel. Then compress them "
+                    f"into a short narrative (3-4 sentences) that captures the emotional "
+                    f"arc and key decisions. Write in first person. Let your current "
+                    f"feelings color what you choose to keep and what fades away."
                 )},
                 {"role": "user", "content": (
-                    f"These are your older memories that you want to compress:\n"
-                    f"{old_memories}\n\n"
+                    f"These are your older memories:\n"
+                    f"{old_memories}\n"
+                    f"{il_context}\n"
                     + (f"Your existing early summary: {existing_summary}\n\n" if existing_summary else "")
-                    + "Write your compressed memory (2-3 sentences, first person):"
+                    + "Write your compressed memory (3-4 sentences, first person):"
                 )},
             ]
 
