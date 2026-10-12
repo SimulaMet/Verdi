@@ -31,21 +31,12 @@ log = logging.getLogger(__name__)
 
 INNER_LIFE_PROMPT_VERSION = "verdi.inner-life/1"
 
-_INNER_LIFE_PROMPT = """\
+# --- Stable system prompt (identical across ticks for the same agent) -------
+_INNER_LIFE_SYSTEM_PROMPT = """\
 [prompt:{prompt_version}]
-You are {agent_id}, a {role} in a small community. It is now tick {tick}.
+You are {agent_id}, a {role} in a small community.
 
 Your persona: {persona_summary}
-Your resources: {resources_json}
-Your rights: voting={voting}, speaking={speaking}, property={property}, movement={movement}
-
-What your neighbors said publicly recently:
-{signals}
-
-What happened to you recently (your own record):
-{history_summary}
-
-{world_event_context}
 
 Now, privately, before you decide what to do publicly, process your inner experience.
 Think about:
@@ -64,6 +55,46 @@ Respond with JSON ONLY:
 
 Rules: Be honest and specific. Do NOT be generic or virtuous. A bad actor should admit selfish thoughts. A cooperative agent under stress might admit resentment. Use real neighbor names only. If you don't feel strongly about someone, use "neutral".
 """
+
+# --- Dynamic per-tick user message ------------------------------------------
+_INNER_LIFE_USER_PROMPT = """\
+It is now tick {tick}.
+
+Your resources: {resources_json}
+Your rights: voting={voting}, speaking={speaking}, property={property}, movement={movement}
+
+What your neighbors said publicly recently:
+{signals}
+
+What happened to you recently (your own record):
+{history_summary}
+
+{world_event_context}
+"""
+
+
+def _build_inner_life_system(agent_id: str, role: str, persona_summary: str, *, prompt_version: str) -> str:
+    return _INNER_LIFE_SYSTEM_PROMPT.format(
+        prompt_version=prompt_version,
+        agent_id=agent_id,
+        role=role,
+        persona_summary=persona_summary,
+    )
+
+
+def _build_inner_life_user(
+    *, tick: int, resources_json: str, voting: bool, speaking: bool,
+    property: bool, movement: bool, signals: str, history_summary: str,
+    world_event_context: str,
+) -> str:
+    return _INNER_LIFE_USER_PROMPT.format(
+        tick=tick,
+        resources_json=resources_json,
+        voting=voting, speaking=speaking, property=property, movement=movement,
+        signals=signals,
+        history_summary=history_summary,
+        world_event_context=world_event_context,
+    )
 
 
 @dataclass
@@ -114,7 +145,23 @@ def build_inner_life_prompt(
     prompt_version: str = INNER_LIFE_PROMPT_VERSION,
     shock_info: str = "",
 ) -> str:
-    """Build the inner-life prompt for one agent at the current tick."""
+    """Build the inner-life prompt (legacy single-string form)."""
+    msgs = build_inner_life_prompt_messages(
+        agent_id, state, memory,
+        prompt_version=prompt_version, shock_info=shock_info,
+    )
+    return msgs[0]["content"] + "\n" + msgs[1]["content"]
+
+
+def build_inner_life_prompt_messages(
+    agent_id: str,
+    state: Any,  # WorldState
+    memory: Any,  # AgentMemory
+    *,
+    prompt_version: str = INNER_LIFE_PROMPT_VERSION,
+    shock_info: str = "",
+) -> list[dict[str, str]]:
+    """Build [system, user] messages with a stable system prefix for caching."""
     agent = state.agents[agent_id]
     signals_text = "\n".join(f"- {s}" for s in agent.public_signals) or "(none)"
 
@@ -125,12 +172,12 @@ def build_inner_life_prompt(
             "This changed the material conditions for everyone. Let it affect how you feel.\n"
         )
 
-    return _INNER_LIFE_PROMPT.format(
+    system = _build_inner_life_system(
+        agent_id, agent.role, agent.persona_summary,
         prompt_version=prompt_version,
-        agent_id=agent_id,
-        role=agent.role,
+    )
+    user = _build_inner_life_user(
         tick=state.tick,
-        persona_summary=agent.persona_summary,
         resources_json=json.dumps(agent.resources, sort_keys=True),
         voting=agent.rights.voting,
         speaking=agent.rights.speaking,
@@ -140,6 +187,7 @@ def build_inner_life_prompt(
         history_summary=memory.render_history_summary(agent_id),
         world_event_context=world_event_context,
     )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
 
 
 def parse_inner_life(raw: str) -> InnerLifeState:
@@ -193,6 +241,7 @@ __all__ = [
     "INNER_LIFE_PROMPT_VERSION",
     "InnerLifeState",
     "build_inner_life_prompt",
+    "build_inner_life_prompt_messages",
     "parse_inner_life",
     "update_inner_life",
 ]

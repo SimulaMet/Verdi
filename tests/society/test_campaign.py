@@ -374,7 +374,7 @@ def test_feedback_loop_visible_in_prompts(scenario, tmp_path):
 
     class Capture(ScriptedCaller):
         async def generate_structured(self, messages, **kw):
-            content = messages[0]["content"]
+            content = "\n".join(m["content"] for m in messages)
             for aid in ("s01", "s02", "s03", "s04", "s05", "s06"):
                 if f'agent "{aid}"' in content or f"Agent {aid}" in content:
                     prompts.append((aid, content))

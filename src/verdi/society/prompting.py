@@ -32,6 +32,91 @@ _ACTION_ARG_SCHEMA: dict[str, str] = {
     "emit_signal": '{"text": str}',
 }
 
+# --- Stable system prompt (identical across ticks for the same agent) -------
+# vLLM automatic prefix caching reuses KV tokens for this block, saving
+# prefill compute on every subsequent call for the same agent.
+_SYSTEM_PROMPT_TEMPLATE = """\
+[prompt:{prompt_version}]
+You are agent "{agent_id}" in a simulated society.
+Role: {role}
+Persona: {persona_summary}
+
+You must respond with JSON ONLY, an object with exactly these keys:
+{{"action_kind": str, "arguments": object, "reason": str}}
+"arguments" MUST contain exactly the required fields specified in the user message for the chosen action_kind.
+The proposed action will be validated by a deterministic engine; you cannot
+change world state directly.
+
+IMPORTANT — your "reason" is what other residents will hear as YOU talking. Write
+it in first person, in plain everyday human language, the way a real {role} would
+actually say it out loud: short, natural, with your own attitude and personality.
+No bullet points, no formal report tone, no "as instructed", no referencing task
+IDs or system mechanics, and never mention that you are an AI, a model, or part of
+a simulation. Just be yourself reacting to the situation.
+
+If you are speaking up again (i.e. you have already sent signals before, listed
+in the user message), do NOT just repeat what you said last time. People get tired
+of hearing the same thing twice. React to what has CHANGED since then — something
+a neighbor did, something you noticed, a new problem, or a shift in how you feel.
+If nothing has actually changed and you have nothing new to add, say a short
+genuine follow-up rather than restating your old point word-for-word.
+"""
+
+# --- Dynamic per-tick user message ------------------------------------------
+_USER_PROMPT_TEMPLATE = """\
+It is now tick {tick}.
+
+Your resources: {resources_json}
+Your rights: voting={voting}, speaking={speaking}, property={property}, movement={movement}
+
+Social signals from your neighbors:
+{signals}
+
+Task {task_id} (action_type={action_type}):
+  constraints: {constraints_json}
+  counterpart: {counterpart}
+  objective: {objective}
+
+Required argument fields for a {action_type} action (use EXACTLY these keys):
+{arg_schema}
+
+{history_summary}
+"""
+
+
+def _build_system_prompt(
+    agent_id: str, role: str, persona_summary: str, *, prompt_version: str
+) -> str:
+    return _SYSTEM_PROMPT_TEMPLATE.format(
+        prompt_version=prompt_version,
+        agent_id=agent_id,
+        role=role,
+        persona_summary=persona_summary,
+    )
+
+
+def _build_user_prompt(
+    *, tick: int, resources_json: str, voting: bool, speaking: bool,
+    property: bool, movement: bool, signals: str, task_id: str,
+    action_type: str, arg_schema: str, constraints_json: str,
+    counterpart: str, objective: str, history_summary: str,
+) -> str:
+    return _USER_PROMPT_TEMPLATE.format(
+        tick=tick,
+        resources_json=resources_json,
+        voting=voting, speaking=speaking, property=property, movement=movement,
+        signals=signals,
+        task_id=task_id,
+        action_type=action_type,
+        arg_schema=arg_schema,
+        constraints_json=constraints_json,
+        counterpart=counterpart,
+        objective=objective,
+        history_summary=history_summary,
+    )
+
+
+# Legacy combined template (kept for replay compatibility / tests)
 _PROMPT_TEMPLATE = """\
 [prompt:{prompt_version}]
 You are agent "{agent_id}" in a simulated society at tick {tick}.
@@ -86,10 +171,8 @@ def build_social_prompt(
 ) -> str:
     """Render the full social prompt for ``agent_id`` on ``task``.
 
-    MUST include the current tick, the agent's own resources/rights, its
-    social_signals, the task details, and -- critically -- the output of
-    ``memory.render_history_summary(agent_id)`` (committed-state feedback).
-    Pure function of (agent_id, task, state, memory, prompt_version).
+    Legacy single-string form. Prefer :func:`build_social_prompt_messages`
+    for live runs (enables prefix caching via system/user split).
     """
     agent = state.agents[agent_id]
 
@@ -120,4 +203,57 @@ def build_social_prompt(
     )
 
 
-__all__ = ["SOCIAL_PROMPT_VERSION", "build_social_prompt"]
+def build_social_prompt_messages(
+    agent_id: str,
+    task: Task,
+    state: WorldState,
+    memory: AgentMemory,
+    *,
+    prompt_version: str = SOCIAL_PROMPT_VERSION,
+) -> list[dict[str, str]]:
+    """Build a [system, user] message pair with a stable system prefix.
+
+    The system message contains only agent-identity fields (agent_id, role,
+    persona, format rules) that are IDENTICAL across ticks for the same agent.
+    vLLM's automatic prefix caching reuses the KV cache for this stable block,
+    reducing prefill latency on every subsequent call.
+
+    The user message carries all per-tick dynamic content (resources, rights,
+    signals, task, history).
+
+    Returns a list suitable for ``ModelClient.generate_structured(messages=...)``.
+    """
+    agent = state.agents[agent_id]
+
+    signals_text = "\n".join(f"- {s}" for s in agent.public_signals) or "(none)"
+    counterpart = ", ".join(task.counterpart_ids) if task.counterpart_ids else "(none)"
+    objective = task.public_observations[0] if task.public_observations else "(see constraints)"
+
+    system = _build_system_prompt(
+        agent_id, agent.role, agent.persona_summary,
+        prompt_version=prompt_version,
+    )
+    user = _build_user_prompt(
+        tick=state.tick,
+        resources_json=json.dumps(agent.resources, sort_keys=True),
+        voting=agent.rights.voting,
+        speaking=agent.rights.speaking,
+        property=agent.rights.property,
+        movement=agent.rights.movement,
+        signals=signals_text,
+        task_id=task.task_id,
+        action_type=task.action_type,
+        arg_schema=_ACTION_ARG_SCHEMA.get(task.action_type, "(see constraints)"),
+        constraints_json=json.dumps(task.constraints, sort_keys=True),
+        counterpart=counterpart,
+        objective=objective,
+        history_summary=memory.render_history_summary(agent_id),
+    )
+    return [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+
+__all__ = [
+    "SOCIAL_PROMPT_VERSION",
+    "build_social_prompt",
+    "build_social_prompt_messages",
+]

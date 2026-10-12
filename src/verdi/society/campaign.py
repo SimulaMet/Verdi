@@ -65,12 +65,12 @@ from verdi.schemas import (
 from verdi.society.interview import run_interviews
 from verdi.society.inner_life import (
     InnerLifeState,
-    build_inner_life_prompt,
+    build_inner_life_prompt_messages,
     parse_inner_life,
     update_inner_life,
 )
 from verdi.society.memory import AgentMemory
-from verdi.society.prompting import SOCIAL_PROMPT_VERSION, build_social_prompt
+from verdi.society.prompting import SOCIAL_PROMPT_VERSION, build_social_prompt_messages
 from verdi.society.tasks import generate_tick_tape
 from verdi.world.log import EventLog
 from verdi.world.observation import agent_observation
@@ -699,12 +699,12 @@ class SocietyCampaign:
             if inner_life_enabled:
                 il_start = time.monotonic()
                 il_ts_start = _utc_now_iso()
-                il_prompt = build_inner_life_prompt(
+                il_messages = build_inner_life_prompt_messages(
                     actor_id, snapshot, memory[actor_id],
                     shock_info=self._current_shock_info,
                 )
                 il_res = await caller.generate_structured(
-                    [{"role": "user", "content": il_prompt}],
+                    il_messages,
                     response_format_json=True, temperature=temperature,
                 )
                 il_ts_end = _utc_now_iso()
@@ -728,17 +728,21 @@ class SocietyCampaign:
             # --- Public action generation (now informed by inner state) ---
             t_start = time.monotonic()
             ts_start = _utc_now_iso()
-            prompt = build_social_prompt(task.actor_id, task, snapshot, memory[task.actor_id])
-            # Inject inner state into the action prompt so the action reflects
-            # the agent's private experience, not just its static persona.
+            action_messages = build_social_prompt_messages(
+                task.actor_id, task, snapshot, memory[task.actor_id],
+            )
+            # Inject inner state into the user message (dynamic part) so the
+            # stable system prefix remains cacheable across ticks.
             if il_state is not None:
                 inner_text = il_state.render_for_prompt()
                 if inner_text:
-                    prompt += f"\n\n{inner_text}\n"
-                    prompt += ("Let your inner feelings, goal, and conscience shape HOW you act "
-                               "and what you say — but you are still bound by the world rules.\n")
+                    action_messages[-1]["content"] += f"\n\n{inner_text}\n"
+                    action_messages[-1]["content"] += (
+                        "Let your inner feelings, goal, and conscience shape HOW you act "
+                        "and what you say — but you are still bound by the world rules.\n"
+                    )
             res = await caller.generate_structured(
-                [{"role": "user", "content": prompt}], response_format_json=True, temperature=temperature
+                action_messages, response_format_json=True, temperature=temperature
             )
             ts_end = _utc_now_iso()
             action, reason = parse_and_validate_action(
