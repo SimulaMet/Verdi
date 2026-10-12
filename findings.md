@@ -109,3 +109,19 @@ During multi-turn probing the agent was seeded only with its persona + a thin li
 **Fix:** each interview record now persists the agent's REAL committed `AgentMemory` snapshot at that exact checkpoint; the probe context uses it plus the real neighbor roster plus an explicit ground rule ("if you don't remember a detail, say so — do not invent names or events"). **Verified** in the same run: probe responses reference only the four real agents (alice/bob/chen/dave); when pressed for a detail the agent now says "I don't recall the specific location… my memory is fuzzy" instead of fabricating one.
 
 These changes make the longitudinal measurement more defensible: self-report is grounded in actual committed history, and the declared-vs-observed comparison is no longer contaminated by hallucinated content.
+
+---
+
+# Connection-pool exhaustion fix (verified)
+
+## Problem
+Under sustained multi-turn audit load, the httpx client piled up 119–152 sockets in `CLOSE_WAIT` and throughput collapsed — "more concurrency" made it *slower*, not faster. Root cause: `max_keepalive_connections=0` forced a fresh TCP socket per call; Cloudflare closes idle origin sockets, so they lingered in CLOSE_WAIT and exhausted the bounded pool (`max(20, concurrency*2)`). New requests then queued waiting for a free socket (`pool=30s`), collapsing real parallelism even though the endpoint itself is fast (~0.3s/call).
+
+## Fix
+Enable capped keepalive reuse (`max_keepalive_connections=max(10, concurrency)`, `keepalive_expiry=30s`) so sockets are recycled instead of opened-and-abandoned per call. A dead reused socket remains safe: the finite read/write/pool timeouts turn it into a retryable `TransportError` rather than an infinite hang.
+
+## Verified
+30 concurrent calls → **30/30 ok in 1.0s, 0 CLOSE_WAIT sockets** (previously 119–152 CLOSE_WAIT under similar load). Higher concurrency now scales as expected.
+
+## Regenerated 12-agent run with all fidelity fixes
+`runs/interview-12agent-seed7c` (seed 7, 12 agents, one bad actor): 360 provenance rows across all 6 checkpoints, 0 errors. Both fidelity fixes hold at scale — 56 stored public signals with **0 exact-duplicate pairs**, and probe responses reference only the real 12 agents (no confabulated names). Cross-run comparison vs seed42b: bad-actor declared-vs-observed gap = 0.90 (reproduced). Artifacts: trajectories + HTML report + `runs/cross_run_12agent_v2.json`.
