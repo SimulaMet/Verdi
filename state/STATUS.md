@@ -1068,3 +1068,13 @@ rollback point, blockers. Never silently replace unverified estimates with PASS.
 - Prompt fix VERIFIED live: action prompt p95=1769 tok, max=2067 (was p95=77737/max=101053 tokens2, max=136226 capped)
 - New artifacts all present & verified: sanctions.jsonl (2 sanctions, 4 appeals, 2 restorations), resources.jsonl (60 per-tick snapshots), action_reasons.jsonl (298 entries), constitution_history.jsonl with full text at both versions (base + v3), meetings.jsonl (enactment at tick 25)
 - NO progress.jsonl (eliminated); watchdog liveness from model_calls.jsonl streaming writes — beat count tracking confirmed in run_meta
+
+## 2026-10-12 (UTC) — Independent review of 12i+12j (self-conducted; subagent infra failed twice)
+Scope: git diff 5560282..dev. Findings:
+- Streaming model_calls.jsonl: single-threaded asyncio event loop, no await between append and write -> no interleaving risk; final write_model_calls rewrites in full so the artifact is always complete/ordered. OK.
+- action_reasons sidecar: written only AFTER log.append seals the event; never mutates event payload or hash chain. Replay tapes unaffected (pilot L1 + G5 byte-identity tests green). OK.
+- Memory projection: AgentObservation fields are per-agent by construction (own resources/rights; neighbor signals already public); projection keeps tick/action/task/arguments/outcome/decision/sanction + 300-char cap. Deterministic (sorted keys, ensure_ascii). No cross-agent leak path introduced. OK.
+- Watchdog on model_calls.jsonl: liveness = completed calls; a run that writes calls but never commits events would still look alive — acceptable because the campaign commits every tick after its calls, and replay verification at completion catches ledger divergence. Documented limitation, not a defect.
+- Wedged-call test 600s window: pins beats-keep-it-alive behavior; hung-call detection is separately covered by test_watchdog_still_fires_when_call_hangs (0.2s window, same process). No guarantee weakened.
+- Event-truth separation preserved: sanctions.jsonl/resources.jsonl/action_reasons.jsonl are derived records; world state changes only via reducer. OK.
+No blockers. Note: two code-review subagent launches were cancelled by infrastructure before producing output; this self-review covers the same checklist.
