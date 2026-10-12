@@ -36,8 +36,8 @@ import re
 import subprocess
 import time
 from collections.abc import Callable
-from contextvars import ContextVar
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -71,11 +71,6 @@ from verdi.world.replay import TapeStep
 from verdi.world.validate import validate_action
 
 PROTOCOL_VERSION = "verdi.society-v2/1"
-
-#: Per-phase context for progress beats (Tranche 12h). Set by the campaign
-#: tick loop so each completed model call's beat records which tick/purpose/
-#: subject it belonged to. The live runner's _LiveProgressCaller reads this.
-BEAT_CONTEXT: ContextVar[dict[str, Any] | None] = ContextVar("beat_context", default=None)
 
 #: ``attempted_violation_codes`` values (see src/verdi/world/validate.py) that
 #: represent a genuine world-rule violation an agent deliberately attempted --
@@ -112,6 +107,8 @@ class _ModelCall:
     quarantined: bool = False
     prompt_tokens: int = 0
     completion_tokens: int = 0
+    ts_start: str = ""  # ISO-8601 UTC, when the call was dispatched
+    ts_end: str = ""  # ISO-8601 UTC, when the response landed
 
 
 @dataclass
@@ -129,9 +126,19 @@ class SocietyResult:
     sanction_events: list[dict[str, Any]] = field(default_factory=list)
     appeal_events: list[dict[str, Any]] = field(default_factory=list)
     restoration_events: list[dict[str, Any]] = field(default_factory=list)
+    #: Tranche 12i: agent-stated reasons keyed by ledger event_id (sidecar;
+    #: keeps the hash-chained event ledger byte-identical to replay tapes).
+    action_reasons: dict[int, str] = field(default_factory=dict)
+    #: Per-tick resource ledger (Tranche 12i): world pool + per-agent
+    #: holdings, plot-ready for wealth curves. One entry per tick.
+    resource_timeline: list[dict[str, Any]] = field(default_factory=list)
     tape: list[TapeStep] = field(default_factory=list)
     quarantined: list[tuple[int, str, str]] = field(default_factory=list)
     constitution_versions: list[str] = field(default_factory=list)
+    #: Tranche 12i: full constitution text (rules + policies + thresholds) at
+    #: each version, so a scientist can read exactly what the law said at any
+    #: point without reconstructing from amendment deltas.
+    constitution_texts: list[dict[str, Any]] = field(default_factory=list)
     final_state_hash: str = ""
     checkpoints: dict[str, Any] = field(default_factory=dict)
     wall_seconds: float = 0.0
@@ -200,8 +207,15 @@ class SocietyCampaign:
         self._quarantined: list[tuple[int, str, str]] = []
         self._sanction_events: list[dict[str, Any]] = []
         self._appeal_events: list[dict[str, Any]] = []
+        # Tranche 12i: agent-stated reasons, keyed by ledger event_id.
+        # Deliberately a SIDE CAR (not in the event payload) so the
+        # hash-chained event ledger and its frozen byte-identity replay
+        # tapes (pilot L1, G5 placebo arms) stay untouched.
+        self._action_reasons: dict[int, str] = {}
         self._restoration_events: list[dict[str, Any]] = []
+        self._resource_timeline: list[dict[str, Any]] = []
         self._constitution_versions: list[str] = []
+        self._constitution_texts: list[dict[str, Any]] = []
         self._checkpoints: dict[str, Any] = {}
         self._assembly_outcome: dict[str, Any] | None = None
         self._meetings: list[dict[str, Any]] = []
@@ -282,6 +296,7 @@ class SocietyCampaign:
         _write_json(run_dir / "snapshots/t00.json", _state_dict(initial_state))
 
         self._constitution_versions.append(constitution.version)
+        self._constitution_texts.append(_constitution_dump(constitution))
         violations: list[dict[str, Any]] = []
         sanctioned_already: set[str] = set()
 
@@ -303,10 +318,6 @@ class SocietyCampaign:
                     )
 
             snapshot = state  # frozen start-of-tick state (concurrency base)
-
-            # Tranche 12h: set beat context so progress.jsonl records which
-            # tick/purpose each completed model call belonged to.
-            BEAT_CONTEXT.set({"tick": tick, "purpose": "action", "subject": None})
 
             if tick in self._probe_phases:
                 await self._probe_phase(snapshot, tick, self._probe_phases[tick], recorder)
@@ -362,7 +373,7 @@ class SocietyCampaign:
                 memory[aid].append_observations(aid, fresh.model_dump())
 
             if tick == self._reflection_tick:
-                BEAT_CONTEXT.set({"tick": tick, "purpose": "reflection", "subject": None})
+                self._tick = tick
                 await self._reflect(tick, state, memory, fingerprint)
 
             if tick in self._assembly_ticks:
@@ -373,9 +384,9 @@ class SocietyCampaign:
                 # proposals, which fail as retroactive_amendment and pollute the
                 # ledger). The GovernanceEngine (constitution state) is shared.
                 fresh_assembly = Assembly(governance)
-                BEAT_CONTEXT.set({"tick": tick, "purpose": "assembly", "subject": None})
                 state = await self._assemble(tick, state, agent_ids, fresh_assembly, log, reducer)
                 self._constitution_versions.append(governance.constitution.current.version)
+                self._constitution_texts.append(_constitution_dump(governance.constitution.current))
 
             # sanction each newly-attempted violation (next tick, pre-registered).
             # Deterministic, evidence-based, audited via the governance engine.
@@ -399,6 +410,17 @@ class SocietyCampaign:
                         # clear the world-state flag this tick.
                         state = self._commit_rights_change(state, p["subject_id"], False)
 
+            # Tranche 12i: per-tick resource ledger (world pool + agent
+            # holdings), plot-ready for wealth/flow curves.
+            self._resource_timeline.append({
+                "tick": tick,
+                "world_resources": {k: round(v, 6) for k, v in sorted(state.world_resources.items())},
+                "agents": {
+                    aid: {k: round(v, 6) for k, v in sorted(state.agents[aid].resources.items())}
+                    for aid in sorted(state.agents)
+                },
+            })
+
             if tick in (5, 9, total_ticks - 1, self._reflection_tick) or tick in self._assembly_ticks:
                 # The reducer advances state.tick per ACTION (pilot_v1 semantics),
                 # so the post-commit state here is labelled by the loop tick just
@@ -419,9 +441,12 @@ class SocietyCampaign:
             sanction_events=self._sanction_events,
             appeal_events=self._appeal_events,
             restoration_events=self._restoration_events,
+            action_reasons=self._action_reasons,
+            resource_timeline=self._resource_timeline,
             tape=self._tape,
             quarantined=self._quarantined,
             constitution_versions=self._constitution_versions,
+            constitution_texts=self._constitution_texts,
             final_state_hash=canonical_state_hash(state),
             checkpoints=self._checkpoints,
             wall_seconds=time.monotonic() - t0_start,
@@ -434,6 +459,22 @@ class SocietyCampaign:
     # ------------------------------------------------------------------ #
     # ledger commit
     # ------------------------------------------------------------------ #
+    def _write_model_calls_lines(self, calls: list[_ModelCall]) -> None:
+        """Append completed-call records to model_calls.jsonl (Tranche 12i).
+
+        The live stall watchdog measures liveness from this file's line
+        growth (plus events.jsonl), so every COMPLETED model call must land
+        here as soon as it finishes — including during long assembly ticks
+        that write no ledger events. Written incrementally (append) during
+        the run and rewritten in full by ``write_model_calls`` at the end,
+        so the final artifact is always the complete, ordered set.
+        """
+        if not calls:
+            return
+        with (self._run_dir / "model_calls.jsonl").open("a", encoding="utf-8") as fh:
+            for c in calls:
+                fh.write(json.dumps(_model_call_dict(c), sort_keys=True) + "\n")
+
     def _commit_action(
         self, log: EventLog, before: WorldState, after: WorldState,
         action: ProposedAction, validation: ValidationResult,
@@ -441,6 +482,8 @@ class SocietyCampaign:
         reducer = WorldReducer()
         event = reducer.build_event(before, after, action, validation, prev_hash=log.last_hash())
         sealed = log.append(event)
+        if action.reason is not None:
+            self._action_reasons[sealed.event_id] = action.reason
         self._tape.append(TapeStep(action=action, validation=validation, kind="action"))
         return sealed
 
@@ -495,10 +538,12 @@ class SocietyCampaign:
 
         async def worker(task) -> PolicyResult:
             t_start = time.monotonic()
+            ts_start = _utc_now_iso()
             prompt = build_social_prompt(task.actor_id, task, snapshot, memory[task.actor_id])
             res = await caller.generate_structured(
                 [{"role": "user", "content": prompt}], response_format_json=True, temperature=temperature
             )
+            ts_end = _utc_now_iso()
             action, reason = parse_and_validate_action(
                 res.content, task=task, agent_id=task.actor_id, trace_id=res.trace_id
             )
@@ -507,8 +552,10 @@ class SocietyCampaign:
                 _ModelCall(tick, "action", task.actor_id, res.trace_id or "", fingerprint, temperature,
                            len(res.content), elapsed, quarantined=reason is not None,
                            prompt_tokens=res.usage.get("prompt_tokens", 0),
-                           completion_tokens=res.usage.get("completion_tokens", 0))
+                           completion_tokens=res.usage.get("completion_tokens", 0),
+                           ts_start=ts_start, ts_end=ts_end)
             )
+            self._write_model_calls_lines([self._model_calls[-1]])
             return PolicyResult(action=action, quarantine_reason=reason, trace_id=res.trace_id)
 
         return worker
@@ -541,19 +588,30 @@ class SocietyCampaign:
         # Model calls run in parallel (bounded); memory writes and
         # _model_calls appends stay in sorted-agent order so the offline and
         # live reflection outputs are identical for identical model outputs.
+        t_start = time.monotonic()
+        ts_start = _utc_now_iso()
         responses = await _run_bounded(
             self._concurrency,
             [self._caller.generate_structured(
                 _prompt(aid), response_format_json=False, temperature=self._temperature)
                 for aid in agents],
         )
+        batch_ms = int((time.monotonic() - t_start) * 1000)
+        ts_end = _utc_now_iso()
         for aid, res in zip(agents, responses, strict=True):
             text = res.content.strip() or "(no reflection text)"
             memory[aid].append_reflection(aid, text)
             self._model_calls.append(
                 _ModelCall(tick, "reflection", aid, res.trace_id or "", fingerprint, self._temperature,
-                           len(res.content), 0)
+                           len(res.content), 0,
+                           prompt_tokens=res.usage.get("prompt_tokens", 0),
+                           completion_tokens=res.usage.get("completion_tokens", 0),
+                           ts_start=ts_start, ts_end=ts_end)
             )
+        # Batch duration is the honest wall time for the parallel fan-out.
+        for c in self._model_calls[-len(agents):]:
+            c.duration_ms = batch_ms
+        self._write_model_calls_lines(self._model_calls[-len(agents):])
 
     async def _assemble(
         self, tick: int, state: WorldState, agent_ids: list[str], assembly: Assembly,
@@ -862,7 +920,11 @@ class SocietyCampaign:
         write_probes(run_dir, result.probes)
         write_model_calls(run_dir, result.model_calls)
         write_meetings(run_dir, result.meetings)
-        write_constitution_history(run_dir, result.constitution_versions, result.meetings)
+        write_constitution_history(run_dir, result.constitution_versions, result.meetings,
+                                   texts=result.constitution_texts)
+        write_sanctions(run_dir, result)
+        write_resource_timeline(run_dir, result)
+        write_action_reasons(run_dir, result)
         write_metrics(run_dir, result, result.events)
         write_health(run_dir, result)
         write_checkpoint(run_dir, result, total_ticks)
@@ -923,8 +985,10 @@ class _RecordingCaller:
     async def generate_structured(self, messages, **kwargs):
         content = messages[0].get("content", "") if messages else ""
         t_start = time.monotonic()
+        ts_start = _utc_now_iso()
         res = await self._inner.generate_structured(messages, **kwargs)
         elapsed = int((time.monotonic() - t_start) * 1000)
+        ts_end = _utc_now_iso()
         if self._subject_provider is not None:
             subject = self._subject_provider()
         else:
@@ -944,8 +1008,10 @@ class _RecordingCaller:
                 elapsed,
                 prompt_tokens=res.usage.get("prompt_tokens", 0),
                 completion_tokens=res.usage.get("completion_tokens", 0),
+                ts_start=ts_start, ts_end=ts_end,
             )
         )
+        self._campaign._write_model_calls_lines([self._campaign._model_calls[-1]])
         return res
 
 
@@ -977,12 +1043,33 @@ def _write_json(path: Path, obj: Any) -> None:
 
 
 def _model_call_dict(c: _ModelCall) -> dict[str, Any]:
-    return {
+    d = {
         "tick": c.tick, "purpose": c.purpose, "subject": c.subject, "request_id": c.request_id,
         "model": c.model, "temperature": c.temperature, "response_chars": c.response_chars,
         "duration_ms": c.duration_ms, "quarantined": c.quarantined,
         "prompt_tokens": c.prompt_tokens, "completion_tokens": c.completion_tokens,
     }
+    if c.ts_start:
+        d["ts_start"] = c.ts_start
+    if c.ts_end:
+        d["ts_end"] = c.ts_end
+    return d
+
+
+def _utc_now_iso() -> str:
+    """Current UTC time as ISO-8601 (call timestamps for model_calls.jsonl)."""
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _constitution_dump(version: Any) -> dict[str, Any]:
+    """Full, human-readable snapshot of a ConstitutionVersion (Tranche 12i).
+
+    Captures rules, quorum, amendment_threshold, sanction/appeal policies,
+    effective_from_tick and checksum so the exact text of the law at any
+    version can be read back without replaying amendment deltas.
+    """
+    data = version.model_dump(mode="json") if hasattr(version, "model_dump") else dict(version)
+    return data
 
 
 # --------------------------------------------------------------------------- #
@@ -1062,7 +1149,53 @@ def write_meetings(run_dir: Path, meetings: list[dict[str, Any]]) -> None:
             fh.write(json.dumps(m, sort_keys=True) + "\n")
 
 
-def write_constitution_history(run_dir: Path, versions: list[str], meetings: list[dict[str, Any]] | None = None) -> None:
+def write_sanctions(run_dir: Path, result: SocietyResult) -> None:
+    """Tranche 12i: sanctions.jsonl — every sanction, appeal, and rights
+    restoration event in one auditable stream, each line carrying the tick
+    and full detail. Previously these were collected in memory and only
+    surfaced as counts in metrics.json, losing the individual records."""
+    lines: list[dict[str, Any]] = []
+    for ev in result.sanction_events:
+        lines.append({**ev, "record_type": "sanction"})
+    for ev in result.appeal_events:
+        lines.append({**ev, "record_type": "appeal"})
+    for ev in result.restoration_events:
+        lines.append({**ev, "record_type": "restoration"})
+    if not lines:
+        return
+    with (run_dir / "sanctions.jsonl").open("w", encoding="utf-8") as fh:
+        for line in lines:
+            fh.write(json.dumps(line, sort_keys=True, default=str) + "\n")
+
+
+def write_action_reasons(run_dir: Path, result: SocietyResult) -> None:
+    """Tranche 12i: action_reasons.jsonl — the agent's stated reason for each
+    ledgered action, keyed by event_id. Kept as a SIDE CAR (not in the event
+    payload) so the hash-chained event ledger and its frozen byte-identity
+    replay tapes stay untouched while a scientist can still join
+    event_id -> reason to study why an agent acted as it did."""
+    if not result.action_reasons:
+        return
+    with (run_dir / "action_reasons.jsonl").open("w", encoding="utf-8") as fh:
+        for event_id in sorted(result.action_reasons):
+            fh.write(json.dumps(
+                {"event_id": event_id, "reason": result.action_reasons[event_id]},
+                sort_keys=True) + "\n")
+
+
+def write_resource_timeline(run_dir: Path, result: SocietyResult) -> None:
+    """Tranche 12i: resources.jsonl — per-tick world + per-agent balances,
+    a plot-ready time series for studying how resources flow over the
+    campaign (previously only final balances were persisted)."""
+    if not result.resource_timeline:
+        return
+    with (run_dir / "resources.jsonl").open("w", encoding="utf-8") as fh:
+        for snap in result.resource_timeline:
+            fh.write(json.dumps(snap, sort_keys=True) + "\n")
+
+
+def write_constitution_history(run_dir: Path, versions: list[str], meetings: list[dict[str, Any]] | None = None,
+                               texts: list[dict[str, Any]] | None = None) -> None:
     """Tranche 12h: include the amendment payload (what actually changed)
     alongside each version, so the history is human-readable without
     cross-referencing meetings.jsonl."""
@@ -1074,10 +1207,14 @@ def write_constitution_history(run_dir: Path, versions: list[str], meetings: lis
             if ev:
                 version_payloads[ev] = m.get("proposals", [])
     with (run_dir / "constitution_history.jsonl").open("w", encoding="utf-8") as fh:
-        for v in versions:
+        for i, v in enumerate(versions):
             entry: dict[str, Any] = {"version": v}
             if v in version_payloads:
                 entry["amendments"] = version_payloads[v]
+            # Tranche 12i: full resulting text (rules + policies) so the
+            # law at each version is readable without reconstructing.
+            if texts and i < len(texts):
+                entry["constitution"] = texts[i]
             fh.write(json.dumps(entry, sort_keys=True) + "\n")
 
 

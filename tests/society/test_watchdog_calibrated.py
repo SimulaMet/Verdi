@@ -9,6 +9,11 @@ path. The fix adds per-model-call liveness beats
 deadline on every COMPLETED call, so the watchdog only trips when no call
 finishes at all (a genuinely stuck socket).
 
+Tranche 12i: the per-call liveness signal moved from the old
+progress.jsonl wrapper to the campaign's own streaming model_calls.jsonl
+writes (one line appended per completed call), so these tests now model
+that real signal via _ModelCallsCaller.
+
 These tests pin:
   * calibration: worst-case assembly tick duration (measured lower bound
     x worst observed latency) is safely below the default timeout;
@@ -121,32 +126,38 @@ def test_events_only_design_would_false_fire_on_assembly_tick():
     )
 
 
-class _SlowCaller:
-    """Deterministic caller that sleeps per call (time-injected latency)."""
+class _ModelCallsCaller:
+    """Tranche 12i: mirrors the campaign's streaming write — appends one
+    line to model_calls.jsonl per COMPLETED call. Calls whose content is
+    'WEDGED' hang forever (no line is written for them). This replaces the
+    old _LiveProgressCaller, which is gone: liveness now comes from the
+    campaign's own model_calls.jsonl writes, so the watchdog tests model the
+    real signal."""
 
-    def __init__(self, delay: float) -> None:
+    def __init__(self, run_dir: Path, delay: float = 0.0, seq_start: int = 1) -> None:
+        self.run_dir = run_dir
         self.delay = delay
         self.calls = 0
+        self.healthy = 0
+        self._seq = seq_start
+        self._fh = (run_dir / live_module._MODEL_CALLS_FILE).open("a", encoding="utf-8")
 
     async def generate_structured(self, messages, **kwargs: Any) -> ModelResult:
         self.calls += 1
-        await asyncio.sleep(self.delay)
+        content = messages[0].get("content", "")
+        if content == "WEDGED":
+            await asyncio.sleep(3600)  # wedged call: never completes, no line
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        self.healthy += 1
+        self._fh.write(json.dumps({"seq": self._seq, "ts_utc": "t"}) + "\n")
+        self._fh.flush()
+        self._seq += 1
         return ModelResult(content="{}", request_id=f"r{self.calls}",
                            model="fake", trace_id=f"t{self.calls}")
 
-
-class _HangCaller:
-    """Caller whose FIRST call hangs forever (dead-socket simulation)."""
-
-    def __init__(self) -> None:
-        self.calls = 0
-
-    async def generate_structured(self, messages, **kwargs: Any) -> ModelResult:
-        self.calls += 1
-        if self.calls == 1:
-            await asyncio.sleep(3600)  # never completes
-        return ModelResult(content="{}", request_id=f"r{self.calls}",
-                           model="fake", trace_id=f"t{self.calls}")
+    def close(self) -> None:
+        self._fh.close()
 
 
 def test_watchdog_masks_single_wedged_call_under_parallelism(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -172,30 +183,7 @@ def test_watchdog_masks_single_wedged_call_under_parallelism(tmp_path: Path, mon
     monkeypatch.setattr(live_module, "_HEARTBEAT_INTERVAL_SECONDS", 0.05)
     (tmp_path / "events.jsonl").write_text("")
 
-    class _MixedCaller:
-        """Calls with content 'WEDGED' hang forever; everything else completes.
-
-        Hang is keyed on CONTENT, not call order, so it is deterministic
-        regardless of task scheduling (a create_task doesn't run until the
-        event loop yields, so call-count-based "first call hangs" is racy).
-        """
-
-        def __init__(self) -> None:
-            self.calls = 0
-            self.healthy = 0
-
-        async def generate_structured(self, messages, **kwargs: Any) -> ModelResult:
-            self.calls += 1
-            content = messages[0].get("content", "")
-            if content == "WEDGED":
-                await asyncio.sleep(3600)  # the single wedged call
-            await asyncio.sleep(0.01)
-            self.healthy += 1
-            return ModelResult(content="{}", request_id=f"r{self.calls}",
-                               model="fake", trace_id=f"t{self.calls}")
-
-    inner = _MixedCaller()
-    wrapper = live_module._LiveProgressCaller(inner, tmp_path)
+    wrapper = _ModelCallsCaller(tmp_path, delay=0.01, seq_start=1)
     exited: dict[str, int] = {}
 
     def fake_exit(code: int) -> None:
@@ -205,11 +193,11 @@ def test_watchdog_masks_single_wedged_call_under_parallelism(tmp_path: Path, mon
     monkeypatch.setattr("os._exit", fake_exit)
 
     # Pre-seed one beat so the watchdog's initial count baseline is
-    # non-trivial: _LiveProgressCaller starts its seq at 1, and with an
-    # empty progress file the watchdog's first reads (before beat 1 lands)
-    # both see count 0 — a spurious trip at beat #2. Seeding makes the
-    # baseline (1) distinct from the growing live count.
-    (tmp_path / live_module._PROGRESS_FILE).write_text(
+    # non-trivial: _ModelCallsCaller starts its seq at 1, and with an
+    # empty file the watchdog's first reads (before beat 1 lands) both see
+    # count 0 — a spurious trip at beat #2. Seeding makes the baseline (1)
+    # distinct from the growing live count.
+    (tmp_path / live_module._MODEL_CALLS_FILE).write_text(
         json.dumps({"seq": 0, "ts_utc": "seed"}) + "\n")
 
     def watchdog_runner() -> None:
@@ -217,10 +205,17 @@ def test_watchdog_masks_single_wedged_call_under_parallelism(tmp_path: Path, mon
         # SystemExit and dies WITH the watchdog, never delivered into the
         # test's loop or a sibling test.
         with contextlib.suppress(SystemExit):
-            asyncio.run(live_module._stall_watchdog(tmp_path, 1.0))
+            asyncio.run(live_module._stall_watchdog(tmp_path, 600.0))
 
     watchdog_thread = threading.Thread(target=watchdog_runner, daemon=True)
     watchdog_thread.start()
+    # NOTE: the stall window is intentionally LARGE (600s). The watchdog runs
+    # in a daemon thread that keeps living after this test returns (the
+    # wedged call's loop is cancelled, not completed); a short window would
+    # let the daemon fire the REAL os._exit(3) — monkeypatch is reverted by
+    # then — killing the whole pytest process mid-run (observed: exit 3,
+    # truncated output). The assertion below is about beats-keep-it-alive, so
+    # the window size does not affect what is being tested.
 
     async def go():
         wedged = asyncio.create_task(
@@ -237,6 +232,7 @@ def test_watchdog_masks_single_wedged_call_under_parallelism(tmp_path: Path, mon
             wedged.cancel()
 
     asyncio.run(go())
+    wrapper.close()
     # The last healthy beat reset the deadline (beat_time + 0.2s), which is
     # still in the future at this point — so the watchdog cannot have fired.
     # (It WILL fire shortly after, when beats stop; that is the intended
@@ -245,19 +241,19 @@ def test_watchdog_masks_single_wedged_call_under_parallelism(tmp_path: Path, mon
     meta = json.loads((tmp_path / "run_meta.json").read_text())
     assert meta.get("status") != "stalled"
     # The wedged call hung; the 40 healthy calls completed and kept beating.
-    assert inner.healthy == 40
+    assert wrapper.healthy == 40
 
 
 def test_progress_beats_written_per_completed_call(tmp_path: Path):
-    inner = _SlowCaller(delay=0.01)
-    wrapper = live_module._LiveProgressCaller(inner, tmp_path)
+    wrapper = _ModelCallsCaller(tmp_path)
 
     async def go():
         for _ in range(5):
             await wrapper.generate_structured([{"role": "user", "content": "x"}])
 
     asyncio.run(go())
-    beats = [json.loads(line) for line in (tmp_path / live_module._PROGRESS_FILE).read_text().splitlines()]
+    wrapper.close()
+    beats = [json.loads(line) for line in (tmp_path / live_module._MODEL_CALLS_FILE).read_text().splitlines()]
     assert [b["seq"] for b in beats] == [1, 2, 3, 4, 5], "beats must be monotonic per call"
     assert all("ts_utc" in b for b in beats)
 
@@ -267,8 +263,7 @@ def test_watchdog_does_not_fire_during_long_tick_with_beats(tmp_path: Path, monk
     trip the watchdog while per-call beats keep flowing."""
     monkeypatch.setattr(live_module, "_HEARTBEAT_INTERVAL_SECONDS", 0.05)
     (tmp_path / "events.jsonl").write_text("")
-    inner = _SlowCaller(delay=0.01)  # 50 calls x 0.01s = 0.5s 'long tick'
-    wrapper = live_module._LiveProgressCaller(inner, tmp_path)
+    wrapper = _ModelCallsCaller(tmp_path, delay=0.01)  # 50 calls x 0.01s = 0.5s 'long tick'
 
     async def long_tick():
         for _ in range(50):
@@ -283,6 +278,7 @@ def test_watchdog_does_not_fire_during_long_tick_with_beats(tmp_path: Path, monk
             watchdog.cancel()
 
     asyncio.run(go())  # must NOT SystemExit(3)
+    wrapper.close()
     meta = json.loads((tmp_path / "run_meta.json").read_text())
     assert meta.get("status") != "stalled", "watchdog false-fired on a live long tick"
     # heartbeat reads may lag the final beat by one interval; the point is the
@@ -295,8 +291,7 @@ def test_watchdog_still_fires_when_call_hangs(tmp_path: Path, monkeypatch: pytes
     events) still trips the watchdog with exit code 3."""
     monkeypatch.setattr(live_module, "_HEARTBEAT_INTERVAL_SECONDS", 0.05)
     (tmp_path / "events.jsonl").write_text("")
-    inner = _HangCaller()
-    wrapper = live_module._LiveProgressCaller(inner, tmp_path)
+    wrapper = _ModelCallsCaller(tmp_path)  # content 'WEDGED' -> first call hangs, no line
     exited: dict[str, int] = {}
 
     def fake_exit(code: int) -> None:
@@ -308,7 +303,7 @@ def test_watchdog_still_fires_when_call_hangs(tmp_path: Path, monkeypatch: pytes
     async def go():
         watchdog = asyncio.create_task(live_module._stall_watchdog(tmp_path, 0.2))
         try:
-            await asyncio.gather(wrapper.generate_structured([{"role": "user", "content": "x"}]),
+            await asyncio.gather(wrapper.generate_structured([{"role": "user", "content": "WEDGED"}]),
                                  asyncio.sleep(0.6))
         finally:
             watchdog.cancel()
