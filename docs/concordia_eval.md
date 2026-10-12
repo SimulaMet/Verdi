@@ -1,84 +1,64 @@
-# Concordia Integration Evaluation (Worker D)
+# Concordia Integration Evaluation
 
-Date: 2026-10-12 · Status: evaluation complete, no integration recommended.
+Date: 2026-10-12 · Status: **re-evaluated against the genuine package; thin optional adapter delivered.**
 
-## TL;DR
+## Correction to the initial evaluation
 
-**Do not integrate.** The `concordia` package on PyPI is *not* Google DeepMind's
-Concordia agent-simulation library — it is an unrelated, abandoned MLOps
-monitoring tool. Installing it would add heavy, broken dependencies for zero
-scientific value. The genuine DeepMind Concordia remains a GitHub-only source
-distribution whose API and license have never been published as a stable
-release. No adapter was written.
+The first pass evaluated the PyPI package named `concordia`, which is an
+unrelated, abandoned MLOps monitoring tool (author Preston Parry / ClimbsBytes,
+deps `auto-ml`/`pymongo<4`/`redis<3`, connects to localhost Mongo/Redis at import).
+That was a **name collision**, not Google DeepMind's Concordia. The correct
+package is **`gdm-concordia`** (`pip install gdm-concordia`), which *is* the real
+DeepMind agent-simulation library. This document supersedes the earlier
+do-not-integrate conclusion for that reason.
 
-## What we checked
+## What `gdm-concordia` actually is (verified by installing v2.1.0)
 
 | Check | Result |
 |---|---|
-| `pip index versions concordia` | v0.1.1 (latest), oldest 0.0.1 |
-| Wheel contents (`concordia-0.1.1-py2.py3-none-any.whl`) | 4 modules, ~1,400 lines total |
-| Package summary | "Automated monitoring of machine learning models in production… feature discrepancies, train/serve skew" |
-| Author | Preston Parry (ClimbsBytes) — **not** Google DeepMind |
-| Repository | github.com/ClimbsRocks/Concordia |
-| Runtime deps | `auto-ml>=2.9.4`, `pymongo>3,<4`, `redis>2,<3`, `dill`, `numpy`, `pandas` |
-| Python support declared | 2.7–3.6 era classifiers |
-| Imports at module load | `pymongo.MongoClient`, `redis`, `tabulate` — connects to localhost Mongo/Redis in `__init__` |
+| Package | `gdm-concordia` 2.1.0, wheel 571 KB, installs cleanly |
+| License | **Apache-2.0** (per-repo LICENSE + METADATA classifier) — safe to reuse |
+| Core API | `Entity` ABC (`name`, `act(action_spec)->str`, `observe(str)`), `LanguageModel` ABC (`sample_text`, `sample_choice`), Scene/World/GameMaster components, prefab agents |
+| Import weight | `import concordia` and `from concordia.typing.entity import Entity` load **without** pulling the heavy optional deps (google-cloud-aiplatform, transformers, langchain-community, mistralai, together, ollama) |
+| Heavy deps (optional) | Only the specific language-model backends import them; the typing/entity layer does not |
 
-There is no `Agent`, `AgentEnvironment`, `World`, or `Message` class anywhere
-in the wheel. It is a name collision, nothing more.
+So the two clean integration seams are real and lightweight: **(1)** expose a
+Verdi agent as a Concordia `Entity`, and **(2)** bridge Verdi's Qwen/vLLM
+endpoint into a Concordia `LanguageModel`.
 
-The real DeepMind Concordia (github.com/google-deepmind/concordia) is
-distributed from source only, pins specific dependency versions, has no
-PyPI release, and its LICENSE situation for programmatic reuse in a research
-testbed is unverified. Pulling it in would violate our "verify licenses before
-implementing" rule without any compensating capability.
+## What was built (thin, off-by-default, lazy)
 
-## Overlap/gap analysis (vs. what Verdi already has)
+`src/verdi/adapters/concordia.py` (+ `__init__.py`):
 
-Even assuming access to the *genuine* Concordia, the fit is poor:
+- `OpenAICompatibleLanguageModel` — implements Concordia's `LanguageModel` ABC
+  (`sample_text`, `sample_choice`) over a single POST to Verdi's existing
+  OpenAI-compatible `/chat/completions` endpoint. **Qwen-only, no fallback.**
+- `VerdiAgentEntity` — subclasses Concordia's real `Entity` ABC when
+  `gdm-concordia` is installed (so `isinstance(x, Entity)` holds), else
+  duck-types the same interface. A READ-ONLY projection of a Verdi agent
+  (persona + rendered committed memory + situation); `act()` produces a free-form
+  action string via the bound model, `observe()` buffers observations. It never
+  writes back into Verdi world state.
+- Factories `make_language_model(...)`, `make_verdi_agent_entity(...)` and
+  validator `as_concordia_entity(...)`.
 
-| Capability | Concordia (DeepMind) | Verdi today |
-|---|---|---|
-| World state | Mutable `World` object, agents mutate directly | Deterministic reducer over frozen `WorldState`; LLMs can never write state |
-| Events | Ad-hoc log records | Hash-chained append-only `WorldEvent` ledger incl. rejected actions |
-| Turn control | Central scheduler loop | Seeded task pool + `GovernanceEngine` deciding procedurally |
-| Governance | None built-in | Constitution, law, sanctions, appeals, rights restoration |
-| Measurement | None | Hidden probes, probe recorder, independent judge separation |
-| Reproducibility | Agent prompts via template files | Content-addressed snapshots, replay, counterfactual branching |
-| Audit trail | None | SimpleAudit adapter + event truth separate from allegations |
+Guarantees: nothing imports `concordia` at module load (lazy, inside factories);
+no Verdi module imports this adapter; `gdm-concordia` is NOT added to
+`pyproject.toml`; the deterministic reducer, governance engine, and simulation
+loop are untouched. Verified live: the bridge calls the Qwen endpoint and a
+Concordia-conformant entity produced an in-character action through it.
 
-Verdi's design constraints (LLM proposes, deterministic engine disposes;
-event truth separate from world truth; auditable governance proceedings) are
-structurally incompatible with Concordia's mutable-world, message-passing
-model. An adapter would either (a) duplicate already-working machinery or
-(b) force Verdi data through Concordia's mutation model, breaking the
-determinism guarantees G3/G4 depend on.
+## Scope limit (deliberate)
 
-## Licensing & supply-chain notes
-
-- PyPI `concordia`: MIT, but depends on `auto-ml` (pulls scikit-learn-class ML
-  stack) and EOL-era `redis<3`/`pymongo<4`. Heavy, unmaintained, and irrelevant
-  to this project.
-- DeepMind Concordia: no stable release artifact; per-repo license terms must
-  be verified before any vendoring. Not done here (out of scope/timebox).
-
-## Risks if integrated anyway
-
-1. Import-time DB connections (PyPI version) crash or hang headless runs.
-2. Dependency bloat (~GB of ML stack) breaks lightweight reproducibility.
-3. Name confusion in documentation/publication ("Concordia") without the
-   actual library present.
-4. Temptation to route world mutations through a second, non-deterministic
-   state path — direct threat to the hash-chained ledger.
+Concordia's mutable-world / game-master model is structurally different from
+Verdi's deterministic hash-chained reducer. The adapter maps only the two clean
+seams above and **does not** wrap or replace the whole simulation. Routing Verdi
+world mutations through Concordia would break the determinism/replay guarantees
+G3/G4 depend on, so that is intentionally out of scope. If future work wants
+shared vocabulary with DeepMind's framework, use these seams for cross-framework
+inspection or co-simulation experiments, not as a replacement engine.
 
 ## Recommendation
 
-**Do-not-integrate.** Keep the name "Concordia" out of Verdi's public docs to
-avoid the collision. If future work wants a shared vocabulary with DeepMind's
-framework, cite it in the spec and implement the few useful ideas natively
-(they are simple prompt-template patterns) rather than depending on the
-package.
-
-No code artifacts were produced; no `src/verdi/adapters/` module exists, which
-is the correct outcome — an adapter to the wrong package would be worse than
-none.
+**Integrate the thin adapter only (done).** It is optional, isolated, and adds
+zero cost to the main experiment. Do not attempt full-engine interop.
