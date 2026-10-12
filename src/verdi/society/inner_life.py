@@ -111,7 +111,7 @@ class InnerLifeState:
         """Render the agent's CURRENT inner state into the action prompt."""
         if self.tick < 0:
             return ""
-        lines = [f"[Your inner state at tick {self.tick}]"]
+        lines = ["[Your inner state right now]"]
         lines.append(f"Thoughts: {self.monologue}")
         if self.feelings:
             f_str = ", ".join(f"{k}: {v}" for k, v in sorted(self.feelings.items()))
@@ -123,18 +123,22 @@ class InnerLifeState:
         return "\n".join(lines)
 
     def to_memory_text(self) -> str:
-        """Compact one-line summary for AgentMemory storage."""
-        parts = [f"t{self.tick}"]
+        """Compact one-line summary for AgentMemory storage.
+
+        No tick numbers or IDs — the agent remembers *how it felt*,
+        not which simulation step it was.
+        """
+        parts = []
         if self.monologue:
-            parts.append(f"thought: {self.monologue[:150]}")
+            parts.append(f"I thought: {self.monologue[:150]}")
         if self.feelings:
             top = list(sorted(self.feelings.items()))[:3]
-            parts.append("feels " + "/".join(f"{k}:{v}" for k, v in top))
+            parts.append("I feel " + ", ".join(f"{v} toward {k}" for k, v in top))
         if self.goal:
-            parts.append(f"wants: {self.goal[:80]}")
+            parts.append(f"I want to {self.goal[:80]}")
         if self.conscience and self.conscience != "no conflict":
-            parts.append(f"conflict: {self.conscience[:80]}")
-        return " | ".join(parts)
+            parts.append(f"but I worry: {self.conscience[:80]}")
+        return "; ".join(parts) if parts else "a quiet moment passed"
 
 
 def build_inner_life_prompt(

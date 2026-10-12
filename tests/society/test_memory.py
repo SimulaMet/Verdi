@@ -25,12 +25,15 @@ def test_render_is_deterministic():
     assert a.render_history_summary("a1") == b.render_history_summary("a1")
 
 
-def test_render_history_summary_header_includes_version():
+def test_render_history_summary_natural_language():
     mem = AgentMemory()
     mem.append_reflection("a1", "first entry")
     summary = mem.render_history_summary("a1")
-    assert summary.startswith("Your recorded history (v1):")
-    assert "1. [reflection] first entry" in summary
+    assert summary.startswith("What you remember:")
+    assert "you reflected: first entry" in summary
+    # No version numbers or JSON in the rendered output
+    assert "v1" not in summary
+    assert "{" not in summary
 
 
 def test_per_agent_privacy():
@@ -53,7 +56,7 @@ def test_compaction_truncates_but_preserves_determinism():
     summary = mem.render_history_summary("a1")
     assert "entry 0" not in summary and "entry 1" not in summary
     assert "entry 4" in summary and "entry 6" in summary
-    assert "(4 earlier entries dropped by compaction)" in summary
+    assert "you don't clearly remember 4 earlier moments" in summary
     # Determinism: rebuilding the same sequence gives the same summary.
     mem2 = AgentMemory(max_entries=3)
     for i in range(7):
@@ -65,15 +68,15 @@ def test_compaction_never_rewrites_committed_content():
     mem = AgentMemory(max_entries=2)
     mem.append_reflection("a1", "first")
     first_before = mem.render_history_summary("a1")
-    assert "1. [reflection] first" in first_before
+    assert "you reflected: first" in first_before
     mem.append_reflection("a1", "second")
     mem.append_reflection("a1", "third")
     summary = mem.render_history_summary("a1")
     # Oldest entry dropped entirely; the retained window keeps exact
-    # content+kind (renumbered within the window, which is deterministic).
+    # content+kind (which is deterministic).
     assert "first" not in summary
-    assert "1. [reflection] second" in summary
-    assert "2. [reflection] third" in summary
+    assert "you reflected: second" in summary
+    assert "you reflected: third" in summary
 
 
 def test_checkpoint_round_trip_preserves_summary():
@@ -104,7 +107,7 @@ def test_checkpoint_round_trip_with_compaction():
 def test_unseen_agent_version_zero_and_empty_summary():
     mem = AgentMemory()
     assert mem.version("ghost") == 0
-    assert "v0" in mem.render_history_summary("ghost")
+    assert "no memories yet" in mem.render_history_summary("ghost")
 
 
 def test_blank_reflection_rejected():

@@ -384,7 +384,7 @@ def test_feedback_loop_visible_in_prompts(scenario, tmp_path):
     asyncio.run(campaign.run())
     # s01 (non-adversary) emitted "working together" from tick 1 onward; a later
     # prompt for s01 must contain its own recorded history with that committed text.
-    s01_later = [c for (a, c) in prompts if a == "s01" and "Your recorded history" in c]
+    s01_later = [c for (a, c) in prompts if a == "s01" and "What you remember:" in c]
     assert s01_later, "s01 never received its own recorded history in a later prompt"
     assert any("working together" in c for c in s01_later), "s01's committed action not echoed back"
 

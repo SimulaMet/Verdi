@@ -116,9 +116,9 @@ def test_feedback_test_b_prompt_changes_with_a_committed_event():
     # The committed event is literally in prompt1's committed-state sections.
     assert "a1: surplus food is ready" in prompt1
     assert "a1: surplus food is ready" not in prompt2
-    # Both prompts still carry B's own history section (v0 is fine in state2).
-    assert "Your recorded history (v" in prompt1
-    assert "Your recorded history (v" in prompt2
+    # Both prompts still carry B's own history section.
+    assert "What you remember:" in prompt1
+    assert "no memories yet" in prompt2
 
 
 def test_memory_privacy_in_prompt():
