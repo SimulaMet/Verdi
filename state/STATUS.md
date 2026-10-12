@@ -1061,3 +1061,10 @@ rollback point, blockers. Never silently replace unverified estimates with PASS.
 - Prompt-growth root cause #2 found & fixed: full-state observation snapshots in private memory grew every prompt linearly (capped run: 99K tok @ t59, 2.9s→32.1s). Fix: field projection + 300-char entry cap; 50-tick offline probe max action prompt ~540 tok (flat)
 - quick-5x50-capped run completed healthy (373 calls, replay True/True) — used as diagnosis source
 - Next: fresh live quick-5x50 on dev (concurrency 10) to validate flat prompts + new artifacts, then C-2 scale decision
+
+## 2026-10-12 (UTC) — Live validation quick-5x50-v2 on dev @ 327d2b4
+- Run: runs/society-v2/quick-5x50-v2 (5 agents, 50 ticks, concurrency 10, SimulaChat default/Qwen3.8-27B)
+- RESULT: healthy, wall=131.5s (was 765.7s / 1019.9s for prior 5x50 runs), 378 calls, quarantine 0, replay True/True, log_verify True
+- Prompt fix VERIFIED live: action prompt p95=1769 tok, max=2067 (was p95=77737/max=101053 tokens2, max=136226 capped)
+- New artifacts all present & verified: sanctions.jsonl (2 sanctions, 4 appeals, 2 restorations), resources.jsonl (60 per-tick snapshots), action_reasons.jsonl (298 entries), constitution_history.jsonl with full text at both versions (base + v3), meetings.jsonl (enactment at tick 25)
+- NO progress.jsonl (eliminated); watchdog liveness from model_calls.jsonl streaming writes — beat count tracking confirmed in run_meta
