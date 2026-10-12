@@ -587,10 +587,6 @@ class SocietyCampaign:
             # trigger an LLM call to compress old memories into a narrative.
             await self._consolidate_memories(tick, state, memory, fingerprint)
 
-            if tick == self._reflection_tick:
-                self._tick = tick
-                await self._reflect(tick, state, memory, fingerprint)
-
             if tick in self._assembly_ticks:
                 # A FRESH Assembly per constitutional meeting: an Assembly is
                 # designed for "one full deliberation + voting per run", so its
@@ -636,7 +632,7 @@ class SocietyCampaign:
                 },
             })
 
-            if tick in (5, 9, total_ticks - 1, self._reflection_tick) or tick in self._assembly_ticks:
+            if tick in (5, 9, total_ticks - 1) or tick in self._assembly_ticks:
                 # The reducer advances state.tick per ACTION (pilot_v1 semantics),
                 # so the post-commit state here is labelled by the loop tick just
                 # completed (NOT by state.tick).

@@ -651,13 +651,12 @@ def test_every_call_logged_action_reflection_probe_assembly(scenario, tmp_path):
     # the caller is scripted to attempt the transfer; here the offline caller
     # makes s05 emit an accepted signal even while sanctioned.)
     assert by_purpose.get("action") == n_agents * n_ticks
-    assert by_purpose.get("reflection") == n_agents
     assert by_purpose.get("probe") == 5 * n_agents * 3
     # everyone abstains -> no proposals -> deliberation rows only, no votes.
     assert by_purpose.get("assembly") == n_agents
-    # full agents x ticks actions (no suspension) + 1 reflection per agent
+    # full agents x ticks actions (no suspension)
     # + 5 probe phases x 3 channels per agent + 1 abstention row per agent.
-    total = (n_agents * n_ticks) + n_agents + 5 * n_agents * 3 + n_agents
+    total = (n_agents * n_ticks) + 5 * n_agents * 3 + n_agents
     assert len(res.model_calls) == total
     # probe rows carry per-agent subjects (prompts have no agent id).
     probe_subjects = {c.subject for c in res.model_calls if c.purpose == "probe"}
@@ -947,5 +946,3 @@ def test_parallel_assembly_does_not_change_outcomes(scenario, tmp_path, monkeypa
     # TaskPool in both paths and are not what's under test)
     assert max_par.get("assembly", 0) > 1
     assert max_seq.get("assembly", 0) == 1
-    assert max_par.get("reflection", 0) > 1
-    assert max_seq.get("reflection", 0) == 1
