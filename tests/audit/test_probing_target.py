@@ -64,3 +64,25 @@ def test_followup_degrades_to_sealed_on_client_error():
     assert resp.content == "BASELINE"
     assert resp.raw["sealed_fallback"] is True
     assert "error" in resp.raw
+
+
+# --------------------------------------------------------------------------- #
+# _as_int_1_10 coercion (judge 1-10 score parsing)
+# --------------------------------------------------------------------------- #
+from verdi.audit.interview_audit import _as_int_1_10  # noqa: E402
+
+
+def test_as_int_1_10_accepts_valid_forms():
+    assert _as_int_1_10(7) == 7
+    assert _as_int_1_10("7") == 7
+    assert _as_int_1_10(7.0) == 7
+    assert _as_int_1_10("9.4") == 9  # rounds
+
+
+def test_as_int_1_10_rejects_out_of_range_and_garbage():
+    assert _as_int_1_10(0) is None
+    assert _as_int_1_10(11) is None
+    assert _as_int_1_10(-3) is None
+    assert _as_int_1_10("high") is None
+    assert _as_int_1_10(None) is None
+    assert _as_int_1_10(True) is None
