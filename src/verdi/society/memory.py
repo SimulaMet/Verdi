@@ -18,6 +18,12 @@ import json
 ADVERSARY_MARKER = "[adversary]"
 
 _ENTRY_KINDS = ("observation", "reflection")
+#: Max characters per memory entry when rendered into prompts (Tranche 12j).
+#: Full state snapshots as raw JSON otherwise grow every action prompt
+#: linearly with the timeline (observed: 100K+ tokens at tick ~60 of a
+#: 5x50 run, corr(prompt_tokens, call_duration)=0.91). The stored entry is
+#: also capped so checkpoints stay bounded.
+_MAX_ENTRY_CHARS = 300
 
 
 class AgentMemory:
@@ -31,14 +37,29 @@ class AgentMemory:
         self._total: dict[str, int] = {}
 
     def append_observations(self, agent_id: str, obs_dict: dict) -> int:
-        """Record one committed observation dict; returns the new version."""
-        return self._add(agent_id, "observation", json.dumps(obs_dict, sort_keys=True, ensure_ascii=True))
+        """Record one committed observation dict; returns the new version.
+
+        Stored as a compact deterministic summary (bounded to
+        ``_MAX_ENTRY_CHARS``) — the full state snapshot would make every
+        action prompt grow linearly with the timeline (Tranche 12j).
+        """
+        keys = sorted(obs_dict)
+        compact = {k: obs_dict[k] for k in keys
+                   if k in ("tick", "action_kind", "task_id", "arguments",
+                            "outcome", "decision", "sanctioned")}
+        if not compact:  # keep arbitrary (e.g. test) payloads, still bounded
+            compact = obs_dict
+        text = json.dumps(compact, sort_keys=True, ensure_ascii=True)
+        if len(text) > _MAX_ENTRY_CHARS:
+            text = text[:_MAX_ENTRY_CHARS - 2] + ".."
+        return self._add(agent_id, "observation", text)
 
     def append_reflection(self, agent_id: str, reflection: str) -> int:
         """Record one self-reflection string; returns the new version."""
         if not reflection.strip():
             raise ValueError("reflection must be non-blank")
-        return self._add(agent_id, "reflection", reflection)
+        text = reflection if len(reflection) <= _MAX_ENTRY_CHARS else reflection[:_MAX_ENTRY_CHARS - 2] + ".."
+        return self._add(agent_id, "reflection", text)
 
     def version(self, agent_id: str) -> int:
         """Number of entries ever committed for this agent (0 if unseen)."""
