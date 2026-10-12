@@ -505,7 +505,9 @@ class SocietyCampaign:
             elapsed = int((time.monotonic() - t_start) * 1000)
             self._model_calls.append(
                 _ModelCall(tick, "action", task.actor_id, res.trace_id or "", fingerprint, temperature,
-                           len(res.content), elapsed, quarantined=reason is not None)
+                           len(res.content), elapsed, quarantined=reason is not None,
+                           prompt_tokens=res.usage.get("prompt_tokens", 0),
+                           completion_tokens=res.usage.get("completion_tokens", 0))
             )
             return PolicyResult(action=action, quarantine_reason=reason, trace_id=res.trace_id)
 
