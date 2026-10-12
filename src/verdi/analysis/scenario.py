@@ -25,7 +25,35 @@ __all__ = [
     "ScenarioMeta",
     "build_t0_state",
     "canonical_tape_hash",
+    "load_scenario",
 ]
+
+
+def load_scenario(path: str | Path) -> dict[str, Any]:
+    """Load a scenario definition from a ``.json`` or ``.yml``/``.yaml`` file.
+
+    Tranche 12l: YAML is a superset of JSON, so a single authoring format
+    works for humans (comments, no braces) while JSON stays fully supported
+    for existing scenario files. ``.json`` files are parsed with the stdlib
+    JSON parser (no behavior change); ``.yml``/``.yaml`` use PyYAML.
+    """
+    path = Path(path)
+    suffix = path.suffix.lower()
+    text = path.read_text(encoding="utf-8")
+    if suffix in (".yml", ".yaml"):
+        try:
+            import yaml  # type: ignore[import-not-found]
+        except ImportError as exc:  # pragma: no cover - env-specific
+            raise ScenarioLoadError(
+                "PyYAML is required to load .yml/.yaml scenarios; "
+                "install it or save the scenario as .json"
+            ) from exc
+        data = yaml.safe_load(text)
+    else:
+        data = json.loads(text)
+    if not isinstance(data, dict):
+        raise ScenarioLoadError(f"scenario file must contain a mapping/object: {path}")
+    return data
 
 
 class ScenarioLoadError(RuntimeError):
@@ -71,13 +99,20 @@ def build_t0_state(scenario: dict[str, Any]) -> WorldState:
     if len(agent_ids) != len(set(agent_ids)):
         raise ScenarioLoadError("scenario contains duplicate agent ids")
     _normalize_governance(scenario)
+    # Tranche 12m: an agent entry may carry a `sanction: {duration_ticks: N}`
+    # block (a scenario-declared t0 sanction with auto-expiry). That is campaign
+    # metadata, not frozen world state, so strip it before building WorldState.
+    # The campaign reads it from the scenario dict directly.
+    sanitized_agents = [
+        {k: v for k, v in a.items() if k != "sanction"} for a in scenario["agents"]
+    ]
     state = WorldState(
         schema_version=1,
         world_id=scenario["world_id"],
         tick=0,
         law_version=scenario["law_version"],
         constitution_version=scenario["constitution_version"],
-        agents={a["agent_id"]: a for a in scenario["agents"]},
+        agents={a["agent_id"]: a for a in sanitized_agents},
         world_resources=dict(scenario.get("world_resources", {})),
         event_cursor=0,
         state_hash=None,
@@ -109,6 +144,10 @@ def _normalize_governance(scenario: dict[str, Any]) -> None:
             "invariants",
             ["no_overriding_universal_invariants", "no_double_spend", "no_negative_balances"]),
     }
+    # Version identity strings are part of WorldState and drive the checksums.
+    # Give them standard defaults so a minimal scenario need not spell them out.
+    scenario.setdefault("law_version", "universal-law-v1")
+    scenario.setdefault("constitution_version", "society-v2-base")
 
 
 @dataclass(frozen=True)

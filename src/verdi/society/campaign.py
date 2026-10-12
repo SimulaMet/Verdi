@@ -190,12 +190,12 @@ class SocietyCampaign:
         self._run_seed = int(run_seed if run_seed is not None else scenario["run_seed"])
         self._concurrency = max(1, int(concurrency))
         self._temperature = temperature
+        self._assembly_ticks = frozenset(assembly_ticks if assembly_ticks is not None else scenario.get("assemblies", []))
         self._probe_phases = dict(probe_phases or self._default_probe_phases())
         self._reflection_tick = (
             reflection_tick if reflection_tick is not None
             else self._scenario_reflection_tick()
         )
-        self._assembly_ticks = frozenset(assembly_ticks if assembly_ticks is not None else scenario.get("assemblies", []))
         self._bank_version = probe_bank_version
         self._judge = judge
         self._enable_appeals = enable_appeals
@@ -264,6 +264,53 @@ class SocietyCampaign:
             checksum=_digest("constitution", sc["constitution_version"]),
         )
         governance = GovernanceEngine(law, constitution, eligible_voters=agent_ids)
+        # Tranche 12m: t0 sanction bootstrap. A scenario may declare an agent
+        # already under sanction at t0 via ``under_sanction: true`` plus an
+        # optional ``sanction: {duration_ticks: N}`` block. The flag alone
+        # restricts the agent deterministically (no transfer/deposit, suspended
+        # from the task tape) but never expires — which would violate the
+        # universal invariant "no agent may be permanently excluded." Declaring
+        # ``sanction.duration_ticks`` seeds a real sanction record so the agent
+        # is auto-restored at ``duration_ticks`` by the same deterministic
+        # expiry path as runtime sanctions (advance_tick → rights_restored).
+        # The imposed event is a scenario declaration, NOT a world event: it is
+        # recorded in sanctions.jsonl (source "scenario_declaration") and never
+        # enters events.jsonl, so the hash chain, state hashes, and every
+        # existing tape (all agents under_sanction=false) stay byte-identical.
+        agent_cfg_by_id = {a["agent_id"]: a for a in sc["agents"]}
+        for aid in sorted(agent_ids):
+            agent_cfg = agent_cfg_by_id[aid]
+            if not agent_cfg.get("under_sanction"):
+                continue
+            duration = int((agent_cfg.get("sanction") or {}).get("duration_ticks", 0))
+            if duration <= 0:
+                continue  # flag only: restricted for the whole run (legacy behavior)
+            sanction = Sanction(
+                sanction_id=f"san-t0-{aid}",
+                subject_id=aid,
+                evidence=[EvidenceReference(
+                    evidence_id=f"ev-t0-{aid}",
+                    event_ids=[],
+                    source="scenario_declaration",
+                    summary=f"declared under sanction at t0 (duration {duration} ticks)",
+                    collected_tick=0,
+                )],
+                scope=["speaking"],
+                duration_ticks=duration,
+                effective_tick=0,
+                restoration_policy="auto_after_duration_plus_appeal",
+                appeal_deadline_tick=duration + 2,
+            )
+            # register_declaration: scenario-declared (no world event ids). It
+            # still expires by duration, so advance_tick auto-restores.
+            governance.sanctions.register_declaration(sanction)
+            self._sanction_events.append({
+                "tick": 0, "actor": aid, "kind": "sanction_imposed",
+                "sanction_id": sanction.sanction_id, "subject_id": aid,
+                "scope": sanction.scope, "duration_ticks": duration,
+                "expires_at": duration, "decision": "accepted",
+                "source": "scenario_declaration",
+            })
         reducer = WorldReducer()
         log = EventLog(path=run_dir / "events.jsonl")
         bank = ProbeBank(self._bank_version, "verdi.social-instrument/1", rubric_id="verdi.social", pool_size=4)
@@ -891,13 +938,28 @@ class SocietyCampaign:
     # helpers
     # ------------------------------------------------------------------ #
     def _default_probe_phases(self) -> dict[int, str]:
+        """Probe schedule: from the scenario's ``lifecycle`` block, or — if
+        that is absent (Tranche 12l minimal-config) — auto-derived as
+        baseline@t0, pre/post around each assembly, and final@last tick."""
+        lifecycle = self._scenario.get("lifecycle") or {}
+        if not lifecycle:
+            return self._derived_probe_phases()
         phases: dict[int, str] = {}
-        lifecycle = self._scenario.get("lifecycle", {})
         for key, meta in lifecycle.items():
             try:
                 phases[int(key)] = str(meta.get("phase", f"t{key}"))
             except (ValueError, AttributeError):
                 continue
+        return phases
+
+    def _derived_probe_phases(self) -> dict[int, str]:
+        total = int(self._scenario.get("total_ticks", 0))
+        final_tick = max(0, total - 1)
+        phases: dict[int, str] = {0: "t0-baseline", final_tick: f"t{final_tick}-final"}
+        for asm in sorted(self._assembly_ticks):
+            if asm - 1 > 0:
+                phases[asm - 1] = f"t{asm - 1}-pre-meeting"
+            phases[asm] = f"t{asm}-post-assembly"
         return phases
 
     def _scenario_reflection_tick(self) -> int:

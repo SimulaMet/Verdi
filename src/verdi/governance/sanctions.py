@@ -122,6 +122,30 @@ class SanctionEngine:
         )
         return record
 
+    def register_declaration(self, sanction: Sanction) -> ActiveSanction:
+        """Register a scenario-declared sanction (t0 pre-existing condition).
+
+        Unlike :meth:`impose`, this does not require event-based evidence —
+        the "evidence" is the scenario file itself. The sanction still
+        participates in the normal expiry lifecycle (advance_tick →
+        rights release), so the agent is auto-restored by duration.
+        """
+        if not sanction.evidence:
+            raise SanctionError(f"{sanction.sanction_id}: sanction requires evidence")
+        if sanction.sanction_id in self._active:
+            raise SanctionError(f"sanction already imposed: {sanction.sanction_id}")
+        expires_at = sanction.effective_tick + sanction.duration_ticks
+        record = ActiveSanction(sanction=sanction, expires_at=expires_at)
+        self._active[sanction.sanction_id] = record
+        self._history.append(sanction)
+        self.rights.revoke(
+            sanction.subject_id,
+            frozenset(sanction.scope),
+            from_tick=sanction.effective_tick,
+            until=expires_at,
+        )
+        return record
+
     def advance_tick(self, tick: int) -> list[str]:
         """Expire sanctions whose duration has elapsed; restore rights.
 

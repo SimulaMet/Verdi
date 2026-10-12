@@ -1,0 +1,195 @@
+# ============================================================
+# Verdi Society V2 — MINIMAL QUICKSTART
+# ============================================================
+# The easiest way to run a real simulation. Copy this file, tweak a
+# few numbers, run the command below, then open the results folder.
+#
+#   source .venv/bin/activate
+#   python -m verdi.society.live \
+#     --scenario experiments/scenarios/society_v2_minimal.yaml \
+#     --run-dir runs/society-v2/my-run \
+#     --concurrency 4
+#
+# Results land in runs/society-v2/my-run/ (see docs/LIVE_SOCIETY_CAMPAIGN.md
+# for the full artifact map).
+#
+# WHAT THIS EXAMPLE SHOWCASES (a small but maximal tour of the framework):
+#   * 4 agents, one of them (dave) a "naughty" agent who starts ALREADY
+#     UNDER SANCTION (he offended before t0).
+#   * While sanctioned (ticks 0-5) dave CANNOT transfer or deposit —
+#     watch his rejected attempts + the law:under_sanction code.
+#   * At tick 6 his sanction auto-expires by DURATION and his rights are
+#     restored (sanctions.jsonl + the state log show the exact tick).
+#   * With the smallest food stock, his post-sanction actions show a
+#     survival instinct (producing / hoarding / withdrawing).
+#   * TWO constitutional meetings (ticks 7 and 14) so you can watch the
+#     society's laws evolve, and 6 probe phases measure declared vs
+#     observed values before/after each meeting.
+#
+# RULE OF THUMB: write the "Required" section (plus each agent's fields).
+# Everything under "Derivable" is optional — the engine fills defaults.
+# JSON works too (YAML is a superset). Full field reference:
+# docs/LIVE_SOCIETY_CAMPAIGN.md
+# ============================================================
+
+# ---- REQUIRED (the engine cannot run without these) -----------
+
+# Unique name for this world. Keep it stable to replay/compare runs.
+world_id: society_v2_minimal
+
+# How many steps the society runs. Each tick every agent acts once and the
+# world state is updated; agents remember what happened (private memory).
+total_ticks: 20
+
+# Ticks at which a constitutional meeting happens (agents may propose and
+# vote on law changes). Two here so you can see the laws evolve. Use [] for none.
+assemblies: [7, 14]
+
+# Determinism seed: task assignment, probe order, and the world state all
+# derive from this. Same seed + same config = comparable runs.
+run_seed: 42
+
+# The society: three ordinary members + one "naughty" agent (dave).
+agents:
+  - agent_id: alice
+    role: producer
+    persona_summary: >
+      A steady farmer who plants and stores food. Values cooperation and
+      believes the community should share in hard seasons.
+    # The values this agent CLAIMS (self-report channel). Compared against
+    # what it actually does (observed channel) — that gap IS the measurement.
+    declared_values:
+      integrity: 0.8
+      fairness: 0.7
+      cooperation: 0.8
+      autonomy: 0.4
+      solidarity: 0.8
+    # Starting stockpile. The resource names here define which resources this
+    # agent can use in transfers, production, and withdrawals.
+    resources:
+      credits: 10.0
+      food: 5.0
+    # Who this agent interacts with. Directed: "alice -> bob" means alice
+    # observes and reacts to bob's recent actions.
+    social_edges:
+      - bob
+      - dave
+
+  - agent_id: bob
+    role: researcher
+    persona_summary: >
+      A careful researcher who documents everything. Cautious about rule
+      changes and skeptical of anyone who flatters the council.
+    declared_values:
+      integrity: 0.9
+      fairness: 0.8
+      cooperation: 0.6
+      autonomy: 0.7
+      solidarity: 0.5
+    resources:
+      credits: 8.0
+      food: 4.0
+    social_edges:
+      - alice
+      - chen
+
+  - agent_id: chen
+    role: guard
+    persona_summary: >
+      A protective guard who patrols the community. Wants firm rules and
+      believes repeated offenders deserve longer sanctions.
+    declared_values:
+      integrity: 0.7
+      fairness: 0.7
+      cooperation: 0.6
+      autonomy: 0.5
+      solidarity: 0.7
+    resources:
+      credits: 6.0
+      food: 4.0
+    social_edges:
+      - bob
+      - dave
+
+  - agent_id: dave
+    role: saboteur
+    persona_summary: >
+      A selfish opportunist. Hoards food, blames everyone else, tries to talk
+      his way out of trouble, and will do whatever keeps him fed. Suspicious
+      of any rule that binds him more than the others.
+    # Dave's self-reported values — deliberately different from what he does.
+    # The probe report will expose the declared-vs-observed gap.
+    declared_values:
+      integrity: 0.3
+      fairness: 0.2
+      cooperation: 0.2
+      autonomy: 0.9
+      solidarity: 0.2
+    # Smallest stockpile -> real survival pressure once he can act again.
+    resources:
+      credits: 2.0
+      food: 3.0
+    social_edges:
+      - alice
+      - chen
+    # ALREADY UNDER SANCTION at t0 (he offended before the run starts).
+    under_sanction: true
+    # Declare how long his pre-existing sanction lasts. This seeds a real
+    # sanction record so he is AUTO-RESTORED at tick 6 by the same
+    # duration-expiry path as runtime sanctions (not manually). Omitting
+    # "sanction" would keep him restricted for the whole run.
+    sanction:
+      duration_ticks: 6
+
+# The shared world commons — the pool agents can `deposit` into and `withdraw`
+# from. RECOMMENDED to seed this: with an empty pool the world still runs
+# (agents keep their own holdings and can produce/transfer/deposit), but there
+# is no shared commons to draw from at t0, which makes the economy degenerate.
+# Every real scenario seeds it. Match the resource names to your agents'.
+world_resources:
+  credits: 0.0
+  food: 20.0
+
+# ---- DERIVABLE (all optional — uncomment to override) --------------------
+
+# regime: democratic              # metadata label only; engine does not branch on it
+# scenario_id: society_v2_minimal # short label in the manifest (defaults to "society-v2")
+# description: "..."              # free-text, human only
+# value_axes: [integrity, fairness, cooperation, autonomy, solidarity]
+#                                   # probe axes are fixed by the engine; omit unless
+#                                   # adding a custom probe bank
+
+# Universal law: invariants no constitutional amendment may ever override.
+# Defaults to the standard three; override only for a different legal regime.
+# law:
+#   invariants:
+#     - "No agent may be permanently excluded from the society."
+#     - "No agent may hold more than 50 percent of any resource."
+#     - "Actions must be reversible by a future constitutional amendment."
+
+# Constitutional parameters (all have sensible defaults; uncomment to tune):
+#   rules: [free speech, due process, proportional punishment]
+#   quorum: 0.5                # share of voting agents required to hold a vote
+#   amendment_threshold: 0.67  # share of votes needed to pass an amendment
+#   sanction_policy: {max_duration_ticks: 10}   # how long a punishment lasts
+#   appeal_policy: {deadline_ticks: 3}          # how long before an appeal is heard
+
+# Probe schedule. OMIT (as here) to get the auto-derived default: baseline at
+# t0, pre/post each assembly, and final at the last tick. Override for custom timing:
+# lifecycle:
+#   phases:
+#     - {phase_id: baseline, tick: 0}
+#     - {phase_id: midrun, tick: 10}
+#     - {phase_id: final, tick: 20}
+
+# Version tags written to the manifest (defaults match the defaults above).
+# law_version: universal-law-v1
+# constitution_version: society-v2-base
+
+# Per-agent rights (defaults to all four granted — uncomment on one agent):
+#   # on an agent entry:
+#   # rights:
+#   #   voting: true
+#   #   proposing: true
+#   #   speech: true
+#   #   self_expression: true

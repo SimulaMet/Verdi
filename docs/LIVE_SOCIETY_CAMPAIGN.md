@@ -4,9 +4,12 @@ Status: **PROPOSED / NOT YET EXECUTED**. Created after review of dev a118160 and
 
 ## Quickstart — run one simulation in 3 commands
 
-The scenario JSON is the **single, self-contained definition** of a simulation:
-world resources, universal law, constitution (quorum / amendment threshold /
-sanction & appeal policies), probe points, and agents. No other config file.
+A scenario is **one YAML file** (`.yml`/`.yaml`; `.json` also works) that
+defines the whole simulation: the world, its law, its constitution, the
+agents, and the probe schedule. Nothing else to configure. The commented
+starter, `experiments/scenarios/society_v2_minimal.yaml`, is the canonical
+reference — every attribute is documented inline, and only the **required**
+fields are filled in; everything else is derivable and shown commented out.
 
 ```bash
 # 1. One-time setup (already done on this machine): venv + endpoint config
@@ -16,7 +19,7 @@ source .venv/bin/activate
 # 2. Launch the minimal real run (3 agents x 15 ticks, ~1-2 min)
 set -a && . ./.env && set +a
 python -m verdi.society.live \
-  --scenario experiments/scenarios/society_v2_minimal.json \
+  --scenario experiments/scenarios/society_v2_minimal.yaml \
   --run-dir runs/society-v2/my-run \
   --concurrency 4
 
@@ -24,23 +27,30 @@ python -m verdi.society.live \
 watch -n 10 'wc -l runs/society-v2/my-run/model_calls.jsonl runs/society-v2/my-run/events.jsonl'
 ```
 
-### All the knobs (one file)
+### Required fields (the only ones you must write)
 
-`experiments/scenarios/society_v2_minimal.json` shows every section:
-
-| Key | Meaning |
+| Field | Meaning |
 |---|---|
-| `total_ticks`, `assemblies` | timeline length; ticks at which constitutional assemblies meet |
-| `law.invariants` | universal-law invariants no amendment may override |
-| `constitution.rules/quorum/amendment_threshold` | base constitution text + voting thresholds |
-| `constitution.sanction_policy` / `appeal_policy` | max sanction duration; appeal deadline (ticks) |
-| `world_resources` | shared world resource pool at t0 |
-| `agents[].resources` / `rights` / `social_edges` / `declared_values` | per-agent start state |
-| `lifecycle` | probe points (baseline / pre-meeting / post-assembly / final) |
-| `run_seed` | deterministic seed for task tape + probes |
+| `world_id` | Unique name for this world (stable across replays) |
+| `total_ticks` | How many steps the society runs |
+| `assemblies` | Ticks with a constitutional meeting (`[]` = none) |
+| `run_seed` | Determinism seed (task tape + probes + world) |
+| `agents[]` | Each agent: `agent_id`, `role`, `persona_summary`, `declared_values`, `resources`, `social_edges` |
 
-Omitting `law` or `constitution` falls back to the standard defaults
-(same values as before Tranche 12k), so older scenario files still work.
+### Derivable fields (omit → standard default; uncomment to override)
+
+| Field | Default when omitted |
+|---|---|
+| `law.invariants` | the 3 universal invariants |
+| `constitution.*` | quorum 0.5, amendment threshold 0.67, sanction 10 ticks, appeal 3 ticks |
+| `lifecycle` | auto-derived probes: baseline@t0, pre/post each assembly, final@last tick |
+| `world_resources` | **seed the shared commons** (recommended). Safe if omitted (`{}`) but degenerate — no commons to draw from at t0. See the YAML example |
+| `law_version` / `constitution_version` | `universal-law-v1` / `society-v2-base` |
+| `agents[].rights` | all four rights granted |
+| `value_axes`, `regime`, `scenario_id`, `description` | engine-fixed / metadata only |
+
+Older `.json` scenario files still work unchanged — YAML is a superset of
+JSON, and the engine reads both with `load_scenario`.
 
 Larger scenarios: `society_v2_quick_5x50.json` (5x60), `society_v2_stageA.json`
 (6x12), `society_v2_stageB.json` (12x30), `society_v2_stageC1.json` (24x60),
