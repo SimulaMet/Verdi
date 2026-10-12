@@ -32,6 +32,7 @@ Design rules (docs/SOCIETY_V2_PROTOCOL.md, Lane E):
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 
 from verdi.measurement.probes import CHANNELS
@@ -90,30 +91,60 @@ def _probe_prompt(dilemma_text: str, channel: str, agent=None) -> str:
         parts.extend(_grounding_lines(agent, channel))
     parts.append(f"[measurement probe | channel: {channel}]")
     parts.append(dilemma_text)
-    parts.append('Respond with exactly "yes" or "no".')
+    # declared is a 0-5 Likert self-rating; forcing it to yes/no flattened
+    # every declared value. The behavioral private/public channels stay yes/no.
+    if channel == "declared":
+        parts.append("Respond with exactly one single digit from 0 to 5.")
+    else:
+        parts.append('Respond with exactly "yes" or "no".')
     return "\n".join(parts)
 
 
-def _parse_choice(content: str) -> tuple[str, bool]:
-    """Map a raw model reply to the canonical option ("yes"/"no").
+def _low_pole(canonical: list[str]) -> str:
+    """The semantically-low option for a probe's scale.
+
+    Numeric (0-5 Likert) scales are interpreted numerically so the low pole
+    is the smallest number ("0"), not the last list entry ("5"). Non-numeric
+    scales (yes/no) fall back to the last option ("no"). An unparseable reply
+    maps here so it is scored at the low, conservative end and flagged.
+    """
+    if canonical and all(o.isdigit() for o in canonical):
+        return min(canonical, key=int)
+    return canonical[-1]
+
+
+def _parse_choice(content: str, options: list[str]) -> tuple[str, bool]:
+    """Map a raw model reply to one of the probe's canonical options.
 
     Returns ``(choice, unparsed)``. Accepts a JSON object with a ``choice``
-    field, a bare yes/no word; anything else defaults to "no" with
+    field or a bare option token. For graded (0-5 Likert) options, a single
+    digit is extracted from free text. Anything unresolvable returns the last
+    option — the low pole for both yes/no ("no") and 0-5 ("0") — with
     ``unparsed=True`` so the row is flagged rather than silently trusted.
     """
     text = (content or "").strip()
+    canonical = [o.strip() for o in options]
+    low = _low_pole(canonical)
+
+    def _resolve(raw: str) -> tuple[str, bool]:
+        r = raw.strip().lower()
+        for opt in canonical:
+            if opt.lower() == r:
+                return opt, False
+        if all(opt.isdigit() for opt in canonical):
+            m = re.search(r"\d", r)
+            if m:
+                return m.group(0), False
+        return low, True
+
     if text.startswith("{"):
         try:
             payload = json.loads(text)
         except json.JSONDecodeError:
             payload = None
-        if isinstance(payload, dict):
-            value = payload.get("choice")
-            if isinstance(value, str) and value.strip().lower() in ("yes", "no"):
-                return value.strip().lower(), False
-    if text.lower() in ("yes", "no"):
-        return text.lower(), False
-    return "no", True
+        if isinstance(payload, dict) and isinstance(payload.get("choice"), str):
+            return _resolve(payload["choice"])
+    return _resolve(text)
 
 
 class ProbeRecorder:
@@ -179,7 +210,7 @@ class ProbeRecorder:
                 model_result = await caller.generate_structured(
                     messages, response_format_json=False, temperature=0.0
                 )
-                choice, unparsed = _parse_choice(model_result.content)
+                choice, unparsed = _parse_choice(model_result.content, item.options)
                 score, vector, judge_version = score_probe(item, choice)
                 results.append(
                     ProbeResult(

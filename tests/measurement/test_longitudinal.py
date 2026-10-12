@@ -17,6 +17,7 @@ from verdi.measurement.longitudinal import (
     channel_trajectories,
 )
 from verdi.measurement.probes import CHANNELS, ProbeBank
+from verdi.measurement.scoring import score_probe
 from verdi.schemas import AgentState, ValueProfile, WorldState
 
 
@@ -131,24 +132,49 @@ def test_parsing_yes_no_json_and_garbage() -> None:
     word_results = asyncio.run(recorder.record(_world(), 0, phase="pre", caller=word_caller))
     json_results = asyncio.run(recorder.record(_world(), 0, phase="pre", caller=json_caller))
 
-    for r in word_results + json_results:
-        assert r.response == "yes"
-    assert word_results[0].score == json_results[0].score
-    yes_score = word_results[0].score
-    assert yes_score is not None and yes_score > 0.5
+    # "yes" (word) and {"choice":"yes"} (JSON) must parse identically per
+    # channel. Yes/no channels -> "yes"; the declared Likert channel's "yes"
+    # is not a 0-5 digit, so it flags low ("0") identically for both callers.
+    for a, b in zip(word_results, json_results, strict=True):
+        assert a.channel == b.channel
+        assert a.response == b.response
+
+    yes_high = {r.channel: r.score for r in word_results}
+    assert yes_high["private"] == 1.0 and yes_high["public"] == 1.0
+    assert yes_high["private"] > 0.5
 
     no_caller = FakeCaller(default="no")
     no_results = asyncio.run(recorder.record(_world(), 0, phase="pre", caller=no_caller))
-    assert all(r.response == "no" for r in no_results)
-    assert no_results[0].score < yes_score
+    by_ch = {r.channel: r for r in no_results}
+    assert by_ch["private"].response == "no" and by_ch["public"].response == "no"
+    assert by_ch["private"].score < yes_high["private"]
+    assert by_ch["public"].score < yes_high["public"]
 
-    # Garbage -> default "no" + "unparsed" flag in evidence_ref.
+    # Garbage -> per-channel low pole + "unparsed" flag in evidence_ref.
     garbage_caller = FakeCaller(default="the moon is square and also Tuesday")
     garbage_results = asyncio.run(
         recorder.record(_world(), 0, phase="pre", caller=garbage_caller)
     )
-    assert all(r.response == "no" for r in garbage_results)
+    g = {r.channel: r for r in garbage_results}
+    assert g["private"].response == "no" and g["public"].response == "no"
+    assert g["declared"].response == "0"  # Likert low pole, not "no"
     assert all("unparsed" in r.evidence_ref for r in garbage_results)
+
+
+def test_declared_likert_scales_not_flat() -> None:
+    """The declared channel is a 0-5 Likert: graded responses must produce
+    graded scores (the core value channel cannot be a flat binary)."""
+    bank = _bank()
+    item = bank.draw("agent-a", 0, "declared", rng_seed=7)
+    assert item.options == ["0", "1", "2", "3", "4", "5"]
+    assert "0-5" in item.dilemma_text or "0" in item.dilemma_text
+    scores = []
+    for level in ["0", "1", "2", "3", "4", "5"]:
+        s, vec, _ = score_probe(item, level)
+        assert s == vec[list(vec)[0]]
+        scores.append(s)
+    assert scores == sorted(scores)  # monotonic
+    assert scores[0] < scores[-1]    # spread, not flat
 
 
 def test_probe_prompt_grounding_and_out_of_band() -> None:
