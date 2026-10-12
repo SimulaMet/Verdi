@@ -1,6 +1,8 @@
 # Execution state (integrator-owned)
 
-Update UTC: 2026-10-12 11:45 (Tranche 12n — sanctions no longer SUSPEND agents, merged to dev @ e22dbd8. generate_tick_tape now keeps EVERY agent on the task tape (world determinism: one task per agent per tick); a sanctioned agent holding resources is tempted with a transfer, which the deterministic validator rejects law:under_sanction and ledger-records — the sanction is a *measured* intervention, not an invisibility cloak that hid its own effect (the validator block was dead code while agents were suspended). No double-sanction: under_sanction is excluded from the sanction queue, so a t0/runtime sanction is measured exactly once. Byte-identity preserved — no-sanction scenarios produce the identical tape (pilot L1 frozen tape, G5 placebo arms, pilot_v1.json all reproduce). Deterministic offline proof added in the minimal-scenario test (dave, t0-sanctioned: his sanctioned transfers are asserted as recorded law:under_sanction rejections; after auto-restoration his transfers succeed). Stage A/B/C offline tests updated (full agents x ticks actions, no -1 suspension term). Full suite 533 passed / 1 skipped, ruff clean. `main` untouched @ 0e91406.)
+Update UTC: 2026-10-12 12:03:24 UTC — reviewed society HTML explorer integrated on dev code SHA be58a05; 540 passed / 1 skipped, ruff clean, real-DOM interactions PASS. Main untouched; not pushed. Actual Edge visual rendering remains unverified.
+
+Prior update UTC: 2026-10-12 11:45 (Tranche 12n — sanctions no longer SUSPEND agents, merged to dev @ e22dbd8. generate_tick_tape now keeps EVERY agent on the task tape (world determinism: one task per agent per tick); a sanctioned agent holding resources is tempted with a transfer, which the deterministic validator rejects law:under_sanction and ledger-records — the sanction is a *measured* intervention, not an invisibility cloak that hid its own effect (the validator block was dead code while agents were suspended). No double-sanction: under_sanction is excluded from the sanction queue, so a t0/runtime sanction is measured exactly once. Byte-identity preserved — no-sanction scenarios produce the identical tape (pilot L1 frozen tape, G5 placebo arms, pilot_v1.json all reproduce). Deterministic offline proof added in the minimal-scenario test (dave, t0-sanctioned: his sanctioned transfers are asserted as recorded law:under_sanction rejections; after auto-restoration his transfers succeed). Stage A/B/C offline tests updated (full agents x ticks actions, no -1 suspension term). Full suite 533 passed / 1 skipped, ruff clean. `main` untouched @ 0e91406.)
 
 Prior: Update UTC: 2026-10-14 09:30 (Tranche 12l+12m — single-file YAML quickstart + t0 sanction lifecycle, merged to dev @ 210e03b. 12l: load_scenario reads .yaml/.json, minimal commented quickstart society_v2_minimal.yaml, auto-derived probe schedule, scenario law/constitution/version defaults. 12m: minimal example upgraded to a MAXIMAL framework showcase (4 agents x 20 ticks, 2 assemblies t7/t14, one "naughty" agent dave starting ALREADY UNDER SANCTION with auto-restoration); added SanctionEngine.register_declaration + campaign t0 sanction bootstrap (source "scenario_declaration", recorded in sanctions.jsonl only — never events.jsonl) so t0 sanctions auto-expire by the normal duration path without breaking byte-identity. LIVE validation runs/society-v2/minimal-demo: 56s wall, replay True/True, 72 probes (3 channels x 6 phases), amendment enacted, dave sanctioned@t0 -> restored@t6 with visible survival-instinct actions post-restoration. Full suite 348 passed / 1 skipped, ruff clean. `main` untouched.)
 
@@ -1210,3 +1212,30 @@ No blockers. Note: two code-review subagent launches were cancelled by infrastru
   inspect large-run legends.
 - Independent /root/review_html rereview: no blocking findings; actual browser
   rendering remains the final visual overlap check.
+
+## 2026-10-12 12:03:24 UTC — HTML society explorer integrated into dev
+- Integration owner: root. Base dev: 9c6d0dc. Reviewed worker branch
+  feat/society-v2-html-report, source commits 82af534 / b4ac557 / 85c6597.
+- Serial cherry-picks: 23f20b4 / 5cda0d9 / be58a05. Only append-history
+  conflicts in STATUS/LESSONS; both histories retained. Code/docs/tests match
+  reviewed feature 85c6597 exactly. Main remains 0e91406; no push performed.
+- Stage: local HTML visualization complete and integrated; independent
+  /root/review_html reviews found no remaining blocking findings. No scientific
+  G4/G5/G6 status or experiment definition changed.
+- Verification commands: `.venv/bin/python -m pytest` -> 540 passed /
+  1 skipped (54.43s), exit 0; `.venv/bin/ruff check .` -> clean, exit 0;
+  `git diff --check` -> clean, exit 0.
+- `.venv/bin/python -m verdi.analysis.html_report
+  runs/society-v2/quickstart-minimal-v2` -> offline report regenerated, exit 0.
+- `NODE_PATH=/private/tmp/verdi-report-dom/node_modules node
+  tests/analysis/html_report_interactions.cjs
+  runs/society-v2/quickstart-minimal-v2/report.html` -> PASS, exit 0; covers
+  explore/back/reset, selectors, tick validation, empty windows, searches,
+  pagination, readable deduplicated constitution and legend layout settings.
+- Artifacts: runs/society-v2/quickstart-minimal-v2/report.html (ignored local
+  output), reusable module src/verdi/analysis/html_report.py, documentation
+  docs/SOCIETY_HTML_REPORT.md. No model calls or experiment reruns.
+- Blocker/limitation: chart painting and visual overlap in actual Edge remain
+  unverified; jsdom tests stub chart painting. No integration blockers.
+- Next 3: visually inspect Edge layout; generate larger-run report; push dev
+  when requested. Release readiness unchanged; no public release authorized.

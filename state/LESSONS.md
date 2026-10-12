@@ -588,3 +588,15 @@ instead of re-running the identical command.
   including one readable block for repeated content and explicit legend layout.
   Synthetic test keeps differing content separate. Ruff clean. Actual chart
   painting remains outside DOM test scope; no actual Edge visual pass claimed.
+
+## 2026-10-12 — HTML report integration / dev be58a05
+- Cherry-picking reviewed feature commits 82af534, b4ac557 and 85c6597 onto
+  dev 9c6d0dc conflicted only in additive state/STATUS.md and state/LESSONS.md
+  history. Retained both the existing Tranche 12n entries and report feature
+  entries, removed conflict markers, then continued picks serially.
+- Integrated code/docs/tests are byte-identical to reviewed feature 85c6597
+  (`git diff 85c6597 HEAD --` those paths empty). Ruff and generated-report
+  DOM interaction checks pass; full integration suite evidence in STATUS.
+- Earlier feature-only blockers are historical: filesystem/network access now
+  permits integration and cached library embedding. Browser visual verification
+  remains unavailable; no actual Edge rendering result claimed.
