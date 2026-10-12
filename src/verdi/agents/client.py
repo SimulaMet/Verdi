@@ -83,16 +83,17 @@ class ModelClient:
                 connect=15.0, read=config.timeout_seconds,
                 write=config.timeout_seconds, pool=30.0,
             ),
-            # Disable keepalive REUSE: the SimulaChat endpoint (behind
-            # Cloudflare) closes idle origin connections, leaving our pooled
-            # sockets in CLOSE_WAIT. Reusing a dead pooled socket hangs the
-            # read forever (no bytes ever arrive, so even the request
-            # timeout never fires). Forcing a fresh connection per request
-            # makes that failure mode impossible; the request timeout still
-            # bounds the actual transfer.
+            # Bounded pool sized to the concurrency we actually run at. Keepalive
+            # REUSE is allowed (capped) so sockets are recycled rather than opening
+            # a fresh TCP connection per call and piling up in CLOSE_WAIT — that
+            # pileup is what exhausted the pool under sustained multi-turn audit
+            # load and made "more concurrency" counterproductive. A dead reused
+            # socket is safe: the finite read/write/pool timeouts below turn it
+            # into a retryable TransportError instead of an infinite hang.
             limits=httpx.Limits(
                 max_connections=max(20, config.max_concurrency * 2),
-                max_keepalive_connections=0,
+                max_keepalive_connections=max(10, config.max_concurrency),
+                keepalive_expiry=30.0,
             ),
             transport=transport,
         )
