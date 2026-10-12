@@ -485,3 +485,25 @@ prompt grows linearly with tick, audit EVERY prompt section per tick (signals, h
 before attributing it to one. Second lesson: a daemon-thread watchdog with a short stall window can fire a
 REAL os._exit(3) after the test's monkeypatch reverts, killing the pytest process mid-suite (truncated
 output, exit 3, "random" failures) — size the window or join the thread.
+
+## 2026-10-14 — Reconstructability: event tick != sim tick; declaration evidence must be separable
+1. `events.jsonl` `tick` is the WORLD-STEP counter (increments once per ledgered
+action, pilot convention), NOT the simulation tick. The true per-sim-tick
+timeline is `resources.jsonl` (one line per advanced tick). Always cross-check
+both before interpreting an artifact; the mismatch looked like a bug but was a
+misread (20 sim ticks -> 79 world-steps in the 4-agent demo).
+2. `SanctionEngine.impose` correctly REFUSES event-less evidence (you cannot
+sanction based on nothing). A scenario-DECLARED t0 sanction (a pre-existing
+condition, not a committed event) needs its own `register_declaration` path that
+skips the event_ids requirement but still participates in duration expiry. Keep
+that declaration in `sanctions.jsonl` (source "scenario_declaration"), never in
+`events.jsonl`, or you break the hash chain + every frozen tape.
+3. `AgentState` is `extra="forbid"`: a scenario agent entry can NOT carry
+campaign-only metadata (e.g. `sanction: {duration_ticks}`). Strip such keys in
+`build_t0_state` before building WorldState; the campaign reads them from the raw
+scenario dict.
+4. Repeated-identical-command loop (this session): I re-ran the same
+grep/python probe expecting a different result. A command's output is
+deterministic for the same inputs — if it returned X, re-running it returns X.
+Change the probe (different field name, different file, read the raw schema)
+instead of re-running the identical command.

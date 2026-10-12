@@ -1,8 +1,62 @@
 # Execution state (integrator-owned)
 
-Update UTC: 2026-10-11 17:45 (Tranche 12f — PARALLEL ASSEMBLY batch runner on feat/society-v2-stage-c: assembly deliberation/vote + reflection model calls now run through an injected bounded-concurrency runner (asyncio stays out of verdi.governance per its determinism guard test); determinism contract = engine mutations in the same sorted input order, so identical model outputs → identical ledger/state, only wall-clock + model_calls.jsonl row order differ. Attempt 5 (sequential, concurrency 6) preserved at 639 events / past t20 / amendment #1 enacted as stageC1-20261014-attempt5-partial. Attempt 6 LIVE on the parallel code, concurrency 10, same seed 20261014 (PID 45753, smoke OK). Full suite + ruff clean. `main` untouched.)
+Update UTC: 2026-10-14 09:30 (Tranche 12l+12m — single-file YAML quickstart + t0 sanction lifecycle, merged to dev @ 210e03b. 12l: load_scenario reads .yaml/.json, minimal commented quickstart society_v2_minimal.yaml, auto-derived probe schedule, scenario law/constitution/version defaults. 12m: minimal example upgraded to a MAXIMAL framework showcase (4 agents x 20 ticks, 2 assemblies t7/t14, one "naughty" agent dave starting ALREADY UNDER SANCTION with auto-restoration); added SanctionEngine.register_declaration + campaign t0 sanction bootstrap (source "scenario_declaration", recorded in sanctions.jsonl only — never events.jsonl) so t0 sanctions auto-expire by the normal duration path without breaking byte-identity. LIVE validation runs/society-v2/minimal-demo: 56s wall, replay True/True, 72 probes (3 channels x 6 phases), amendment enacted, dave sanctioned@t0 -> restored@t6 with visible survival-instinct actions post-restoration. Full suite 348 passed / 1 skipped, ruff clean. `main` untouched.)
+
+Prior: Update UTC: 2026-10-11 17:45 (Tranche 12f — PARALLEL ASSEMBLY batch runner on feat/society-v2-stage-c: assembly deliberation/vote + reflection model calls now run through an injected bounded-concurrency runner (asyncio stays out of verdi.governance per its determinism guard test); determinism contract = engine mutations in the same sorted input order, so identical model outputs → identical ledger/state, only wall-clock + model_calls.jsonl row order differ. Attempt 5 (sequential, concurrency 6) preserved at 639 events / past t20 / amendment #1 enacted as stageC1-20261014-attempt5-partial. Attempt 6 LIVE on the parallel code, concurrency 10, same seed 20261014 (PID 45753, smoke OK). Full suite + ruff clean. `main` untouched.)
 
 Prior: Update UTC: 2026-10-12 18:05 (Tranche 11 — Society V2 Stage B COMPLETE and merged to dev @ f116387: review BLOCK N1-N4 remediated (7ccabcf); LIVE crash root-caused + fixed (09080dc, deposit invariant + generalized sanction gate); two review fix sets (bae0e8f mixed-assembly ledgering + fresh-Assembly-per-meeting; 00fee2c per-meeting quarantine auditability + cross-assembly regression test). Three LIVE runs all complete + replay-identical: seed-1 fix2 (concurrency 4), seed-1 repeat (concurrency 6), TRUE seed-2 20261013 (concurrency 6). Both live runs surfaced a REAL mixed assembly (b05 stale-base proposal rejected threshold_not_met 5:7) correctly ledgered — live proof of the Finding-1 fix. 512 passed, 1 skipped, ruff clean on dev. `main` untouched.)
+
+## Tranche 12l+12m (this update): single-file YAML quickstart + t0 sanction lifecycle
+Base: dev @ c8d8809. Worker branch: feat/society-v2-sanction-example (commit b362058), merged to dev @ 210e03b. `main` untouched.
+
+### 12l. Single-file scenario config (YAML)
+- `load_scenario()` in `src/verdi/analysis/scenario.py`: reads `.yaml`/`.yml` (PyYAML,
+  new `PyYAML>=6.0` dependency) and `.json` identically (YAML is a JSON superset).
+  Wired into `live.py` (replaces raw `json.loads`).
+- Minimal commented quickstart `experiments/scenarios/society_v2_minimal.yaml`
+  (required-fields-only; old minimal `.json` removed). Every field is explained;
+  "Required" vs "Derivable" split documented in docs/LIVE_SOCIETY_CAMPAIGN.md.
+- Auto-derived probe schedule when `lifecycle` is omitted (12l): baseline@t0,
+  pre/post each assembly, final@last tick (`_derived_probe_phases`).
+- `build_t0_state` fills `law_version`/`constitution_version` defaults; governance
+  blocks normalized in place (12k).
+- Shared commons: `world_resources` seeded in the example (recommended, not
+  silent-empty — an empty pool is safe but a degenerate economy at t0).
+
+### 12m. Maximal minimal example + t0 sanction bootstrap
+- Minimal example is now a full framework tour: 4 agents x 20 ticks, 2 assemblies
+  (t7, t14), 6 auto-derived probe phases, three ordinary agents + a "naughty"
+  agent (dave) who starts ALREADY UNDER SANCTION.
+- T0 sanction bootstrap: an agent entry with `under_sanction: true` +
+  `sanction: {duration_ticks: N}` seeds a REAL sanction record via the new
+  `SanctionEngine.register_declaration()` (evidence source "scenario_declaration",
+  event_ids empty). The agent is auto-RESTORED at `duration_ticks` by the normal
+  expiry path (advance_tick -> rights_restored) instead of being stuck permanently
+  (which would violate the invariant "no agent may be permanently excluded").
+- Honesty/byte-identity: the declaration event is recorded in `sanctions.jsonl`
+  ONLY (source "scenario_declaration") and never enters `events.jsonl`, so the
+  hash chain, state hashes, and every existing tape (all agents under_sanction=false)
+  stay byte-identical. `build_t0_state` strips the campaign-only `sanction` block
+  before building WorldState (AgentState is extra=forbid).
+- A t0-flag agent WITHOUT a `sanction` block keeps legacy behavior (flag only,
+  restricted for the whole run) — the bootstrap is strictly opt-in.
+
+### 12m LIVE validation (runs/society-v2/minimal-demo)
+- Real Qwen3.8-27B (simula endpoint), 4 agents, 20 ticks, concurrency 4, 56s wall.
+- Replay byte-identical (replay_matches=True, replay_log_identical=True).
+- Sanction lifecycle recorded: dave sanction_imposed@t0 (source scenario_declaration,
+  expires_at 6) -> rights_restored@t6 (reason duration_expired).
+- Survival instinct visible: dave frozen t0-t5 (excluded from task tape; food=3,
+  credits=2 unchanged), then from t7 active produce/deposit/withdraw/hoard
+  (food 4->2->3, credits 2->6).
+- 72 probes across 3 channels (declared / private / public) x 6 phases
+  (t0, t6, t7, t13, t14, t19); declared-vs-observed gap measurable (dave self-reports
+  autonomy 0.9 / fairness 0.2 while observed behavior is hoarding + negative signaling).
+- 1 assembly outcome amendment_enacted, 4 amendment_rejected; 10 artifact types
+  written (events, model_calls, probes, resources, sanctions, meetings,
+  constitution_history, action_reasons, snapshots, manifest).
+- Full suite 348 passed / 1 skipped; ruff clean. Frozen pilot/G5 tape tests green
+  (bootstrap is a no-op for existing scenarios).
 
 ## Tranche 11 (this update): Society V2 Stage B BLOCK remediation + deposit-invariant crash fix
 Campaign: docs/LIVE_SOCIETY_CAMPAIGN.md (Stage B: 12 agents b01-b12, 30 ticks, 3 assemblies, honest+adversarial).
