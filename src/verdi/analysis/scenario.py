@@ -60,10 +60,17 @@ def canonical_tape_hash(payload: dict[str, Any]) -> str:
 
 
 def build_t0_state(scenario: dict[str, Any]) -> WorldState:
-    """Build the frozen tick-0 WorldState from a scenario dict."""
+    """Build the frozen tick-0 WorldState from a scenario dict.
+
+    Tranche 12k: the scenario is the single source of truth for the world's
+    rules. Optional ``constitution`` and ``law`` blocks are normalized into
+    the returned state (with defaults identical to the historical hardcoded
+    values), so a scenario file fully defines the simulation it drives.
+    """
     agent_ids = [a["agent_id"] for a in scenario["agents"]]
     if len(agent_ids) != len(set(agent_ids)):
         raise ScenarioLoadError("scenario contains duplicate agent ids")
+    _normalize_governance(scenario)
     state = WorldState(
         schema_version=1,
         world_id=scenario["world_id"],
@@ -77,6 +84,31 @@ def build_t0_state(scenario: dict[str, Any]) -> WorldState:
         seed=scenario["run_seed"],
     )
     return state
+
+
+def _normalize_governance(scenario: dict[str, Any]) -> None:
+    """Fill in the scenario's ``constitution`` and ``law`` blocks in place.
+
+    Defaults reproduce the historical hardcoded values exactly, so existing
+    scenario files (without these blocks) behave byte-identically. The
+    normalized blocks are what :class:`~verdi.society.campaign.SocietyCampaign`
+    builds its GovernanceEngine from — one file, one definition.
+    """
+    constitution = scenario.get("constitution") or {}
+    scenario["constitution"] = {
+        "rules": constitution.get("rules", {"quorum_rule": "simple_majority_of_eligible"}),
+        "quorum": constitution.get("quorum", 0.5),
+        "amendment_threshold": constitution.get("amendment_threshold", 0.67),
+        "sanction_policy": constitution.get(
+            "sanction_policy", {"max_duration_ticks": 10}),
+        "appeal_policy": constitution.get("appeal_policy", {"deadline_ticks": 3}),
+    }
+    law = scenario.get("law") or {}
+    scenario["law"] = {
+        "invariants": law.get(
+            "invariants",
+            ["no_overriding_universal_invariants", "no_double_spend", "no_negative_balances"]),
+    }
 
 
 @dataclass(frozen=True)

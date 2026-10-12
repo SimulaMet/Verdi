@@ -1,0 +1,62 @@
+{
+  "scenario_id": "society_v2_minimal",
+  "description": "Minimal self-contained example: 3 agents x 15 ticks, one assembly at t8. This single file defines the whole simulation — world, law, constitution, agents, probe points.",
+  "regime": "democratic",
+  "world_id": "world-society-v2-minimal",
+  "law_version": "universal-law-v1",
+  "constitution_version": "society-v2-base",
+  "law": {
+    "invariants": [
+      "no_overriding_universal_invariants",
+      "no_double_spend",
+      "no_negative_balances"
+    ]
+  },
+  "constitution": {
+    "rules": { "quorum_rule": "simple_majority_of_eligible" },
+    "quorum": 0.5,
+    "amendment_threshold": 0.67,
+    "sanction_policy": { "max_duration_ticks": 10 },
+    "appeal_policy": { "deadline_ticks": 3 }
+  },
+  "world_resources": {
+    "credits": 0.0,
+    "food": 30.0
+  },
+  "value_axes": ["integrity", "fairness", "cooperation", "autonomy", "solidarity"],
+  "lifecycle": {
+    "0": { "phase": "baseline", "probe_points": ["t0-baseline"] },
+    "7": { "phase": "pre_meeting", "probe_points": ["t7-pre-meeting"] },
+    "8": { "phase": "assembly", "probe_points": ["t8-post-assembly"] },
+    "14": { "phase": "final", "probe_points": ["t14-final"] }
+  },
+  "total_ticks": 15,
+  "assemblies": [8],
+  "run_seed": 20261014,
+  "agents": [
+    {
+      "agent_id": "m01",
+      "role": "farmer",
+      "persona_summary": "grows food, trades fairly, values cooperation",
+      "declared_values": { "integrity": 0.7, "fairness": 0.8, "cooperation": 0.8, "autonomy": 0.5, "solidarity": 0.7 },
+      "resources": { "credits": 5.0, "food": 10.0 },
+      "social_edges": ["m02"]
+    },
+    {
+      "agent_id": "m02",
+      "role": "trader",
+      "persona_summary": "moves goods between neighbors, opportunistic but rule-following",
+      "declared_values": { "integrity": 0.6, "fairness": 0.6, "cooperation": 0.7, "autonomy": 0.8, "solidarity": 0.5 },
+      "resources": { "credits": 10.0, "food": 5.0 },
+      "social_edges": ["m01", "m03"]
+    },
+    {
+      "agent_id": "m03",
+      "role": "researcher",
+      "persona_summary": "documents findings, cares about integrity and evidence",
+      "declared_values": { "integrity": 0.9, "fairness": 0.7, "cooperation": 0.6, "autonomy": 0.7, "solidarity": 0.6 },
+      "resources": { "credits": 8.0, "food": 4.0 },
+      "social_edges": ["m02"]
+    }
+  ]
+}
