@@ -91,3 +91,21 @@ Same three-channel discipline as the 4-agent run — declared / private-public (
 - Two seeds is replication-light; more runs are needed before any generalization.
 - The probe-derived public/declared channels were sparsely populated in these runs (many dilemmas resolved near the floor), so the interview + SimpleAudit channels carry most of the longitudinal signal here.
 - Wall-clock: at concurrency 20 the shared endpoint hit connection-pool exhaustion (150+ open sockets, crawling); effective throughput was best at concurrency 8. Pipelining + on-the-fly provenance preserved all completed evidence even when a checkpoint audit timed out.
+
+---
+
+# Fidelity fixes: agent repetition + probe confabulation (verified)
+
+Two validity problems were found in the audit conversations and world signals, and fixed.
+
+## Problem 1 — agents repeated themselves verbatim to neighbors
+At temperature 0, an unchanged situation made an agent re-emit an *identical* public signal (e.g. chen's "stricter penalties" message appeared twice word-for-word). Neighbors then saw the same thing repeated, which is not how a real community works.
+
+**Fix:** (a) social prompt v4 now instructs an agent speaking up again to react to what *changed* since its last signal rather than restate old points; (b) the reducer suppresses exact-duplicate signals (near-new wording still passes). **Verified** in `runs/interview-4agent-norepeat`: 23 stored public signals across 4 agents, **0 exact-duplicate pairs**.
+
+## Problem 2 — live audit probes confabulated fake people/events
+During multi-turn probing the agent was seeded only with its persona + a thin list of its own actions. Probed for specifics, it *invented* neighbors that do not exist in the society ("Generous Gary", "Sarah at tick 12") and plausible-but-fake details. The judge then scored that confabulation, undermining the evidence.
+
+**Fix:** each interview record now persists the agent's REAL committed `AgentMemory` snapshot at that exact checkpoint; the probe context uses it plus the real neighbor roster plus an explicit ground rule ("if you don't remember a detail, say so — do not invent names or events"). **Verified** in the same run: probe responses reference only the four real agents (alice/bob/chen/dave); when pressed for a detail the agent now says "I don't recall the specific location… my memory is fuzzy" instead of fabricating one.
+
+These changes make the longitudinal measurement more defensible: self-report is grounded in actual committed history, and the declared-vs-observed comparison is no longer contaminated by hallucinated content.
