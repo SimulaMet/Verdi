@@ -477,3 +477,11 @@ the same transient class as 502/503; a single slow origin call must be
 backed-off, never fatal. Also: when an endpoint returns 524 at concurrency
 10 on a reasoning model, the right reading is "origin is slow under load",
 not "endpoint is broken" — the very next probes succeed in <1s.
+
+## 2026-10-12 — Prompt growth is cumulative, not one-source
+The public_signals cap (12g) bounded ONE unbounded source; action prompts still grew ~280 tok/tick because
+agent_observation stored full state snapshots in private memory (render_history_summary). Lesson: when a
+prompt grows linearly with tick, audit EVERY prompt section per tick (signals, history, task, constraints)
+before attributing it to one. Second lesson: a daemon-thread watchdog with a short stall window can fire a
+REAL os._exit(3) after the test's monkeypatch reverts, killing the pytest process mid-suite (truncated
+output, exit 3, "random" failures) — size the window or join the thread.

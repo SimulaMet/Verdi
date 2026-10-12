@@ -1054,3 +1054,10 @@ To roll back this tranche: `git reset --hard cd18481` (removes only the G5-close
 Append per integrated tranche: date/time UTC, exact dev SHA, workers/branches,
 outcomes, verification commands+exit status, artifacts/manifests, next actions,
 rollback point, blockers. Never silently replace unverified estimates with PASS.
+
+## 2026-10-12 (UTC) — Tranche 12i + 12j merged to dev
+- dev HEAD: 327d2b4 (12i reconstructability logging, 12j memory cap); full suite + ruff green post-merge
+- New artifacts: sanctions.jsonl, resources.jsonl (per-tick), action_reasons.jsonl (sidecar, hash-chain untouched), constitution_history full text; model_calls.jsonl now streaming (watchdog liveness); progress.jsonl eliminated
+- Prompt-growth root cause #2 found & fixed: full-state observation snapshots in private memory grew every prompt linearly (capped run: 99K tok @ t59, 2.9s→32.1s). Fix: field projection + 300-char entry cap; 50-tick offline probe max action prompt ~540 tok (flat)
+- quick-5x50-capped run completed healthy (373 calls, replay True/True) — used as diagnosis source
+- Next: fresh live quick-5x50 on dev (concurrency 10) to validate flat prompts + new artifacts, then C-2 scale decision
