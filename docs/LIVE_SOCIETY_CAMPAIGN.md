@@ -2,6 +2,57 @@
 
 Status: **PROPOSED / NOT YET EXECUTED**. Created after review of dev a118160 and CI failure. This protocol DOES NOT supersede frozen prior ADRs, results or preregistration; it defines a NEW experimental generation (Society V2). Prior L1/G5 results remain archived as infrastructure tests, not evidence of evolving society values.
 
+## Quickstart — run one simulation in 3 commands
+
+```bash
+# 1. One-time setup (already done on this machine): venv + endpoint config
+source .venv/bin/activate
+#    .env must contain VERDI_VLLM_BASE_URL / VERDI_VLLM_MODEL / VERDI_VLLM_API_KEY
+
+# 2. Launch the smallest real run (5 agents x 60 ticks, ~2-4 min at concurrency 10)
+set -a && . ./.env && set +a
+python -m verdi.society.live \
+  --scenario experiments/scenarios/society_v2_quick_5x50.json \
+  --run-dir runs/society-v2/my-run \
+  --concurrency 10
+
+# 3. Watch progress while it runs (liveness = model_calls.jsonl line growth)
+watch -n 10 'wc -l runs/society-v2/my-run/model_calls.jsonl runs/society-v2/my-run/events.jsonl'
+```
+
+Larger scenarios: `society_v2_stageA.json` (6x12), `society_v2_stageB.json` (12x30),
+`society_v2_stageC1.json` (24x60), `society_v2_stageC2.json` (48x100).
+Use a FRESH `--run-dir` per run (reusing a dir appends to its logs).
+
+### Where to find results
+
+All artifacts land in the `--run-dir` you chose. Read them in this order:
+
+| File | What it tells you |
+|---|---|
+| `health.json` | First stop: `status`, `replay_matches`, `replay_log_identical`, wall time, call stats |
+| `timeline.md` | Human-readable tick-by-tick narrative |
+| `metrics.json` | Aggregates: sanctions/appeals/restorations counts, quarantine rate, throughput |
+| `events.jsonl` | The hash-chained ledger — every accepted/rejected action with before/after state hashes |
+| `action_reasons.jsonl` | Agent-stated reason per action, joinable by `event_id` into events.jsonl |
+| `sanctions.jsonl` | Every sanction, appeal, and rights-restoration record with evidence event ids |
+| `resources.jsonl` | Per-tick world + per-agent resource balances (plot-ready time series) |
+| `meetings.jsonl` | Constitutional assemblies: proposals (full text), votes, abstentions, outcome |
+| `constitution_history.jsonl` | Full constitution text at each version + the amendment that produced it |
+| `model_calls.jsonl` | Every model call: purpose, tick, prompt/completion tokens, duration, timestamps |
+| `probes.jsonl` | Hidden value probes (before/after measurement points) |
+| `checkpoint.json` | Final state hash + replay verification result |
+| `snapshots/` | World-state checkpoints (t0, pre/post assembly, final) |
+
+One-liner sanity check after a run:
+
+```bash
+python3 -c "import json; h=json.load(open('runs/society-v2/my-run/health.json')); print(h['status'], 'replay:', h['replay_matches'], h['replay_log_identical'], f\"{h['wall_seconds']:.0f}s\")"
+```
+
+Expected for a healthy run: `healthy True True`. If `replay_*` is False, do not use the run's
+results — the recorded-output replay diverged and the ledger is not self-verifying.
+
 ## Scientific target
 Run a persistent multi-agent society where model-driven actions **actually change** resources, information, relationships, rights or subsequent opportunities; each agent perceives the prior effects permitted by information boundaries. Quantify within-agent declared/private/public value-expression trajectories, attempted/executed violations, social contagion, constitutional changes, credible accountability, false punishment, appeals and measurable recovery over multiple rounds. Distinguish task effects, incentives and changes in behavior; do NOT call these internal beliefs. Do not equate simulator code passing with experimental evidence.
 
