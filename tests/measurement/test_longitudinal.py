@@ -1,8 +1,9 @@
 """Tests for longitudinal live probes (Lane E, Society V2).
 
 Covers: row count/channels, per-channel trajectories with no pooled key,
-yes/no/JSON/garbage parsing, out-of-band prompts (no persona leakage), and
-determinism across reruns with the same seed and canned responses.
+yes/no/JSON/garbage parsing, per-channel grounding (persona in every channel;
+situational state in private/public; declared-values numbers never echoed;
+no other agent's data), the grounded flag, and determinism across reruns.
 """
 from __future__ import annotations
 
@@ -17,8 +18,6 @@ from verdi.measurement.longitudinal import (
 )
 from verdi.measurement.probes import CHANNELS, ProbeBank
 from verdi.schemas import AgentState, ValueProfile, WorldState
-
-PERSONA_TOKEN = "ZEBRA-CRIMSON-8472"
 
 
 @dataclass(frozen=True)
@@ -52,23 +51,37 @@ class FakeCaller:
         return _FakeResult(content=self._canned(prompt), trace_id=f"trace-{self._counter}")
 
 
-def _world() -> WorldState:
-    def agent(agent_id: str) -> AgentState:
-        return AgentState(
-            agent_id=agent_id,
-            role="trader",
-            persona_summary=f"Grumpish trader. {PERSONA_TOKEN} refuses to share.",
-            declared_values=ValueProfile(
-                integrity=0.5, fairness=0.5, cooperation=0.5, autonomy=0.5, solidarity=0.5
-            ),
-        )
+# Distinct identity tokens so tests can prove each prompt is grounded in the
+# probed agent (its own token present, the other agent's absent) — and that
+# the probed agent's own declared_values numbers are never echoed back.
+AGENT_A_TOKEN = "AMBER-TOKEN-ALICE-1"
+AGENT_B_TOKEN = "BLUE-TOKEN-BOB-2"
 
+
+def _world(sanction_b: bool = False) -> WorldState:
+    a = AgentState(
+        agent_id="agent-a",
+        role="trader",
+        persona_summary=f"{AGENT_A_TOKEN} runs a small market stall and keeps her books neatly.",
+        declared_values=ValueProfile(
+            integrity=0.83, fairness=0.41, cooperation=0.57, autonomy=0.66, solidarity=0.35
+        ),
+    )
+    b = AgentState(
+        agent_id="agent-b",
+        role="trader",
+        persona_summary=f"{AGENT_B_TOKEN} trades favors for favors and keeps a grudge list.",
+        declared_values=ValueProfile(
+            integrity=0.22, fairness=0.74, cooperation=0.19, autonomy=0.88, solidarity=0.47
+        ),
+        under_sanction=sanction_b,
+    )
     return WorldState(
         world_id="w-test",
         tick=0,
         law_version="law-1",
         constitution_version="const-1",
-        agents={"agent-b": agent("agent-b"), "agent-a": agent("agent-a")},
+        agents={"agent-b": b, "agent-a": a},
         event_cursor=0,
     )
 
@@ -138,17 +151,62 @@ def test_parsing_yes_no_json_and_garbage() -> None:
     assert all("unparsed" in r.evidence_ref for r in garbage_results)
 
 
-def test_probe_prompt_is_out_of_band() -> None:
+def test_probe_prompt_grounding_and_out_of_band() -> None:
+    # The probe must be grounded in the probed agent's OWN state (so responses
+    # can move -> drift measurable), yet stay out-of-band from OTHER agents and
+    # never echo the probed agent's declared_values numbers (non-circular).
     caller = FakeCaller()
     recorder = ProbeRecorder(_bank(), rubric_id="rubric-1", seed=7)
-    asyncio.run(recorder.record(_world(), 0, phase="pre", caller=caller))
+    results = asyncio.run(recorder.record(_world(sanction_b=True), 0, phase="pre", caller=caller))
 
     assert len(caller.calls) == 6
+    assert all(r.grounded for r in results)
+
+    declared_nums = [
+        "0.83", "0.41", "0.57", "0.66", "0.35",
+        "0.22", "0.74", "0.19", "0.88", "0.47",
+    ]
     for call in caller.calls:
-        assert PERSONA_TOKEN not in call["prompt"]
-        assert "Grumpish trader" not in call["prompt"]
+        prompt = call["prompt"]
+        assert "channel: " in prompt
         assert call["temperature"] == 0.0
         assert call["response_format_json"] is False
+        for num in declared_nums:  # non-circular: never echo declared values
+            assert num not in prompt
+        a_here = AGENT_A_TOKEN in prompt
+        b_here = AGENT_B_TOKEN in prompt
+        assert a_here ^ b_here, "prompt grounds the probed agent and no other"
+        if ("channel: private" in prompt) or ("channel: public" in prompt):
+            assert "Current situation:" in prompt  # situational state grounded
+            if b_here:  # agent-b is sanctioned
+                assert "SANCTIONED" in prompt
+        else:
+            # declared channel = identity self-report, no situational state
+            assert "Current situation:" not in prompt
+
+
+def test_probe_prompt_depends_on_agent_state() -> None:
+    # Regression for the drift=0 bug: the context-free probe prompt made a
+    # temp-0 model return a constant, so value drift was 0.0 by CONSTRUCTION.
+    # The prompt MUST vary with the probed agent's identity and situation.
+    tokens = {"agent-a": AGENT_A_TOKEN, "agent-b": AGENT_B_TOKEN}
+    recorder = ProbeRecorder(_bank(), rubric_id="rubric-1", seed=7)
+
+    def grab(agent_id: str, channel: str, world) -> str:
+        caller = FakeCaller()
+        asyncio.run(recorder.record(world, 0, phase="pre", caller=caller))
+        for c in caller.calls:
+            if tokens[agent_id] in c["prompt"] and f"channel: {channel}" in c["prompt"]:
+                return c["prompt"]
+        raise AssertionError(f"no prompt for {agent_id}/{channel}")
+
+    free_a = grab("agent-a", "private", _world(sanction_b=False))
+    free_b = grab("agent-b", "private", _world(sanction_b=False))
+    sanc_b = grab("agent-b", "private", _world(sanction_b=True))
+
+    assert free_a != free_b            # (1) different agents -> different prompts
+    assert free_b != sanc_b            # (2) same agent, different situation -> different
+    assert "SANCTIONED" in sanc_b and "SANCTIONED" not in free_b
 
 
 def test_determinism_same_seed_and_responses() -> None:

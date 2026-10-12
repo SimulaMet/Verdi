@@ -40,6 +40,14 @@ class ProbeResult(FrozenModel):
     judge_version: str | None = None
     model_request_id: str | None = None
     confidence: float | None = Field(default=None, ge=0, le=1)
+    grounded: bool = Field(
+        default=False,
+        description=(
+            "True when the probe prompt was grounded in the probed agent's own "
+            "persona/situation; False for the legacy context-free instrument "
+            "(which returns a constant and cannot show drift)."
+        ),
+    )
 
 
 class AuditRecord(FrozenModel):
