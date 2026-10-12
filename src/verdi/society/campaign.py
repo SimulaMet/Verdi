@@ -48,6 +48,7 @@ from verdi.governance.assembled import Assembly
 from verdi.governance.engine import GovernanceEngine
 from verdi.measurement.longitudinal import ProbeRecorder, channel_trajectories
 from verdi.measurement.probes import ProbeBank
+from verdi.audit.judge_live import _assert_no_key_material
 from verdi.schemas import (
     Appeal,
     ConstitutionVersion,
@@ -61,6 +62,7 @@ from verdi.schemas import (
     WorldEvent,
     WorldState,
 )
+from verdi.society.interview import run_interviews, write_interviews
 from verdi.society.memory import AgentMemory
 from verdi.society.prompting import SOCIAL_PROMPT_VERSION, build_social_prompt
 from verdi.society.tasks import generate_tick_tape
@@ -141,6 +143,9 @@ class SocietyResult:
     constitution_texts: list[dict[str, Any]] = field(default_factory=list)
     final_state_hash: str = ""
     checkpoints: dict[str, Any] = field(default_factory=dict)
+    #: Read-only checkpoint interviews of the actual agents (opt-in via the
+    #: scenario's ``interviews`` block); empty for runs without it.
+    interviews: list[dict[str, Any]] = field(default_factory=list)
     wall_seconds: float = 0.0
     replay_matches: bool = False
     replay_state_hash: str = ""
@@ -224,6 +229,10 @@ class SocietyCampaign:
         # must be lifted before the instance is dropped — otherwise assembly
         # quarantine is unauditable at run level).
         self._assembly_quarantined: dict[str, list[dict[str, Any]]] = {}
+        # Opt-in read-only checkpoint interviews (scenario "interviews" block):
+        # tick -> phase. Empty means no interviews; behavior is unchanged.
+        self._interview_phases: dict[int, str] = self._default_interview_phases()
+        self._interviews: list[dict[str, Any]] = []
         # Appeals are deferred off the sanction's own tick (pre-registered
         # file tick = violation+2) so the "timely" adjudication is a real
         # condition against the deadline and the dismissal path is reachable.
@@ -370,6 +379,30 @@ class SocietyCampaign:
             if tick in self._probe_phases:
                 await self._probe_phase(snapshot, tick, self._probe_phases[tick], recorder)
 
+            # Opt-in READ-ONLY checkpoint interviews (out-of-band like probes;
+            # no world-state or memory mutation). Runs before this tick's
+            # actions so it reflects the committed state + memory at the
+            # start of the tick.
+            if tick in self._interview_phases:
+                records = await run_interviews(
+                    caller=self._caller,
+                    agent_states=snapshot.agents,
+                    memory=memory,
+                    constitution_dump=_constitution_dump(governance.constitution.current),
+                    tick=tick,
+                    phase=self._interview_phases[tick],
+                    concurrency=self._concurrency,
+                    temperature=self._temperature,
+                )
+                # Audit the interview model calls (telemetry only; out-of-band).
+                for rec in records:
+                    self._model_calls.append(_ModelCall(
+                        tick, "interview", rec["agent_id"], rec.get("trace_id", ""),
+                        fingerprint, self._temperature, len(rec.get("raw_answer", "")), 0,
+                        prompt_tokens=0, completion_tokens=0))
+                self._write_model_calls_lines(self._model_calls[-len(records):])
+                self._interviews.extend(records)
+
             tape = generate_tick_tape(tick, snapshot, random.Random(), tape_seed=f"soc-v2:{self._run_seed}")
             results = await TaskPool(self._concurrency).run_all(self._make_worker(snapshot, tick, memory), tape)
 
@@ -495,6 +528,7 @@ class SocietyCampaign:
             quarantined=self._quarantined,
             constitution_versions=self._constitution_versions,
             constitution_texts=self._constitution_texts,
+            interviews=self._interviews,
             final_state_hash=canonical_state_hash(state),
             checkpoints=self._checkpoints,
             wall_seconds=time.monotonic() - t0_start,
@@ -952,6 +986,37 @@ class SocietyCampaign:
                 continue
         return phases
 
+    def _default_interview_phases(self) -> dict[int, str]:
+        """Interview schedule from the optional scenario ``interviews`` block.
+
+        Accepts either a list of ticks (``{"ticks": [0, 5, 9]}``, phase
+        defaults to ``t<N>-interview``) or a tick->phase mapping
+        (``{"phases": {"0": "baseline", ...}}``). Absent/empty => no interviews
+        (fully backward compatible).
+        """
+        block = self._scenario.get("interviews")
+        if not block:
+            return {}
+        phases: dict[int, str] = {}
+        if isinstance(block, dict):
+            for key in block.get("ticks", []):
+                try:
+                    phases[int(key)] = f"t{int(key)}-interview"
+                except (ValueError, TypeError):
+                    continue
+            for key, meta in (block.get("phases") or {}).items():
+                try:
+                    phases[int(key)] = str(meta if isinstance(meta, str) else (meta or {}).get("phase", f"t{key}-interview"))
+                except (ValueError, TypeError, AttributeError):
+                    continue
+        elif isinstance(block, list):
+            for key in block:
+                try:
+                    phases[int(key)] = f"t{int(key)}-interview"
+                except (ValueError, TypeError):
+                    continue
+        return phases
+
     def _derived_probe_phases(self) -> dict[int, str]:
         total = int(self._scenario.get("total_ticks", 0))
         final_tick = max(0, total - 1)
@@ -981,6 +1046,7 @@ class SocietyCampaign:
     def _write_artifacts(self, result: SocietyResult, total_ticks: int) -> None:
         run_dir = self._run_dir
         write_probes(run_dir, result.probes)
+        write_interviews(run_dir, result.interviews)
         write_model_calls(run_dir, result.model_calls)
         write_meetings(run_dir, result.meetings)
         write_constitution_history(run_dir, result.constitution_versions, result.meetings,
@@ -1193,6 +1259,22 @@ def write_probes(run_dir: Path, probes: list[ProbeResult]) -> None:
     with (run_dir / "probes.jsonl").open("w", encoding="utf-8") as fh:
         for p in probes:
             fh.write(json.dumps(p.model_dump(mode="json"), sort_keys=True) + "\n")
+
+
+def write_interviews(run_dir: Path, records: list[dict[str, Any]]) -> None:
+    """Write all interview records to ``run_dir/interviews.jsonl`` (one JSON
+    object per line, sorted keys); no-op when there are none. Each line is
+    asserted free of key material first, mirroring the existing artifact
+    safety guards."""
+    if not records:
+        return
+    path = Path(run_dir) / "interviews.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", encoding="utf-8") as fh:
+        for rec in records:
+            line = json.dumps(rec, sort_keys=True, ensure_ascii=True)
+            _assert_no_key_material(line, str(path))
+            fh.write(line + "\n")
 
 
 def write_model_calls(run_dir: Path, calls: list[_ModelCall]) -> None:
