@@ -20,6 +20,11 @@
 # auto-generates it at the end of every run (local, no extra model calls);
 # pass --no-report to skip it.
 #
+# Want to see it without running first? A committed example of a finished run
+# of THIS scenario is at:  examples/minimal/society-v2-minimal-report.html
+# (open it in a browser — it shows dave's sanctioned transfer attempts, the
+#  law:under_sanction rejections, his restored rights, and two assemblies).
+#
 # Full artifact map (raw evidence, for analysis): runs/society-v2/my-run/
 #   report.html   <- open this first (interactive summary)
 #   run_meta.json <- status, model, seed, replay check, wall time
