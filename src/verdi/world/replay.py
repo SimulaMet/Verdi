@@ -37,6 +37,10 @@ class TapeStep:
     kind: str = "action"
     governance: dict | None = None
     rights: dict | None = None
+    # Deterministic world-resource shock ({resource, delta}) applied at this
+    # position; takes no action, advances no ledger event or tick — so a live
+    # run and its replay both apply it identically and the state hash matches.
+    shock: dict | None = None
 
 
 def replay(

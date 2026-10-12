@@ -74,6 +74,12 @@ class ScenarioMeta(BaseModel):
     assemblies: list[int] = Field(default_factory=list)
     value_axes: list[str] = Field(default_factory=list)
     lifecycle: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    # Optional DETERMINISTIC world shocks: [{tick, resource, delta}] applied at
+    # the start of that tick before any agent acts. An external/deterministic
+    # world event (like sanction expiry), NOT an LLM mutation — used to induce
+    # value-relevant pressure (e.g. a food-scarcity crisis) so we can test
+    # whether declared/observed values drift in response. Empty by default.
+    shocks: list[dict[str, Any]] = Field(default_factory=list)
 
 
 def canonical_tape_hash(payload: dict[str, Any]) -> str:

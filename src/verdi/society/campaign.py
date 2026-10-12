@@ -198,6 +198,14 @@ class SocietyCampaign:
         self._temperature = temperature
         self._assembly_ticks = frozenset(assembly_ticks if assembly_ticks is not None else scenario.get("assemblies", []))
         self._probe_phases = dict(probe_phases or self._default_probe_phases())
+        # Deterministic world shocks keyed by tick (scenario-configured).
+        self._shocks_by_tick: dict[int, list[dict[str, Any]]] = {}
+        for _shock in scenario.get("shocks", []) or []:
+            try:
+                _st = int(_shock.get("tick"))
+            except (TypeError, ValueError):
+                continue
+            self._shocks_by_tick.setdefault(_st, []).append(_shock)
         self._reflection_tick = (
             reflection_tick if reflection_tick is not None
             else self._scenario_reflection_tick()
@@ -382,6 +390,33 @@ class SocietyCampaign:
                     state = self._commit_rights_change(
                         state, ev.get("actor", ""), False
                     )
+
+            # Deterministic world shocks (scenario-configured external events),
+            # applied at the start of the tick BEFORE any agent acts — like
+            # sanction expiry, not an LLM mutation. Recorded so the event ledger
+            # and replay stay consistent. Lets a scenario induce real value-
+            # relevant pressure (e.g. a food-scarcity crisis) to test drift.
+            for shock in self._shocks_at(tick):
+                resource = str(shock.get("resource", ""))
+                delta = float(shock.get("delta", 0.0))
+                if not resource or delta == 0.0:
+                    continue
+                new_val = max(0.0, state.world_resources.get(resource, 0.0) + delta)
+                state = state.model_copy(update={
+                    "world_resources": {**state.world_resources, resource: new_val},
+                })
+                # Record as a tape step (like rights_change) so replay applies it
+                # at the same position and the final state hash still matches.
+                self._tape.append(TapeStep(
+                    action=None,  # type: ignore[arg-type]
+                    validation=ValidationResult(accepted=True),
+                    kind="world_shock",
+                    shock={"resource": resource, "delta": delta},
+                ))
+                self._sanction_events.append({
+                    "tick": tick, "kind": "world_shock",
+                    "resource": resource, "delta": delta, "new_value": new_val,
+                })
 
             snapshot = state  # frozen start-of-tick state (concurrency base)
 
@@ -947,6 +982,17 @@ class SocietyCampaign:
                         state, step.rights["agent_id"], bool(step.rights["value"])
                     )
                     continue
+                # Deterministic world-resource shock: apply the same delta to the
+                # fresh replay state (no action, no ledger event, no tick advance).
+                if step.kind == "world_shock" and step.shock is not None:
+                    _res = str(step.shock.get("resource", ""))
+                    _delta = float(step.shock.get("delta", 0.0))
+                    if _res:
+                        _nv = max(0.0, state.world_resources.get(_res, 0.0) + _delta)
+                        state = state.model_copy(update={
+                            "world_resources": {**state.world_resources, _res: _nv},
+                        })
+                    continue
                 before = state
                 state = reducer.apply(before, step.action, step.validation)
                 if step.kind == "governance" and step.governance is not None:
@@ -990,6 +1036,10 @@ class SocietyCampaign:
     # ------------------------------------------------------------------ #
     # helpers
     # ------------------------------------------------------------------ #
+    def _shocks_at(self, tick: int) -> list[dict[str, Any]]:
+        """Deterministic world shocks configured for this tick (may be empty)."""
+        return self._shocks_by_tick.get(tick, [])
+
     def _default_probe_phases(self) -> dict[int, str]:
         """Probe schedule: from the scenario's ``lifecycle`` block, or — if
         that is absent (Tranche 12l minimal-config) — auto-derived as
