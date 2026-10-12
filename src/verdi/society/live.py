@@ -24,19 +24,18 @@ import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
 
 from verdi.agents.client import ModelClient
 from verdi.audit.judge_live import _assert_no_key_material
 from verdi.config import ModelEndpointConfig, model_endpoint_from_env
 from verdi.experiments.g5_judge_live import _load_dotenv_into_environ
-from verdi.society.campaign import BEAT_CONTEXT, PROTOCOL_VERSION, SocietyCampaign
+from verdi.society.campaign import PROTOCOL_VERSION, SocietyCampaign
 
 DEFAULT_CONCURRENCY = 4
 # Per-model-call liveness watchdog. Calibrated per Tranche 12d review F1:
-# per-call beats (progress.jsonl, written after every COMPLETED model call)
-# reset the deadline continuously, so the window only needs to outlast a
-# SINGLE stuck call: VERDI_REQUEST_TIMEOUT (180s) x (max_retries+1) (6) =
+# per-call beats (model_calls.jsonl, written after every COMPLETED model
+# call) reset the deadline continuously, so the window only needs to outlast
+# a SINGLE stuck call: VERDI_REQUEST_TIMEOUT (180s) x (max_retries+1) (6) =
 # 1080s worst-case retry sequence, plus one heartbeat interval. 1200s covers
 # that with margin; shorter windows could trip while the client is still
 # legitimately retrying a dead call. The old events-only 600s design
@@ -44,7 +43,10 @@ DEFAULT_CONCURRENCY = 4
 # and killed the live C-1 run at t15 — see state/LESSONS.md Tranche 12d.
 DEFAULT_STALL_TIMEOUT_SECONDS = 1200
 _HEARTBEAT_INTERVAL_SECONDS = 20
-_PROGRESS_FILE = "progress.jsonl"
+#: Tranche 12i: model_calls.jsonl is the single per-call log (timestamps +
+#: tokens + duration + context). The old progress.jsonl beat file is gone;
+#: liveness is measured from model_calls.jsonl line growth.
+_MODEL_CALLS_FILE = "model_calls.jsonl"
 
 
 def _file_line_count(path: Path) -> int:
@@ -60,57 +62,15 @@ def _progress_count(run_dir: Path) -> int:
     A full assembly tick appends nothing to events.jsonl until its very end
     (deliberation + voting + finalize all precede the ledger commit), so
     event count alone false-fires on legitimately long ticks (Tranche 12d
-    review F1: killed the live C-1 run at its first assembly, t15). The
-    caller-beat wrapper appends one line to progress.jsonl after every
-    COMPLETED model call, so the deadline now resets continuously during
-    long ticks while still tripping on a stuck socket where no call ever
-    finishes.
+    review F1: killed the live C-1 run at its first assembly, t15).
+    model_calls.jsonl gains a line after every COMPLETED model call (all
+    purposes: action, reflection, assembly, probe), so the deadline now
+    resets continuously during long ticks while still tripping on a stuck
+    socket where no call ever finishes.
     """
     return _file_line_count(run_dir / "events.jsonl") + _file_line_count(
-        run_dir / _PROGRESS_FILE
+        run_dir / _MODEL_CALLS_FILE
     )
-
-
-class _LiveProgressCaller:
-    """Append one liveness beat per completed model call (Tranche 12d F1).
-
-    Only the LIVE runner uses this wrapper: the offline tests must keep the
-    caller's return value / behavior byte-identical, and they never touch
-    the network. Each beat carries a monotonically increasing sequence so
-    the watchdog can distinguish real growth from a re-counted file.
-
-    Tranche 12h: beats also carry ``tick``/``purpose``/``subject`` (from
-    :data:`BEAT_CONTEXT`) so progress.jsonl doubles as a per-call timeline
-    of which event each model call belonged to.
-    """
-
-    def __init__(self, inner, run_dir: Path) -> None:
-        self._inner = inner
-        self._path = run_dir / _PROGRESS_FILE
-        self._seq = 0
-        self._lock = asyncio.Lock()
-
-    async def generate_structured(self, messages, **kwargs):
-        res = await self._inner.generate_structured(messages, **kwargs)
-        self._seq += 1
-        beat: dict[str, Any] = {
-            "seq": self._seq,
-            "ts_utc": datetime.now(timezone.utc).isoformat(),
-        }
-        ctx = BEAT_CONTEXT.get()
-        if ctx:
-            beat["tick"] = ctx.get("tick")
-            beat["purpose"] = ctx.get("purpose")
-            beat["subject"] = ctx.get("subject")
-        async with self._lock:  # serialize appends across concurrent calls
-            with self._path.open("a", encoding="utf-8") as fh:
-                fh.write(json.dumps(beat) + "\n")
-        return res
-
-
-#: Per-phase context for progress beats (Tranche 12h). The campaign sets
-#: this before each tick/phase so every completed call's beat records which
-#: tick, purpose, and subject it belonged to. Safe for single-loop asyncio.
 
 
 async def _stall_watchdog(run_dir: Path, stall_timeout_seconds: float) -> None:
@@ -135,7 +95,7 @@ async def _stall_watchdog(run_dir: Path, stall_timeout_seconds: float) -> None:
         _write_run_meta(run_dir, {
             "heartbeat_utc": datetime.now(timezone.utc).isoformat(),
             "events_logged": _file_line_count(run_dir / "events.jsonl"),
-            "model_calls_beat": _file_line_count(run_dir / _PROGRESS_FILE),
+            "model_calls_beat": _file_line_count(run_dir / _MODEL_CALLS_FILE),
         })
         if count > last_count:
             last_count = count
@@ -147,7 +107,7 @@ async def _stall_watchdog(run_dir: Path, stall_timeout_seconds: float) -> None:
                 "stalled_at_utc": datetime.now(timezone.utc).isoformat(),
                 "stall_timeout_seconds": stall_timeout_seconds,
                 "events_logged": _file_line_count(run_dir / "events.jsonl"),
-                "model_calls_beat": _file_line_count(run_dir / _PROGRESS_FILE),
+                "model_calls_beat": _file_line_count(run_dir / _MODEL_CALLS_FILE),
             })
             print(
                 f"STALL: no events or completed model calls for "
@@ -221,14 +181,14 @@ async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency
             return 2
         print(f"smoke OK: model={smoke['model']} trace={smoke['trace_id']}")
 
-        # Tranche 12d F1: per-model-call liveness beats so long assembly
+        # Tranche 12d F1 / 12i: model_calls.jsonl (written per completed
+        # call by the campaign) is the liveness signal, so long assembly
         # ticks (zero event writes until finalize) don't false-fire the
-        # watchdog. Offline tests never use this wrapper.
-        progress_client = _LiveProgressCaller(client, run_dir)
+        # watchdog. No wrapper needed — the campaign writes the file.
         campaign = SocietyCampaign(
             scenario=scenario,
             run_dir=run_dir,
-            caller=progress_client,
+            caller=client,
             run_seed=seed,
             concurrency=concurrency,
         )

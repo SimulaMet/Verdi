@@ -136,6 +136,48 @@ def test_full_offline_run_completes_and_replays(scenario, tmp_path):
     assert len(log) == len(res.events)
 
 
+def test_reconstructability_artifacts_written(scenario, tmp_path):
+    """Tranche 12i: a run dir must let a scientist reconstruct what happened —
+    sanctions.jsonl (individual sanction/appeal/restoration records),
+    resources.jsonl (per-tick world + agent balances), action_reasons.jsonl
+    (agent-stated reason per ledgered action, keyed by event_id), and
+    constitution_history.jsonl carrying the full text of each version."""
+    res = _run(scenario, tmp_path, enact=True)
+
+    # sanctions.jsonl: the scripted adversary overdraws credits -> sanctioned
+    sanc_lines = [json.loads(line) for line in (tmp_path / "sanctions.jsonl").read_text().splitlines()]
+    assert any(s["record_type"] == "sanction" for s in sanc_lines), "no sanction record persisted"
+    assert all("tick" in s for s in sanc_lines)
+
+    # resources.jsonl: one snapshot per advanced tick, with world + agent balances
+    res_lines = [json.loads(line) for line in (tmp_path / "resources.jsonl").read_text().splitlines()]
+    assert len(res_lines) >= scenario["total_ticks"], "per-tick resource timeline incomplete"
+    assert "world_resources" in res_lines[0] and "agents" in res_lines[0]
+
+    # action_reasons.jsonl: every action event that had a reason is joinable
+    reason_lines = [json.loads(line) for line in (tmp_path / "action_reasons.jsonl").read_text().splitlines()]
+    assert reason_lines, "no action reasons persisted"
+    by_id = {entry["event_id"]: entry["reason"] for entry in reason_lines}
+    events_by_id = {e.event_id: e for e in res.events}
+    # spot-join: a reason's event_id must reference a real action event
+    action_ids = {eid for eid, e in events_by_id.items() if e.kind.startswith("action_")}
+    assert set(by_id) <= action_ids, "reason sidecar references non-action event ids"
+    assert "cooperation" in set(by_id.values()) or "overreach temptation" in set(by_id.values())
+
+    # constitution_history.jsonl: full text captured for every version
+    const_lines = [json.loads(line) for line in (tmp_path / "constitution_history.jsonl").read_text().splitlines()]
+    assert len(const_lines) == len(res.constitution_versions)
+    assert all("constitution" in entry and "rules" in entry["constitution"] for entry in const_lines), (
+        "constitution_history missing full text (Tranche 12i)"
+    )
+    # no progress.jsonl (eliminated in Tranche 12i; liveness via model_calls.jsonl)
+    assert not (tmp_path / "progress.jsonl").exists()
+    # model_calls.jsonl written streaming AND finalized with per-call metadata
+    mc_lines = [json.loads(line) for line in (tmp_path / "model_calls.jsonl").read_text().splitlines()]
+    assert len(mc_lines) == len(res.model_calls)
+    assert all("prompt_tokens" in mc and "completion_tokens" in mc for mc in mc_lines)
+
+
 def test_feedback_loop_visible_in_prompts(scenario, tmp_path):
     """The committed-state feedback invariant: an agent's own earlier action
     text must appear in its own later prompt (via private memory)."""
