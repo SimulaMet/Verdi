@@ -555,3 +555,24 @@ instead of re-running the identical command.
   generated in explicit CDN mode; offline asset embedding tested with fixture
   assets, actual external downloads unverified. Browser file:// preview rejected
   by URL policy; no workaround attempted. Node behavior testing is not visual QA.
+
+## Rich report usability correction / 2026-10-12 / feature HTML report
+- User found exploration lacked an obvious return path, value selection lacked
+  All, and constitution presentation exposed raw JSON instead of readable fields.
+- Corrected: explicit Back to all agents + Reset view + selected-agent context;
+  All value axes/channel filtering; lines+observation markers; readable rule and
+  policy fields with collapsed raw disclosures. Invalid tick windows and no-data
+  charts now have visible feedback. Hidden controls use explicit CSS to avoid
+  author component styles overriding the browser hidden attribute.
+- Added real-DOM interaction test with jsdom 26.1.0 against generated HTML, actual
+  report JS, chart-painting stub: explore/back repeatedly, selectors, filters,
+  ranges, search, pagination, reset, personas and constitution fields all passed.
+  jsdom cannot parse modern daisyUI CSS; initial run emitted stylesheet diagnostic
+  (exit 0, assertions passed). Interaction harness now omits CSS parsing explicitly;
+  it is not browser visual QA. Edge computer-use permission denied; no bypass.
+- Independent /root/review_html found no blockers in final rereview. Public snapshot
+  field projection excludes private memory; current scenario YAML is never used
+  to invent old-run agent descriptions. Auxiliary snapshot files are ignored.
+- Prevention: every drill-down needs a visible return control. Test user journeys
+  against actual DOM elements, including error/empty/reset paths, not just output
+  generation. Keep browser rendering limitations explicit.

@@ -1173,3 +1173,26 @@ No blockers. Note: two code-review subagent launches were cancelled by infrastru
 - Final corrected full suite: 534 passed / 2 skipped (48.62s), exit 0;
   `ruff check .` exit 0. Visual QA and actual offline library fetch remain
   unverified; CDN preview and copied generator paths above exist.
+
+## 2026-10-12 — rich HTML society explorer (feature only)
+- Owner root; feat/society-v2-html-report in /private/tmp/verdi-html-work;
+  base dev 20c6e70. Primary checkout is independently advancing on dev and is
+  untouched by this worker; no integration or public release claimed.
+- Added saved agent profiles/personas/rights/resources/social links, network,
+  assigned-value radar, All-value/channel probe line trajectories, readable
+  action reasons and institutions, Back to all agents + Reset view.
+- Generated offline artifact updated in original workspace:
+  runs/society-v2/quickstart-minimal-v2/report.html; reusable standalone
+  runs/society-v2/generate_report.py updated. No new model calls.
+- Final feature tests: 7 passed; ruff clean. Real DOM generated-report interaction
+  test (jsdom 26.1.0): PASS, covering repeat explore/back, reset, agent/value/channel
+  filters, tick validation/empty windows, searches/pagination and constitution.
+- Full suite before last navigation corrections: 535 passed / 2 skipped (43.85s).
+  Final full run in progress; evidence appended below on completion.
+- Independent /root/review_html final rereview: no blockers. Limitation: DOM
+  interaction test stubs Plotly painting; Edge visual access denied. Existing
+  G4/G5/G6 statuses unchanged.
+- Next 3: coordinate integration of reviewed feature onto current dev; inspect
+  actual browser rendering; use report on a larger emitted run.
+- Final full suite after navigation corrections: 536 passed / 2 skipped
+  (52.46s), exit 0; ruff clean, exit 0. Actual DOM interaction test exit 0.
