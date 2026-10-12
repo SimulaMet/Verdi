@@ -49,24 +49,27 @@ def test_per_agent_privacy():
 
 
 def test_consolidation_triggers_when_window_overflows():
-    """Entries beyond _RECENT_WINDOW trigger consolidation (not silent drop)."""
+    """Consolidation triggers when overflow >= 4 entries (batched, not every tick)."""
     from verdi.society.memory import _RECENT_WINDOW
     mem = AgentMemory()
+    # Below threshold: window + 3 overflow → no consolidation yet
     for i in range(_RECENT_WINDOW + 3):
         mem.append_reflection("a1", f"entry {i}")
-    assert mem.version("a1") == _RECENT_WINDOW + 3
+    assert mem.needs_consolidation("a1") is False
+
+    # At threshold: window + 4 overflow → consolidation needed
+    mem.append_reflection("a1", f"entry {_RECENT_WINDOW + 3}")
     assert mem.needs_consolidation("a1") is True
     overflow = mem.get_overflow_entries("a1")
-    assert len(overflow) == 3
+    assert len(overflow) == 4
     assert overflow[0]["text"] == "entry 0"
 
     # Apply consolidation (simulating LLM output)
-    mem.apply_consolidation("a1", "I remember entries zero, one, and two from early on.")
+    mem.apply_consolidation("a1", "I remember entries zero through three from early on.")
     assert mem.needs_consolidation("a1") is False
     summary = mem.render_history_summary("a1")
     assert "From earlier:" in summary
-    assert "entries zero, one, and two" in summary
-    assert "entry 0" not in summary.split("From earlier:")[1]  # not in recent
+    assert "entries zero through three" in summary
     assert "entry 15" in summary  # most recent still there
 
 

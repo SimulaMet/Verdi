@@ -845,7 +845,7 @@ class SocietyCampaign:
             memory[aid].apply_consolidation(aid, summary_text)
             self._model_calls.append(
                 _ModelCall(tick, "consolidation", aid, res.trace_id or "", fingerprint,
-                           self._temperature, len(res.content), 0,
+                           self._temperature, len(res.content), batch_ms,
                            prompt_tokens=res.usage.get("prompt_tokens", 0),
                            completion_tokens=res.usage.get("completion_tokens", 0),
                            ts_start=ts_start, ts_end=ts_end)

@@ -146,9 +146,14 @@ class AgentMemory:
     # consolidation (called by campaign after LLM call)
     # ------------------------------------------------------------------ #
     def needs_consolidation(self, agent_id: str) -> bool:
-        """True if the agent's recent window is full and overflow exists."""
+        """True if overflow has accumulated enough to warrant a consolidation call.
+
+        Triggers when overflow >= 4 entries (avoids calling LLM every tick;
+        with 2 entries/tick, this means consolidating roughly every 2 ticks
+        after the window fills).
+        """
         entries = self._entries.get(agent_id, [])
-        return len(entries) > _RECENT_WINDOW
+        return len(entries) - _RECENT_WINDOW >= 4
 
     def get_overflow_entries(self, agent_id: str) -> list[dict[str, str]]:
         """Return the entries that exceed the recent window (without removing)."""
