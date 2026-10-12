@@ -73,17 +73,46 @@ def _transfer_units(agent: AgentState, *, adversarial: bool) -> int:
 
 
 def _pick_target(agent: AgentState, state: WorldState, call_rng: random.Random) -> str | None:
-    """Deterministic transfer target: prefer the actor's social edges, else
-    any other agent; the per-call RNG only breaks ties. Never the actor."""
-    edges = sorted(e for e in agent.social_edges if e in state.agents and e != agent.agent_id)
-    if edges:
-        call_rng.shuffle(edges)
-        return edges[0]
-    others = sorted(agent_id for agent_id in state.agents if agent_id != agent.agent_id)
-    if not others:
-        return None
-    call_rng.shuffle(others)
-    return others[0]
+    """Pick a social interaction target via geometric-decay graph traversal.
+
+    The agent always meets a direct neighbor (degree 1). With 50% chance they
+    also reach a neighbor's neighbor (degree 2), with 25% a degree-3 contact,
+    etc. The furthest reached node is the target. This creates natural
+    small-world dynamics: mostly local, occasionally reaching further.
+
+    Falls back to any other agent if the graph is disconnected.
+    """
+    # BFS with geometric decay: each hop has 50% chance to continue
+    visited: set[str] = {agent.agent_id}
+    frontier: list[str] = sorted(e for e in agent.social_edges if e in state.agents)
+    target: str | None = None
+
+    while frontier:
+        # Pick one from current frontier as the target so far
+        call_rng.shuffle(frontier)
+        target = frontier[0]
+        # Geometric decay: 50% chance to expand one more hop
+        if call_rng.random() > 0.5:
+            break
+        # Expand: neighbors of current frontier, excluding visited
+        next_frontier: list[str] = []
+        for node in frontier:
+            for edge in state.agents[node].social_edges:
+                if edge in state.agents and edge not in visited:
+                    visited.add(edge)
+                    next_frontier.append(edge)
+        if not next_frontier:
+            break
+        frontier = next_frontier
+
+    if target is None:
+        # Disconnected graph fallback: pick any other agent
+        others = sorted(aid for aid in state.agents if aid != agent.agent_id)
+        if not others:
+            return None
+        call_rng.shuffle(others)
+        return others[0]
+    return target
 
 
 def _base_kind(index: int, task_kind_bias: str) -> str:
