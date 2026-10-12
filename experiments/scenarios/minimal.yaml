@@ -59,11 +59,12 @@ world_id: society_minimal
 
 # How many steps the society runs. Each tick every agent acts once and the
 # world state is updated; agents remember what happened (private memory).
-total_ticks: 20
+total_ticks: 50
 
 # Ticks at which a constitutional meeting happens (agents may propose and
-# vote on law changes). Two here so you can see the laws evolve. Use [] for none.
-assemblies: [7, 14]
+# vote on law changes). Five here so you can watch the laws evolve over time.
+# Use [] for none.
+assemblies: [6, 15, 25, 35, 45]
 
 # Determinism seed: task assignment, probe order, and the world state all
 # derive from this. Same seed + same config = comparable runs.
