@@ -152,7 +152,7 @@ td{vertical-align:top}.reason{min-width:280px;max-width:600px;white-space:pre-wr
 nav{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}
 [hidden]{display:none!important}
 header,section{margin-bottom:24px}h1{font-size:30px;font-weight:700}
-h2{font-size:21px;font-weight:600;margin:20px 0 8px}p{margin:8px 0}
+h2{font-size:21px;font-weight:600;margin:20px 0 8px}h3{font-size:16px;font-weight:600;margin:12px 0 6px}p{margin:8px 0}
 .controls{display:flex;flex-wrap:wrap;align-items:center;gap:14px}
 .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,540px),1fr));gap:18px}
 .chart{height:450px;border:1px solid var(--color-base-300);border-radius:12px}
@@ -174,24 +174,37 @@ Event ticks are reducer transition counts, shown separately from lifecycle ticks
 <div id="agent-cards" class="agent-grid"></div>
 <div class="charts"><div><h2>Social observation network</h2><p class="muted">Arrows show configured observation links, not inferred influence. Large networks show the first 80 participants and 300 arrows; exact links remain in profiles.</p><div id="network" class="chart"></div></div>
 <div><h2>Assigned starting values</h2><p class="muted">Saved initial profile; distinct from measured probe scores.</p><div id="profiles-chart" class="chart"></div></div></div></section>
-<section id="trajectories" class="controls">
+<section id="trajectories">
+<h2>Trajectories</h2>
+<p class="muted">Zoom/hover/export with Plotly. Each line renders at most 2,000 points using min/max buckets. Probe lines connect measured points; intermediate scores were not measured.</p>
+<div class="charts">
+<div><h3>Resources · lifecycle tick</h3>
+<div class="controls" style="margin-bottom:8px">
 <label>Agent <select id="agent" class="select" aria-label="Agent"></select></label>
 <label>Resource <select id="resource" class="select" aria-label="Resource"></select></label>
+<label>From <input id="from" class="input" type="number" value="0" min="0"></label>
+<label>To <input id="to" class="input" type="number" min="0"></label>
+<button id="apply" class="btn">Apply</button><span id="window-status" role="status"></span><button id="latest" class="btn">Latest 100</button>
+</div>
+<div id="resources" class="chart"></div></div>
+<div><h3>Value probes · lifecycle tick</h3>
+<div class="controls" style="margin-bottom:8px">
+<label>Agent <select id="probe-agent" class="select" aria-label="Probe agent"></select></label>
 <label>Value <select id="value" class="select" aria-label="Value"></select></label>
 <label>Channel <select id="channel" class="select" aria-label="Probe channel"></select></label>
-<label>From tick <input id="from" class="input" type="number" value="0" min="0"></label>
-<label>To tick <input id="to" class="input" type="number" min="0"></label>
-<button id="apply" class="btn">Apply window</button><span id="window-status" role="status"></span><button id="latest" class="btn">Latest 100 ticks</button>
+</div>
+<div id="probes" class="chart"></div></div>
+<div><h3>Governance · lifecycle tick</h3><div id="governance" class="chart"></div></div>
+<div><h3>Ledger outcomes · transition tick</h3><div id="outcomes" class="chart"></div></div>
+</div>
+<details style="margin-top:18px">
+<summary style="cursor:pointer;font-weight:600;color:var(--color-primary)">⚙️ Infrastructure metrics (latency, tokens)</summary>
+<div class="charts" style="margin-top:12px">
+<div><h3>Model latency · lifecycle tick</h3><div id="latency" class="chart"></div></div>
+<div><h3>Prompt tokens · lifecycle tick</h3><div id="tokens" class="chart"></div></div>
+</div>
+</details>
 </section>
-<p>Zoom/hover/export with Plotly. Each line renders at most 2,000 points using min/max buckets;
-zoom with the tick inputs to recover finer detail. Governance markers are sampled to at most
-2,000. Exact records remain in the inspector. Probe lines connect measured points; intermediate scores were not measured.</p>
-<section class="charts"><div><h2>Resources · lifecycle tick</h2><div id="resources" class="chart"></div></div>
-<div><h2>Value probes · lifecycle tick</h2><div id="probes" class="chart"></div></div>
-<div><h2>Model latency · lifecycle tick</h2><div id="latency" class="chart"></div></div>
-<div><h2>Prompt tokens · lifecycle tick</h2><div id="tokens" class="chart"></div></div>
-<div><h2>Governance · lifecycle tick</h2><div id="governance" class="chart"></div></div>
-<div><h2>Ledger outcomes · transition tick</h2><div id="outcomes" class="chart"></div></div></section>
 <section id="activity-section"><h2>Actions &amp; stated reasons</h2>
 <p class="muted">Reasons are agent statements, joined by sealed event ID. Ledger transition ticks are separate from lifecycle ticks.</p>
 <div class="controls"><input id="activity-search" class="input" placeholder="Search actions" aria-label="Search actions">
@@ -216,6 +229,7 @@ function options(id, xs){for(const x of xs){const o=document.createElement('opti
 const agents=unique([...D.probes.map(r=>r.agent_id),...D.resources.flatMap(r=>Object.keys(r.agents||{})),
 ...D.model_calls.map(r=>r.subject),...(D.profiles||[]).map(r=>r.agent_id)].filter(Boolean));
 options('agent',['All',...agents]);
+options('probe-agent',['All',...agents]);
 options('resource',unique(D.resources.flatMap(r=>[...Object.keys(r.world_resources||{}),
 ...Object.values(r.agents||{}).flatMap(a=>Object.keys(a))])));
 options('value',['All',...unique(D.probes.flatMap(r=>Object.keys(r.value_vector||{})))]);
@@ -258,6 +272,7 @@ $('records').textContent=rows.slice(page*25,page*25+25).map(r=>JSON.stringify(r,
 $('page').textContent=`Page ${page+1}/${pages} · ${rows.length} records`;
 $('prev').disabled=page===0;$('next').disabled=page===pages-1;}
 function render(){society();activity();institutions();if(!window.Plotly){$('warnings').textContent+=' · Chart library unavailable';inspect();return}
+const lo=Number($('from').value),hi=Number($('to').value);
 const a=$('agent').value,res=$('resource').value,g=new Map();
 for(const r of windowRows(D.resources)){if(Number.isFinite(r.world_resources?.[res])){
 if(!g.has('World pool'))g.set('World pool',[]);g.get('World pool').push([r.tick,r.world_resources[res]])}
@@ -265,7 +280,8 @@ for(const [id,balances] of Object.entries(r.agents||{}))if((a==='All'||id===a)&&
 if(!g.has(id))g.set(id,[]);g.get(id).push([r.tick,balances[res]])}}
 chart('resources',traces(g),res||'Balance');
 const probeGroups=new Map(),axes=$('value').value==='All'?unique(D.probes.flatMap(r=>Object.keys(r.value_vector||{}))):[$('value').value];
-for(const r of windowRows(D.probes).filter(r=>$('channel').value==='All'||r.channel===$('channel').value))for(const axis of axes){const score=r.value_vector?.[axis];
+const pa=$('probe-agent').value;
+for(const r of D.probes.filter(r=>(r.tick>=lo&&r.tick<=hi)&&(pa==='All'||r.agent_id===pa)&&($('channel').value==='All'||r.channel===$('channel').value)))for(const axis of axes){const score=r.value_vector?.[axis];
 if(!Number.isFinite(score))continue;const name=`${r.agent_id} / ${axis} / ${r.channel}`;
 if(!probeGroups.has(name))probeGroups.set(name,[]);probeGroups.get(name).push([r.tick,score])}
 const probeTraces=traces(probeGroups,'lines+markers');
@@ -362,7 +378,7 @@ $('apply').onclick=()=>{const lo=Number($('from').value),hi=Number($('to').value
 if($('from').value===''||$('to').value===''||!Number.isInteger(lo)||!Number.isInteger(hi)||lo<0||hi<lo){$('window-status').textContent='Enter whole ticks ≥ 0, with From ≤ To.';return}
 $('window-status').textContent=`Showing lifecycle ticks ${lo}–${hi}`;page=0;actionPage=0;institutionPage=0;render()};
 $('latest').onclick=()=>{$('from').value=Math.max(0,maxTick-99);$('to').value=maxTick;$('apply').onclick()};
-for(const id of ['agent','resource','value','channel'])$(id).onchange=()=>{page=0;actionPage=0;institutionPage=0;render()};
+for(const id of ['agent','probe-agent','resource','value','channel'])$(id).onchange=()=>{page=0;actionPage=0;institutionPage=0;render()};
 for(const id of ['stream','search'])$(id).oninput=()=>{page=0;inspect()};
 $('prev').onclick=()=>{page--;inspect()};$('next').onclick=()=>{page++;inspect()};render();
 </script></html>'''
