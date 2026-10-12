@@ -84,6 +84,8 @@ def test_javascript_long_window_filters_and_point_budget(tmp_path):
     data['constitution_history'] = [{'version': 'society-v2-base', 'constitution':
         {'quorum': .5, 'amendment_threshold': .67,
          'rules': {'quorum_rule': 'simple_majority_of_eligible'}}}]
+    data['constitution_history'] += [data['constitution_history'][0],
+        {'version': 'society-v2-base', 'constitution': {'quorum': .8}}]
     data['sanctions'] = [dict(tick=5, subject_id='a', record_type='sanction'),
                          dict(tick=6, appellant_id='b', record_type='appeal')]
     script = TEMPLATE.rsplit('<script>', 1)[1].split('</script>', 1)[0]
@@ -101,6 +103,12 @@ const assert=require('node:assert/strict');
 assert(plots.get('resources').data[0].x.length<=2000);
 assert.equal($('value').value,'All');
 assert(created.some(e=>e.textContent==='Constitutional rules'));
+assert.equal(constitutionGroups().length,2);
+assert.equal(constitutionGroups()[0].records.length,2);
+assert.equal(D.constitution_history.length,3);
+assert.equal(plots.get('probes').layout.legend.yanchor,'bottom');
+assert(plots.get('probes').layout.legend.y>1);
+assert(plots.get('probes').layout.margin.t>=110);
 assert(created.some(e=>e.textContent==='quorum rule: simple majority of eligible'));
 assert.equal(plots.get('probes').data.length,6);
 assert(plots.get('probes').data.every(t=>t.mode==='lines+markers'));

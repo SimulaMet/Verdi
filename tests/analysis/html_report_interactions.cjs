@@ -49,7 +49,16 @@ change('agent',D.profiles[0].agent_id);change('channel','private');input('search
 $('reset-view').click();assert.equal($('agent').value,'All');assert.equal($('value').value,'All');assert.equal($('channel').value,'All');assert.equal($('search').value,'');assert.equal($('activity-search').value,'');assert.equal($('agent-cards').querySelectorAll('.card').length,Math.min(n,24));
 assert.match($('institution-details').textContent,/Constitutional rules/);
 assert.match($('institution-details').textContent,/Quorum/);
+const versions=[...new Set(D.constitution_history.map(r=>r.version||r.constitution?.version))];
+for(const version of versions){const records=D.constitution_history.filter(r=>(r.version||r.constitution?.version)===version);
+if(records.length>1&&records.every(r=>JSON.stringify(r.constitution)===JSON.stringify(records[0].constitution))){
+assert.equal([...$('institution-details').querySelectorAll('h3')].filter(e=>e.textContent===`Constitution · ${version}`).length,1);
+assert.match($('institution-details').textContent,new RegExp(`Recorded ${records.length} times`));
+}}
+for(const id of ['resources','probes','latency','tokens','governance','outcomes','profiles-chart']){
+const layout=plots.get(id).layout;assert.equal(layout.legend.yanchor,'bottom');assert(layout.legend.y>1);assert(layout.margin.t>=110);assert(layout.margin.b>=60);assert.equal(layout.legend.maxheight,80);
+}
 assert([...$('institution-details').querySelectorAll('details')].every(e=>!e.open),'Raw records should be collapsed');
 assert.equal($('agent-cards').querySelectorAll('.card')[0].textContent.includes(D.profiles[0].initial.persona_summary),true);
-console.log('PASS: real DOM explore/back cycles, agent selector, All values, line modes, channels, tick validation, empty states, search, pagination, descriptions and readable constitution');
+console.log('PASS: real DOM explore/back cycles, agent selector, All values, line modes, channels, tick validation, empty states, search, pagination, descriptions and readable, deduplicated constitution; legend placement above plots');
 dom.window.close();

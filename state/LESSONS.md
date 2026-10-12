@@ -576,3 +576,15 @@ instead of re-running the identical command.
 - Prevention: every drill-down needs a visible return control. Test user journeys
   against actual DOM elements, including error/empty/reset paths, not just output
   generation. Keep browser rendering limitations explicit.
+
+## HTML legends and duplicate constitutional records / 2026-10-12
+- User observed legend overlap with axis labels and duplicate base-constitution
+  blocks. Run constitution_history contained two exactly identical records.
+- Fix: explicit top legend anchors, 110px reserved top margin, 80px capped legend
+  height, taller charts. Group readable constitutional views by version +
+  canonical sorted content; show occurrence count and all records under Raw
+  record. Never remove repeated source records or merge differing content.
+- Regression evidence: 7 feature tests pass; real DOM report test passes,
+  including one readable block for repeated content and explicit legend layout.
+  Synthetic test keeps differing content separate. Ruff clean. Actual chart
+  painting remains outside DOM test scope; no actual Edge visual pass claimed.

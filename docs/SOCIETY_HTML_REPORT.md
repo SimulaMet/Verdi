@@ -84,3 +84,9 @@ This exercises repeated agent explore/back, selector navigation, All values,
 line modes, channel filters, invalid/narrow/empty tick windows, searching,
 pagination, Reset view, persona descriptions and readable constitution fields.
 Use a multi-agent run with probe, meeting and constitution artifacts.
+
+Legends sit above each plot with reserved top margin and an 80px scrollable
+height, separate from axis labels. Identical constitution content under the
+same version is consolidated in the readable view with its recorded occurrence
+count; Raw record retains the full occurrence list. Different content under
+one version stays separate; the raw evidence inspector retains every record.

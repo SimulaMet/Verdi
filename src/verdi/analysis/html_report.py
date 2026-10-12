@@ -155,7 +155,7 @@ header,section{margin-bottom:24px}h1{font-size:30px;font-weight:700}
 h2{font-size:21px;font-weight:600;margin:20px 0 8px}p{margin:8px 0}
 .controls{display:flex;flex-wrap:wrap;align-items:center;gap:14px}
 .charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,540px),1fr));gap:18px}
-.chart{height:370px;border:1px solid var(--color-base-300);border-radius:12px}
+.chart{height:450px;border:1px solid var(--color-base-300);border-radius:12px}
 pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:500px;overflow:auto}
 label{display:flex;gap:8px;align-items:center}.input{width:125px}
 </style>
@@ -241,9 +241,10 @@ function traces(groups,mode='lines'){return [...groups].map(([name,ps])=>{ps.sor
 return {name,type:'scatter',mode,x:p.map(x=>x[0]),y:p.map(x=>x[1]),connectgaps:false}})}
 function group(rows,name,value){const g=new Map();for(const r of rows){const y=value(r);if(!Number.isFinite(y))continue;
 const n=name(r);if(!g.has(n))g.set(n,[]);g.get(n).push([r.tick,y])}return g}
-function chart(id,data,y,life=true){data=data.filter(t=>t.x?.length);const layout={margin:{t:20,r:20,b:65,l:65},height:370,
+const chartLegend={orientation:'h',x:0,xanchor:'left',y:1.08,yanchor:'bottom',maxheight:80};
+function chart(id,data,y,life=true){data=data.filter(t=>t.x?.length);const layout={margin:{t:110,r:25,b:75,l:70},height:450,
 xaxis:{title:{text:life?'Lifecycle tick':'Reducer transition tick'}},yaxis:{title:{text:y}},
-legend:{orientation:'h',maxheight:0.25},hovermode:'closest',paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'};
+legend:chartLegend,hovermode:'closest',paper_bgcolor:'rgba(0,0,0,0)',plot_bgcolor:'rgba(0,0,0,0)'};
 if(life)layout.xaxis.range=[Number($('from').value),Number($('to').value)];
 if(!data.length)layout.annotations=[{text:'No recorded observations',xref:'paper',yref:'paper',x:.5,y:.5,showarrow:false}];
 Plotly.react(id,data,layout,{responsive:true,displaylogo:false});}
@@ -310,13 +311,13 @@ const button=element('button','Explore this agent','btn');button.onclick=()=>{se
 if(profiles.length>24&&selected==='All')container.append(element('p','Showing first 24 profiles; select an agent to inspect any participant.'));
 if(!window.Plotly)return;
 const visible=profiles.filter(p=>selected==='All'||p.agent_id===selected).slice(0,24),axes=unique(visible.flatMap(p=>Object.keys(p.initial.declared_values||{})));
-Plotly.react('profiles-chart',visible.map(p=>({type:'scatterpolar',name:label(p.agent_id),r:axes.map(k=>p.initial.declared_values?.[k]??null),theta:axes,fill:'toself',connectgaps:false})),{height:370,margin:{t:25,b:45,l:50,r:50},polar:{radialaxis:{range:[0,1]}},legend:{orientation:'h'}},{responsive:true,displaylogo:false});
+Plotly.react('profiles-chart',visible.map(p=>({type:'scatterpolar',name:label(p.agent_id),r:axes.map(k=>p.initial.declared_values?.[k]??null),theta:axes,fill:'toself',connectgaps:false})),{height:450,margin:{t:110,b:60,l:70,r:70},polar:{radialaxis:{range:[0,1]}},legend:chartLegend},{responsive:true,displaylogo:false});
 const nodes=profiles.slice(0,80),positions=new Map(nodes.map((p,i)=>[p.agent_id,[Math.cos(2*Math.PI*i/nodes.length),Math.sin(2*Math.PI*i/nodes.length)]])),x=[],y=[],arrows=[];
 for(const p of nodes)for(const neighbor of p.initial.social_edges||[]){const a=positions.get(p.agent_id),b=positions.get(neighbor);if(!b)continue;
 x.push(a[0],b[0],null);y.push(a[1],b[1],null);arrows.push({x:b[0]*.88+a[0]*.12,y:b[1]*.88+a[1]*.12,ax:a[0]*.88+b[0]*.12,ay:a[1]*.88+b[1]*.12,xref:'x',yref:'y',axref:'x',ayref:'y',showarrow:true,arrowhead:2,arrowwidth:1})}
 Plotly.react('network',[{type:'scatter',mode:'lines',x,y,line:{color:'#c6cbd4',width:1},hoverinfo:'skip'},
 {type:'scatter',mode:'markers+text',x:nodes.map(p=>positions.get(p.agent_id)[0]),y:nodes.map(p=>positions.get(p.agent_id)[1]),text:nodes.map(p=>`${label(p.agent_id)} · ${p.initial.role||''}`),textposition:'top center',marker:{size:22,color:nodes.map(p=>p.agent_id===selected?'#d67c32':'#5279a9')},hoverinfo:'text'}],
-{height:370,margin:{t:45,b:40,l:65,r:65},showlegend:false,annotations:arrows.slice(0,300),xaxis:{visible:false,range:[-1.5,1.5]},yaxis:{visible:false,range:[-1.4,1.4]}},{responsive:true,displaylogo:false});
+{height:450,margin:{t:45,b:40,l:65,r:65},showlegend:false,annotations:arrows.slice(0,300),xaxis:{visible:false,range:[-1.5,1.5]},yaxis:{visible:false,range:[-1.4,1.4]}},{responsive:true,displaylogo:false});
 }
 let actionPage=0,institutionPage=0;
 function activity(){const a=$('agent').value,q=$('activity-search').value.toLowerCase();
@@ -326,13 +327,18 @@ for(const r of rows.slice(actionPage*20,actionPage*20+20)){const tr=element('tr'
 for(const text of [`#${r.event_id} / t${r.tick}`,label(r.actor_id)||'Institution',r.decision||r.kind,`${r.payload?.action_kind||r.kind}\n${JSON.stringify(r.payload?.arguments||r.payload)}`,reasons.get(r.event_id)||'No reason recorded'])tr.append(element('td',text,'reason'));
 body.append(tr)}$('activity-page').textContent=`${rows.length} records · page ${actionPage+1}/${pages}`;$('activity-prev').disabled=actionPage===0;$('activity-next').disabled=actionPage===pages-1;
 }
+function constitutionGroups(){const groups=new Map();
+const canonical=value=>JSON.stringify(value,(key,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b))):v);
+for(const r of D.constitution_history){const version=r.version||r.constitution?.version||'unknown',key=version+' / '+canonical(r.constitution||r);
+if(!groups.has(key))groups.set(key,{title:`Constitution · ${version}`,record:r,records:[]});groups.get(key).records.push(r)}return [...groups.values()]}
 function institutions(){const rows=[...windowRows(D.meetings).map(r=>({title:`Meeting at lifecycle tick ${r.tick} · ${r.outcome}`,record:r})),
-...D.constitution_history.map(r=>({title:`Constitution · ${r.version||r.constitution?.version||'unknown'}`,record:r})),
+...constitutionGroups(),
 ...windowRows(D.sanctions).map(r=>({title:`${r.record_type||'Governance'} · lifecycle tick ${r.tick} · ${label(subject(r))||''}`,record:r}))];
 const pages=Math.max(1,Math.ceil(rows.length/10));institutionPage=Math.max(0,Math.min(institutionPage,pages-1));const container=clear('institution-details');
 for(const r of rows.slice(institutionPage*10,institutionPage*10+10)){const d=element('div',null,'detail');d.append(element('h3',r.title,'card-title'));
 const c=r.record.constitution;
 if(c){
+if(r.records.length>1)d.append(element('p',`Recorded ${r.records.length} times with identical constitution content.`,'muted'));
 const list=element('dl');for(const [key,title] of [['effective_from_tick','Effective from tick'],['quorum','Quorum'],['amendment_threshold','Amendment threshold'],['sanction_policy','Sanction policy'],['appeal_policy','Appeal policy']]){
 if(c[key]==null)continue;list.append(element('dt',title,'muted'),element('dd',typeof c[key]==='object'?Object.entries(c[key]).map(([k,v])=>`${k.replaceAll('_',' ')}: ${v}`).join(' · '):c[key]));}d.append(list);
 d.append(element('h4','Constitutional rules'));
@@ -341,7 +347,7 @@ if(!Object.keys(rules).length)d.append(element('p','No rule text recorded.'));
 }else if(r.record.outcome){d.append(element('p','Outcome · '+r.record.outcome),element('p',`Proposals: ${(r.record.proposals||[]).length} · Vote records: ${(r.record.votes||[]).length} · Abstentions: ${r.record.abstentions??'not recorded'}`));
 for(const proposal of r.record.proposals||[]){d.append(element('p',proposal.text||proposal.description||JSON.stringify(proposal)));}
 }else{for(const [key,value] of Object.entries(r.record))if(typeof value!=='object')d.append(element('p',`${key.replaceAll('_',' ')}: ${value}`));}
-const raw=element('details');raw.append(element('summary','Raw record'),element('pre',JSON.stringify(r.record,null,2)));d.append(raw);container.append(d)}
+const raw=element('details');raw.append(element('summary','Raw record'),element('pre',JSON.stringify(r.records?.length>1?r.records:r.record,null,2)));d.append(raw);container.append(d)}
 if(!rows.length)container.append(element('p','No recorded governance proceedings.'));
 $('institution-page').textContent=`${rows.length} records · page ${institutionPage+1}/${pages}`;$('institution-prev').disabled=institutionPage===0;$('institution-next').disabled=institutionPage===pages-1;
 }

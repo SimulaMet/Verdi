@@ -1196,3 +1196,17 @@ No blockers. Note: two code-review subagent launches were cancelled by infrastru
   actual browser rendering; use report on a larger emitted run.
 - Final full suite after navigation corrections: 536 passed / 2 skipped
   (52.46s), exit 0; ruff clean, exit 0. Actual DOM interaction test exit 0.
+
+## 2026-10-12 — HTML legend and constitution presentation fixes (feature only)
+- Owner root, feat/society-v2-html-report /private/tmp/verdi-html-work;
+  original dev/main untouched. Offline report regenerated at
+  runs/society-v2/quickstart-minimal-v2/report.html in primary workspace.
+- Legends above charts with explicit reserved margins and capped scrolling;
+  duplicate constitution content consolidated with occurrence counts and raw
+  record list. Differing content under same version remains separate.
+- Validation: 7 targeted tests pass, real DOM interaction test PASS, ruff clean
+  (all exit 0). Actual browser chart painting not verified. Scientific gates
+  unchanged. Next: coordinate feature integration; visually verify Edge layout;
+  inspect large-run legends.
+- Independent /root/review_html rereview: no blocking findings; actual browser
+  rendering remains the final visual overlap check.
