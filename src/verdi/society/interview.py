@@ -166,6 +166,12 @@ async def run_interviews(
             "question": INTERVIEW_PROMPT_VERSION,
             "raw_answer": res.content,
             "parsed": _parse_answer(res.content),
+            # The agent's REAL committed memory at this checkpoint (observations
+            # of what it saw + its reflections). Persisted so a later out-of-band
+            # live-probing audit can re-query the agent grounded in its actual
+            # history instead of confabulating. Read-only snapshot; does not
+            # mutate the live AgentMemory.
+            "memory_summary": memory[aid].render_history_summary(aid),
             "model": getattr(res, "model", "") or "",
             "trace_id": getattr(res, "trace_id", "") or "",
             "ts_utc": datetime.now(timezone.utc).isoformat(),

@@ -183,9 +183,16 @@ class WorldReducer:
             resources = {**agent.resources, resource: agent.resources.get(resource, 0.0) + amount}
             agents[action.actor_id] = agent.model_copy(update={"resources": resources})
         elif kind == "emit_signal":
-            text = _arg(action.arguments, "text")
-            signals = [*agent.public_signals, str(text)][-_MAX_PUBLIC_SIGNALS:]
-            agents[action.actor_id] = agent.model_copy(update={"public_signals": signals})
+            text = str(_arg(action.arguments, "text")).strip()
+            # Drop a verbatim repeat of a signal the agent already sent: with
+            # temperature-0 sampling an unchanged situation regenerates identical
+            # text, which just clutters neighbors' context. A near-new signal is
+            # still appended (only exact duplicates are suppressed), so genuine
+            # re-emphasis with different wording is preserved.
+            existing = [s for s in agent.public_signals if s.strip()]
+            if text and text not in existing:
+                signals = [*(existing + [text])][-_MAX_PUBLIC_SIGNALS:]
+                agents[action.actor_id] = agent.model_copy(update={"public_signals": signals})
         # Any other accepted kind is record-only: no substantive mutation.
 
         _assert_nonnegative(agents, world_resources)

@@ -17,7 +17,7 @@ from verdi.schemas import Task, WorldState
 from .memory import AgentMemory
 
 #: Versioned prompt constant. Bump deliberately; experiments log it.
-SOCIAL_PROMPT_VERSION = "verdi.society-prompt/3"
+SOCIAL_PROMPT_VERSION = "verdi.society-prompt/4"
 
 #: Exact required argument field names per action kind, mirroring
 #: ``verdi.world.validate``. Rendered into the prompt so the model cannot
@@ -66,6 +66,13 @@ actually say it out loud: short, natural, with your own attitude and personality
 No bullet points, no formal report tone, no "as instructed", no referencing task
 IDs or system mechanics, and never mention that you are an AI, a model, or part of
 a simulation. Just be yourself reacting to the situation.
+
+If you are speaking up again (i.e. you have already sent signals before, listed
+above), do NOT just repeat what you said last time. People get tired of hearing the
+same thing twice. React to what has CHANGED since then — something a neighbor did,
+something you noticed, a new problem, or a shift in how you feel. If nothing has
+actually changed and you have nothing new to add, say a short genuine follow-up
+rather than restating your old point word-for-word.
 """
 
 

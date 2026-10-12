@@ -242,11 +242,18 @@ def _agent_context_map(scenario_path: Path, run_dir: Path) -> dict[str, str]:
         desc = p.get("action") or p.get("reason") or kind
         status = "did" if kind == "action_accepted" else "tried but was blocked from"
         history.setdefault(actor, []).append(f"- t{e.get('tick')}: {status} {desc}")
+    # Real roster of everyone in the community (names + roles) so an agent probed
+    # about "who did X" can reference REAL neighbors instead of inventing people.
+    roster = ", ".join(
+        f"{a['agent_id']} ({a.get('role', 'resident')})" for a in scenario.get("agents", [])
+    )
     out: dict[str, str] = {}
     for aid, meta in personas.items():
         parts = [f"You are agent '{aid}' (role: {meta.get('role', 'resident')})."]
         if meta.get("persona_summary"):
             parts.append(f"Who you are: {str(meta['persona_summary']).strip()}")
+        if roster:
+            parts.append(f"The people in this community are: {roster}.")
         evs = history.get(aid, [])
         if evs:
             parts.append("Things that actually happened to you in this community:\n" + "\n".join(evs[:25]))
