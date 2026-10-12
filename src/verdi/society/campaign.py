@@ -478,7 +478,7 @@ class SocietyCampaign:
 
             # Two tasks per agent per tick:
             # 1. Round-robin (deterministic, seeded) — the "routine" task
-            # 2. LLM god-orchestrator — role-aware, history-informed "directed" task
+            # 2. Orchestrator (LLM) — role-aware, history-informed directed task
             base_tape = generate_tick_tape(tick, snapshot, random.Random(), tape_seed=f"soc-v2:{self._run_seed}")
             llm_tape, used_llm, orch_meta = await generate_llm_tape(
                 tick, snapshot, self._caller,
@@ -490,7 +490,7 @@ class SocietyCampaign:
                 # Record orchestrator model call for telemetry
                 fingerprint = self._model_fingerprint()
                 self._model_calls.append(
-                    _ModelCall(tick, "orchestrator", "village_elder", orch_meta.get("trace_id", ""),
+                    _ModelCall(tick, "orchestrator", "orchestrator", orch_meta.get("trace_id", ""),
                                fingerprint, self._temperature, orch_meta.get("response_chars", 0),
                                orch_meta.get("duration_ms", 0),
                                prompt_tokens=orch_meta.get("prompt_tokens", 0),

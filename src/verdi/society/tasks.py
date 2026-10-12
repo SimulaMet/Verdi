@@ -217,17 +217,17 @@ def generate_tick_tape(
 
 
 # --------------------------------------------------------------------------- #
-# LLM God-Orchestrator
+# Orchestrator (LLM task director)
 # --------------------------------------------------------------------------- #
 
 _ORCHESTRATOR_SYSTEM_PROMPT = (
     "[verdi.orchestrator/1]\n"
-    "You are the village elder who assigns daily work to each household member. "
-    "You see the whole village: who has food, who is hungry, who is idle, who "
-    "is under sanction, and what each person has been doing recently. You assign "
-    "ONE concrete task to each person that helps them sustain their life as their "
-    "role — a farmer tends crops, a healer checks on the sick, a trader exchanges "
-    "goods. The village should feel like a living community, not a factory.\n\n"
+    "You are the world's task director for this tick. You see the whole village: "
+    "who has food, who is hungry, who is idle, who is under sanction, and what "
+    "each person has been doing recently. Assign ONE concrete activity to each "
+    "person that fits their role and keeps the village alive — a farmer tends "
+    "crops, a healer checks on the sick, a trader exchanges goods. Make it feel "
+    "like natural daily life, not a factory.\n\n"
     "Rules:\n"
     "- Each person's task should fit their ROLE and help them continue living "
     "their life in the village.\n"
@@ -381,7 +381,7 @@ async def generate_llm_tape(
     fallback_seed: str = "soc-v2",
     memories: dict | None = None,
 ) -> tuple[list[Task], bool, dict]:
-    """Generate this tick's task tape via an LLM god-orchestrator.
+    """Generate this tick's task tape via the LLM orchestrator.
 
     The orchestrator sees each agent's role, resources, social edges, idle
     time, and recent memory snippets so it can assign varied, role-appropriate
