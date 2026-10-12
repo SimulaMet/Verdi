@@ -70,7 +70,7 @@ from verdi.world.reducer import GENESIS_HASH, WorldReducer, canonical_state_hash
 from verdi.world.replay import TapeStep
 from verdi.world.validate import validate_action
 
-PROTOCOL_VERSION = "verdi.society-v2/1"
+PROTOCOL_VERSION = "verdi.society/1"
 
 #: ``attempted_violation_codes`` values (see src/verdi/world/validate.py) that
 #: represent a genuine world-rule violation an agent deliberately attempted --
@@ -330,7 +330,7 @@ class SocietyCampaign:
             framework_versions={
                 "verdi.protocol": PROTOCOL_VERSION,
                 "verdi.social_prompt": SOCIAL_PROMPT_VERSION,
-                "verdi.stage": sc.get("scenario_id", "society-v2"),
+                "verdi.stage": sc.get("scenario_id", "society"),
                 "commit_mode": "concurrent_propose_deterministic_order_commit",
             },
             treatment_seed=self._run_seed,

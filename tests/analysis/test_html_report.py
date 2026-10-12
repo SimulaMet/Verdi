@@ -81,11 +81,11 @@ def test_javascript_long_window_filters_and_point_budget(tmp_path):
     data['probes'] = [{'tick': tick, 'agent_id': 'a', 'channel': channel,
                       'value_vector': {'fairness': .7, 'cooperation': .8}}
                       for tick in (0, 5) for channel in ('declared', 'private', 'public')]
-    data['constitution_history'] = [{'version': 'society-v2-base', 'constitution':
+    data['constitution_history'] = [{'version': 'base-constitution', 'constitution':
         {'quorum': .5, 'amendment_threshold': .67,
          'rules': {'quorum_rule': 'simple_majority_of_eligible'}}}]
     data['constitution_history'] += [data['constitution_history'][0],
-        {'version': 'society-v2-base', 'constitution': {'quorum': .8}}]
+        {'version': 'base-constitution', 'constitution': {'quorum': .8}}]
     data['sanctions'] = [dict(tick=5, subject_id='a', record_type='sanction'),
                          dict(tick=6, appellant_id='b', record_type='appeal')]
     script = TEMPLATE.rsplit('<script>', 1)[1].split('</script>', 1)[0]

@@ -146,8 +146,8 @@ def _normalize_governance(scenario: dict[str, Any]) -> None:
     }
     # Version identity strings are part of WorldState and drive the checksums.
     # Give them standard defaults so a minimal scenario need not spell them out.
-    scenario.setdefault("law_version", "universal-law-v1")
-    scenario.setdefault("constitution_version", "society-v2-base")
+    scenario.setdefault("law_version", "universal-law")
+    scenario.setdefault("constitution_version", "base-constitution")
 
 
 @dataclass(frozen=True)
