@@ -683,7 +683,9 @@ class SocietyCampaign:
         """
         if not calls:
             return
-        with (self._run_dir / "model_calls.jsonl").open("a", encoding="utf-8") as fh:
+        mc_path = self._run_dir / "model_calls.jsonl"
+        mc_path.touch(exist_ok=True)
+        with mc_path.open("a", encoding="utf-8") as fh:
             for c in calls:
                 fh.write(json.dumps(_model_call_dict(c), sort_keys=True) + "\n")
 

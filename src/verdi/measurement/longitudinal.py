@@ -199,34 +199,38 @@ class ProbeRecorder:
         ``model_request_id`` is the caller's trace id and scoring is a pure
         function of the item and the parsed choice.
         """
-        results: list[ProbeResult] = []
-        for agent_id in sorted(state.agents):
+        async def _one(agent_id: str, channel: str) -> ProbeResult:
             agent = state.agents[agent_id]
-            for channel in channels:
-                item = self.bank.draw(agent_id, tick, channel, rng_seed=self.seed)
-                messages = [
-                    {"role": "user", "content": _probe_prompt(item.dilemma_text, channel, agent)}
-                ]
-                model_result = await caller.generate_structured(
-                    messages, response_format_json=False, temperature=0.0
-                )
-                choice, unparsed = _parse_choice(model_result.content, item.options)
-                score, vector, judge_version = score_probe(item, choice)
-                results.append(
-                    ProbeResult(
-                        probe_id=item.probe_id,
-                        agent_id=agent_id,
-                        tick=tick,
-                        channel=channel,
-                        response=choice,
-                        score=score,
-                        value_vector=dict(vector) if vector else {},
-                        evidence_ref=self._evidence_ref(agent_id, tick, channel, phase, unparsed),
-                        judge_version=judge_version,
-                        model_request_id=model_result.trace_id,
-                        grounded=True,
-                    )
-                )
+            item = self.bank.draw(agent_id, tick, channel, rng_seed=self.seed)
+            messages = [
+                {"role": "user", "content": _probe_prompt(item.dilemma_text, channel, agent)}
+            ]
+            model_result = await caller.generate_structured(
+                messages, response_format_json=False, temperature=0.0
+            )
+            choice, unparsed = _parse_choice(model_result.content, item.options)
+            score, vector, judge_version = score_probe(item, choice)
+            return ProbeResult(
+                probe_id=item.probe_id,
+                agent_id=agent_id,
+                tick=tick,
+                channel=channel,
+                response=choice,
+                score=score,
+                value_vector=dict(vector) if vector else {},
+                evidence_ref=self._evidence_ref(agent_id, tick, channel, phase, unparsed),
+                judge_version=judge_version,
+                model_request_id=model_result.trace_id,
+                grounded=True,
+            )
+
+        import asyncio
+        tasks = [
+            _one(agent_id, channel)
+            for agent_id in sorted(state.agents)
+            for channel in channels
+        ]
+        results = list(await asyncio.gather(*tasks))
         return results
 
 

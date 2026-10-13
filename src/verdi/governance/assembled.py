@@ -276,6 +276,7 @@ class Assembly:
                     payload=payload,
                 )
             )
+        self._proposals.extend(proposals)
         self._proposal_order.extend(p.proposal_id for p in proposals)
         return proposals
 
