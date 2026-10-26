@@ -1,110 +1,93 @@
-# Institutional recovery experiment — development status
+# Institutional governance experiments
 
-This is a FRAMEWORK feature, not a project assigned to nontechnical users.
-Researchers should be able to choose a prepared scenario and condition and
-obtain auditable, comparable outcomes without editing Python.
+Verdi supports controlled studies of whether collective decision procedures
+help an AI-agent society adapt to changing conditions. A scenario can use
+either fixed constitutional rules or rules that the agents may amend through
+scheduled meetings.
 
-## What this branch adds (first pass; not yet CI-validated)
+## Institutional conditions
 
-- Scenario key: institutional_condition: fixed | revisable (default revisable).
-- Both conditions retain the same scheduled constitutional meetings,
-  deliberation calls, proposals and votes. The fixed condition rejects enactment
-  with reason institution_fixed_rules; revisable can enact valid amendments.
-- Typed, machine-enforceable constitutional rules:
-  - max_transfer_units: strictly positive finite number
-  - max_withdraw_units: strictly positive finite number
-  - min_commons_reserve: mapping of resource to nonnegative finite number
-- The existing deterministic action validator enforces those rules AFTER
-  original immutable invariants, under the separate constitution:* codes.
-- Amendments with malformed recognized policy values are rejected before
-  enactment. Narrative rules continue to be stored but are not executable.
-- Future-effective versions do not affect action validation before their date.
-- The meeting and action prompts expose rules relevant to participants.
-- An illustrative YAML smoke scenario is provided.
+Set `institutional_condition` in the scenario:
 
-No other form of amendment is magically executable. In particular, prose
-changes about fairness or rights currently remain descriptive metadata.
+```yaml
+institutional_condition: revisable  # or fixed
+assemblies: [15, 25, 35]
+```
 
-## Run the example
+Both conditions retain the same scheduled meetings, deliberation opportunities,
+proposals, and voting process. Under `fixed`, proposals can be discussed and
+voted on but do not enact constitutional changes. Under `revisable`, a valid
+amendment may take effect after the requisite vote. The default condition is
+`revisable` for compatibility with existing scenarios.
 
-Install as in README, configure a real endpoint via .env, then:
+For a meaningful comparison, hold constant the model, sampling configuration,
+initial resources, agent definitions, task opportunities, shocks, and meeting
+schedule. Use matched run seeds and separate output directories. Seed matching
+controls the simulated randomization but does not guarantee identical live LLM
+outputs.
 
-    python -m verdi.society.live --scenario experiments/scenarios/institutional_recovery_smoke.yaml --run-dir runs/revisable-42
+## Binding constitutional rules
 
-For the fixed condition, copy the YAML to another path and change ONLY:
+The action validator recognizes the following policy parameters:
 
-    institutional_condition: fixed
+| Rule | Value | Effect |
+| --- | --- | --- |
+| `max_transfer_units` | Positive finite number | Maximum units in one transfer |
+| `max_withdraw_units` | Positive finite number | Maximum units in one withdrawal |
+| `min_commons_reserve` | Resource-to-nonnegative-number mapping | Minimum balance left in the shared resource pool after a withdrawal |
 
-Run that copy with the same seed/model and a new run directory.
-Open report.html in each output folder; compare raw ledger and metrics too.
+For example:
 
-## Crucial scientific limitations (do not report positive findings yet)
+```yaml
+constitution:
+  rules:
+    max_withdraw_units: 2
+    min_commons_reserve:
+      food: 12
+```
 
-1. The current resource economy allows costless production. A food shock alone
-   is NOT a meaningful scarcity intervention. Implement resource constraints,
-   demand, or externally checkable work objectives before claiming recovery.
-2. There is no validated task-completion metric, per-agent exclusion-duration
-   metric, or preregistered recovery-time definition yet.
-3. Seeding the simulator does NOT make stochastic LLM generations identical.
-   Record model revision, sampling settings and calls; run paired repetitions.
-4. A currently registered future-dated constitution can differ from the
-   currently effective constitution. The policy layer selects the effective
-   version for action validation, but state/prompt version bookkeeping needs
-   a full audit for multiple overlapping future-dated amendments.
-5. Enacted narrative amendments remain non-binding. Do not count them as
-   effective adaptations.
-6. Probe self-reports and hypothetical public responses are exploratory, not
-   evidence that actual world actions complied with a value.
-7. Inner-life updates are opt-in; ordinary memory consolidation can still
-   introduce reflective dynamics. Freeze optional goal development consistently
-   in both conditions until it can be studied as a separate intervention.
-8. Policy limit violations are logged as policy_limit, but this does NOT
-   automatically impose punishment. Sanction rules are an independent mechanism.
-9. No end-to-end live model run or complete test suite has been executed
-   as part of the connector-only patch. Treat this branch as provisional.
+These checks are deterministic and complement the universal restrictions on
+resource ownership and nonnegative balances. An action that violates an active
+policy is rejected with a `constitution:<rule_name>` code and remains visible
+in the event ledger. A policy rejection is not automatically a punitive
+sanction.
 
-## Required next steps before the framework is usable for Stefano's study
+Amendments are versioned, validated before enactment, and applied according to
+their effective dates. A rule with an invalid numeric value cannot be enacted.
+Other constitutional keys may be recorded as governance or narrative rules,
+but they do not gain executable behavior unless the validator explicitly
+supports them. Free-form text is never evaluated as code.
 
-P0: Run lint, pytest, mypy if configured, and end-to-end scripted
-fixed/revisable integration tests. Verify amended rule affects a real action
-and its ledger, replay and HTML report. Fix every regression.
+## Example run
 
-P0: A validated shock/task environment with observable demand, limited
-production costs/capacities, task objectives and deterministic success checks.
-Success must NOT be inferred from the agent's claim or merely action_accepted.
+The example in
+[`experiments/scenarios/institutional_recovery_smoke.yaml`](../experiments/scenarios/institutional_recovery_smoke.yaml)
+uses four agents, scheduled assemblies, and a configured food-resource shock.
 
-P0: Researcher-friendly condition selection: reusable YAML template or
-supported CLI flags; validation and a paired-run harness that produces two
-conditions with identical seed, model, initial state, tasks, meeting times,
-shock schedule and instrumentation.
+After configuring an OpenAI-compatible endpoint as described in the main
+README, run:
 
-P0: Outcome definitions and extraction:
-- completion_rate = verified successful tasks / assigned eligible tasks
-- resource_sharing = accepted transfer/deposit flow plus distribution metrics
-- exclusion = per-agent sanction episodes, excluded ticks and repeat episodes
-- recovery = preregistered ticks to regain target fraction of pre-shock
-  successful task rate, including censored runs
-- institutional mechanism = proposals, votes, enacted executable amendments,
-  actual policy change and behavior affected by it
+```bash
+python -m verdi.society.live \
+  --scenario experiments/scenarios/institutional_recovery_smoke.yaml \
+  --run-dir runs/institutional-recovery
+```
 
-P1: Robust experiments: batch runs, retries and resumable manifests without
-changing scientific data, paired-seed CIs, uncertainty intervals, frozen
-configs, artifact checksums, run health and failure exclusion reporting.
-Add fixed-vs-revisable fairness checks for prompt visibility and call budgets.
+To compare conditions manually, copy the scenario, change only
+`institutional_condition` to `fixed`, keep the same seed and other settings,
+and use a different run directory. Each run produces its event ledger, model
+call records, constitutional history, metrics, and HTML report.
 
-P1: Researcher-facing documentation, scenario gallery, report comparative
-view, CSV exports, and readable error messages. No Python editing required.
+## Interpretation
 
-## Mechanism and non-regression contract
+A constitutional amendment is a process outcome, not proof of better
+institutional performance. Evaluating recovery requires independent,
+predefined measures of successful work, resource sharing, exclusion, and time
+to recovery. A shock that can be immediately undone by unrestricted production
+is not sufficient evidence of resilience. Probe responses measure the agents'
+answers to dilemmas, not necessarily their committed behavior.
 
-A proposal becomes a new constitutional version only after passing universal
-invariants, typing, quorum, threshold and temporal validity. The binding rules
-applied to an action are those effective on the current simulation loop tick.
-Immutable no-overdraft and nonnegative-resource checks cannot be weakened.
-A rejected policy-constrained action must be present in the event ledger; the
-reducer must not mutate its substantive world state. Tape replay and state
-hashes must continue to match the recorded execution.
-
-When implementing more executable policies, add each to an explicit finite
-schema with deterministic semantics, unit tests, and invariant protections.
-Never execute arbitrary LLM-authored Python, formulas or natural language.
+Keep any intervention on individual goal revision or private reflection
+consistent across institutional conditions, or evaluate it separately.
+Inspect failed runs and unchanged constitutions as well as successful
+amendments; do not select results solely by whether adaptation occurred.
