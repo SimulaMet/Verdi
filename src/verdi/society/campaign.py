@@ -610,6 +610,11 @@ class SocietyCampaign:
                 # ledger). The GovernanceEngine (constitution state) is shared.
                 fresh_assembly = Assembly(governance)
                 state = await self._assemble(tick, state, agent_ids, fresh_assembly, log, reducer)
+                # Registry provenance: record the REGISTERED version (a
+                # future-dated amendment is registered at enactment even though
+                # it only becomes enforceable at its effective tick —
+                # enforcement follows active_at(tick), and
+                # WorldState.constitution_version flips no earlier than that).
                 self._constitution_versions.append(governance.constitution.current.version)
                 self._constitution_texts.append(_constitution_dump(governance.constitution.current))
 
@@ -1029,18 +1034,30 @@ class SocietyCampaign:
             "deliberation_abstentions": list(assembly.deliberation_abstentions),
         })
         if outcome.outcome == "amendment_enacted" and outcome.enacted_version:
+            effective_from_tick = outcome.enacted_effective_from_tick
+            if effective_from_tick is None:
+                effective_from_tick = tick  # legacy/immediate default
             gen_event = {
                 "kind": "amendment_enacted",
                 "actor": "assembly",
                 "constitution_version": outcome.enacted_version,
+                "effective_from_tick": effective_from_tick,
                 "decision": "accepted",
                 "reason": "quorum + amendment threshold met by deterministic engine",
             }
+            # WorldState.constitution_version tracks the ENFORCEABLE version.
+            # A future-dated amendment is registered (ledgered below) but must
+            # not flip the state's active version before its effective tick —
+            # enforcement uses active_at(tick), which stays on the old version
+            # until then. Immediate amendments behave exactly as before.
+            state_arguments: dict[str, Any] = {}
+            if effective_from_tick <= tick:
+                state_arguments["constitution_version"] = outcome.enacted_version
             action = ProposedAction(
                 actor_id="governance",
                 task_id=f"governance-amendment_enacted-{state.event_cursor}",
                 action_kind="governance",
-                arguments={"constitution_version": outcome.enacted_version},
+                arguments=state_arguments,
             )
             validation = ValidationResult(accepted=True, details=gen_event["reason"])
             before = state
