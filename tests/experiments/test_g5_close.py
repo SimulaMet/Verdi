@@ -227,11 +227,15 @@ def test_b2_planted_ground_truth_string_fails_leakage(mini_run_root):
 
 
 def test_b2_planted_key_material_fails_leakage(mini_run_root):
-    mutate_tape(mini_run_root, 1, 2, response_raw='{"reason": "key sk-testfake123456 here"}')
+    # A real-length fake key (sk- prefix + 24 chars incl. digits) must be
+    # flagged; the scanner's floor is 12 chars after the prefix so short
+    # tokens like "sk-testfake123" (8) stay below it — see KEY_MATERIAL_PATTERNS.
+    planted = "sk-fakekey99aabbccddeeff"
+    mutate_tape(mini_run_root, 1, 2, response_raw=f'{{"reason": "key {planted} here"}}')
     res = audit_leakage(mini_run_root)
     assert res["passed"] is False
     assert len(res["key_material_findings"]) == 1
-    assert "sk-testfake123456" in res["key_material_findings"][0]
+    assert planted in res["key_material_findings"][0]
 
 
 def test_b2_prompt_ordering_leak_fails_leakage(mini_run_root):
@@ -540,7 +544,7 @@ def test_report_rejects_unfrozen_not_claimed_block(mini_run_root):
 
 
 def test_no_key_material_in_tape_and_report(mini_run_root):
-    fake_key = "sk-testfake123"
+    fake_key = "sk-fakekey99aabbccddeeff"
     # The key-material scanner (judge_live behavior) must raise on the tape
     # text that would carry a fake key ...
     with pytest.raises(AssertionError):

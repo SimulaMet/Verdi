@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from verdi.schemas import Amendment, ConstitutionVersion, Proposal, VoteRecord
+from verdi.world.policy import validate_enforceable_rules
 
 from .law import UniversalLaw
 
@@ -47,8 +48,9 @@ class ConstitutionStore:
     law-invariant check, retroactivity check, quorum, threshold.
     """
 
-    def __init__(self, law: UniversalLaw) -> None:
+    def __init__(self, law: UniversalLaw, *, amendments_enabled: bool = True) -> None:
         self._law = law
+        self.amendments_enabled = amendments_enabled
         self._versions: dict[str, ConstitutionVersion] = {}
         self._order: list[str] = []
         self._current: ConstitutionVersion | None = None
@@ -83,6 +85,27 @@ class ConstitutionStore:
     def versions(self) -> list[ConstitutionVersion]:
         return [self._versions[v] for v in self._order]
 
+    def active_at(self, tick: int) -> ConstitutionVersion:
+        """The version in force at a given tick (pure read, deterministic).
+
+        With multiple overlapping future-dated amendments, "in force" means
+        the LATEST effective date on or before the tick; registration order
+        only breaks ties between versions sharing an effective tick. A later-
+        registered version with a LATER effective date must NOT win before its
+        date (a plain last-registered scan would get this wrong). Used by the
+        validator and prompts so agents see exactly the rules being enforced
+        at that moment.
+        """
+        best: tuple[int, int, ConstitutionVersion] | None = None
+        for index, version in enumerate(self.versions()):
+            if version.effective_from_tick > tick:
+                continue
+            key = (version.effective_from_tick, index)
+            if best is None or key > (best[0], best[1]):
+                best = (*key, version)
+        assert best is not None  # the initial version is always eligible
+        return best[2]
+
     def _next_version(self) -> str:
         return f"{self.current.constitution_id}-v{len(self._order) + 1}"
 
@@ -98,14 +121,23 @@ class ConstitutionStore:
     # -- proposals and votes ----------------------------------------------
 
     def propose(self, proposal_id: str, submitted_by: str, tick: int,
-                change_summary: str, payload: dict[str, Any]) -> Proposal:
+                change_summary: str, payload: dict[str, Any],
+                *, base_tick: int | None = None) -> Proposal:
         if proposal_id in self._proposals:
             raise ValueError(f"duplicate proposal id: {proposal_id}")
+        # The proposal bases on the version ENFORCEABLE at its submission tick.
+        # ``current`` is the last REGISTERED version, which with future-dated
+        # amendments may not yet be in force; basing proposals on it would
+        # silently drop deltas from versions that are effective but registered
+        # later. Callers pass the submission tick (or an earlier pinned tick).
         proposal = Proposal(
             proposal_id=proposal_id,
             submitted_by=submitted_by,
             tick=tick,
-            constitution_version_base=self.current.version,
+            constitution_version_base=(
+                self.active_at(base_tick).version if base_tick is not None
+                else self.current.version
+            ),
             change_summary=change_summary,
             payload=payload,
             status="under_vote",
@@ -176,6 +208,22 @@ class ConstitutionStore:
         for_votes, against_votes, abstain_votes = self._count_votes(votes)
 
         invalid_reasons: list[str] = []
+        if not self.amendments_enabled:
+            invalid_reasons.append("institution_fixed_rules")
+        # Typed constitutional rules must be valid BEFORE committing a version.
+        # Unknown narrative rule keys preserve existing governance behavior.
+        candidate_rules = dict(base.rules)
+        for key, value in proposal.payload.items():
+            if key in ("quorum", "amendment_threshold", "effective_from_tick"):
+                continue
+            if value is None:
+                candidate_rules.pop(key, None)
+            else:
+                candidate_rules[key] = value
+        try:
+            validate_enforceable_rules(candidate_rules)
+        except ValueError:
+            invalid_reasons.append("invalid_enforceable_policy")
 
         # 1. Immutable law outranks the constitution.
         law_violations = self._law.law_overrides(proposal.payload)

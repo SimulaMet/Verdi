@@ -8,9 +8,12 @@ recorded as an event upstream (reducer contract).
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from verdi.schemas import ProposedAction, ValidationResult, WorldState
+from verdi.world.economy import EconomySpec, validate_production
+from verdi.world.policy import policy_block
 
 #: Kinds whose property-moving capability is withdrawn under sanction.
 SANCTION_BLOCKED_KINDS = frozenset({"transfer", "deposit"})
@@ -18,7 +21,10 @@ SANCTION_BLOCKED_KINDS = frozenset({"transfer", "deposit"})
 _KNOWN_KINDS = frozenset({"transfer", "deposit", "withdraw", "produce", "emit_signal"})
 
 
-def validate_action(state: WorldState, action: ProposedAction) -> ValidationResult:
+def validate_action(state: WorldState, action: ProposedAction, *,
+                    policy_rules: Mapping[str, Any] | None = None,
+                    economy_spec: EconomySpec | None = None,
+                    produced_this_tick: Mapping[str, float] | None = None) -> ValidationResult:
     """Deterministically validate ``action`` against committed ``state``.
 
     Rules (in check order):
@@ -33,8 +39,16 @@ def validate_action(state: WorldState, action: ProposedAction) -> ValidationResu
       code "overdraft"; withdraw requires the world pool to hold the amount ->
       ``law:insufficient_world``.
     * produce: needs "resource", "amount" > 0 -> else ``law:non_positive_amount``.
+      With an active ``economy_spec``, also checked against the per-tick
+      production cap (``law:production_limit``) and the credit input cost
+      (``law:insufficient_production_input``) — both REJECT semantics.
     * emit_signal: needs non-empty str "text" -> else ``law:empty_signal``.
     * Unknown kind -> ``law:unknown_kind``.
+
+    ``produced_this_tick`` maps resource -> units this actor already
+    produced in the current tick (only consulted when ``economy_spec`` is
+    given). Both parameters default to None: callers that pass neither get
+    byte-identical legacy behavior.
     """
     actor = state.agents.get(action.actor_id)
     if actor is None:
@@ -84,7 +98,7 @@ def validate_action(state: WorldState, action: ProposedAction) -> ValidationResu
                 ["overdraft"],
                 f"agent {action.actor_id!r} holds {held} {resource!r}, cannot transfer {units}",
             )
-        return _accepted()
+        return _policy_checked(kind, args, state.world_resources, policy_rules)
 
     if kind in ("deposit", "withdraw"):
         for key in ("resource", "amount"):
@@ -118,7 +132,7 @@ def validate_action(state: WorldState, action: ProposedAction) -> ValidationResu
                     ["insufficient_world"],
                     f"world pool holds {available} {resource!r}, cannot withdraw {amount}",
                 )
-        return _accepted()
+        return _policy_checked(kind, args, state.world_resources, policy_rules)
 
     if kind == "produce":
         for key in ("resource", "amount"):
@@ -135,7 +149,19 @@ def validate_action(state: WorldState, action: ProposedAction) -> ValidationResu
                 ["non_positive_amount"],
                 f"produce amount {args['amount']!r} is not a positive number",
             )
-        return _accepted()
+        if economy_spec is not None:
+            resource = str(args["resource"])
+            produced = float((produced_this_tick or {}).get(resource, 0.0))
+            blocked = validate_production(
+                economy_spec, action.actor_id, state,
+                resource=resource, amount=float(amount),
+                already_produced_this_tick=produced,
+                policy_rules=policy_rules,
+            )
+            if blocked is not None:
+                blocked_by, codes, details = blocked
+                return _rejected(blocked_by, list(codes), details)
+        return _policy_checked(kind, args, state.world_resources, policy_rules)
 
     if kind == "emit_signal":
         text = args.get("text")
@@ -145,13 +171,23 @@ def validate_action(state: WorldState, action: ProposedAction) -> ValidationResu
                 ["empty_signal"],
                 f"emit_signal text must be a non-empty string, got {text!r}",
             )
-        return _accepted()
+        return _policy_checked(kind, args, state.world_resources, policy_rules)
 
     return _rejected(
         "law:unknown_kind",
         ["unknown_kind"],
         f"action kind {kind!r} is not in {sorted(_KNOWN_KINDS)}",
     )
+
+
+def _policy_checked(kind: str, arguments: Mapping[str, Any],
+                    world_resources: Mapping[str, float],
+                    policy_rules: Mapping[str, Any] | None) -> ValidationResult:
+    blocked = policy_block(kind, arguments, world_resources, policy_rules)
+    if blocked is not None:
+        key, details = blocked
+        return _rejected(f"constitution:{key}", ["policy_limit"], details)
+    return _accepted()
 
 
 def _accepted() -> ValidationResult:

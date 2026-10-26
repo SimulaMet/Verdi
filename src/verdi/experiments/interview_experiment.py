@@ -23,15 +23,17 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import os
 import sys
 import threading
 from pathlib import Path
+from typing import Any
 
+from verdi.agents.client import ModelClient
 from verdi.analysis.html_report import write_report
 from verdi.analysis.scenario import load_scenario
-from verdi.agents.client import ModelClient
 from verdi.config import model_endpoint_from_env
 from verdi.experiments.g5_judge_live import _load_dotenv_into_environ
 from verdi.society.campaign import SocietyCampaign
@@ -67,11 +69,11 @@ async def _run_campaign(scenario_path: Path, run_dir: Path, seed: int | None,
     the still-running campaign. Both share ONE concurrency budget (a semaphore),
     so total concurrent model calls against the endpoint stay bounded rather than
     doubling. Returns the audit summary if auditing ran inline, else None."""
-    from verdi.society.live import resolve_endpoint_config, smoke_call
     from verdi.audit.interview_audit import (
         audit_interviews_batch,
         write_audit_provenance,
     )
+    from verdi.society.live import resolve_endpoint_config, smoke_call
     config = resolve_endpoint_config()
     scenario = load_scenario(scenario_path)
     seed = int(seed if seed is not None else scenario["run_seed"])
@@ -182,12 +184,11 @@ def _append_provenance_sidecar(run_dir: Path, rows: list[dict[str, Any]]) -> Non
         return
     path = run_dir / "audit_provenance.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
-    with _PROVENANCE_LOCK:
-        with path.open("a", encoding="utf-8") as fh:
-            for row in rows:
-                line = json.dumps(row, sort_keys=True, ensure_ascii=True, default=str)
-                _assert_no_key_material(line, str(path))
-                fh.write(line + "\n")
+    with _PROVENANCE_LOCK, path.open("a", encoding="utf-8") as fh:
+        for row in rows:
+            line = json.dumps(row, sort_keys=True, ensure_ascii=True, default=str)
+            _assert_no_key_material(line, str(path))
+            fh.write(line + "\n")
 
 
 # Guards concurrent side-car appends from overlapping pipelined checkpoint tasks.
@@ -274,15 +275,9 @@ def _audit_run(run_dir: Path, *, base_url: str, api_key: str, model: str,
     interviews_path = run_dir / "interviews.jsonl"
     if not interviews_path.is_file():
         return {"skipped": "no interviews.jsonl"}
-    # Constitution rules for the checklist context: read from the latest snapshot.
+    # Constitution rules for the checklist context: WorldState snapshots carry
+    # only law/constitution version strings, not inline rules, so this stays None.
     rules = None
-    snaps = sorted((run_dir / "snapshots").glob("*.json"))
-    if snaps:
-        try:
-            final_state = json.loads(snaps[-1].read_text(encoding="utf-8"))
-            # WorldState has no inline rules; use law/constitution version only.
-        except Exception:
-            pass
     client = None
     agent_context_by_id = None
     if scenario_path is not None:
@@ -298,16 +293,17 @@ def _audit_run(run_dir: Path, *, base_url: str, api_key: str, model: str,
         ))
     finally:
         if client is not None:
-            try:
+            with contextlib.suppress(Exception):
                 asyncio.run(client.aclose())
-            except Exception:
-                pass
     print(f"audit complete: {summary}", flush=True)
     return summary
 
 
 def _build_trajectories(run_dir: Path) -> Path:
-    from verdi.measurement.interview_values import build_value_trajectories, write_value_trajectories
+    from verdi.measurement.interview_values import (
+        build_value_trajectories,
+        write_value_trajectories,
+    )
     events = _load_jsonl(run_dir / "events.jsonl")
     interviews = _load_jsonl(run_dir / "interviews.jsonl")
     probes = _load_jsonl(run_dir / "probes.jsonl")

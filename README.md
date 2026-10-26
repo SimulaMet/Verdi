@@ -34,7 +34,7 @@ pip install -e .
 cp .env.example .env
 #    then edit .env and set VERDI_VLLM_BASE_URL, VERDI_VLLM_MODEL, VERDI_VLLM_API_KEY
 
-# 3. Run the minimal society (4 agents, 20 ticks, 2 constitutional meetings)
+# 3. Run the minimal society (4 agents, 50 ticks, 5 constitutional meetings)
 source .env
 python -m verdi.society.live \
   --scenario experiments/scenarios/minimal.yaml \
@@ -59,7 +59,7 @@ A finished run of this exact scenario is committed at
 [examples/minimal/society-minimal-report.html](examples/minimal/society-minimal-report.html)
 — open it in a browser. It shows one agent who starts **already under sanction**:
 his rejected transfer attempts, the `law:under_sanction` code, his rights being
-restored when the sanction expires, and two constitutional meetings.
+restored when the sanction expires, and constitutional meetings.
 
 ---
 
@@ -98,7 +98,7 @@ works too — YAML is a superset.
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.10+
 - An OpenAI-compatible model endpoint (Qwen on vLLM in the examples)
 
 Environment variables (set in `.env`, or exported):
@@ -109,6 +109,25 @@ Environment variables (set in `.env`, or exported):
 | `VERDI_VLLM_MODEL` | Model name served by the endpoint |
 | `VERDI_VLLM_API_KEY` | Endpoint key (never committed) |
 | `VERDI_MAX_CONCURRENCY` | Bounded parallelism for model calls (default 4) |
+
+---
+
+## Institutional governance experiments
+
+Run matched societies with fixed or amendable rules from one configuration.
+Both conditions use the same scenario, model, shock schedule, and meeting
+opportunities; the fixed condition cannot enact amendments.
+
+```bash
+python -m verdi.experiments.paired_run --config examples/paired_institutional_recovery.yaml
+python -m verdi.analysis.outcome_metrics --pair-root runs/paired-institutional-recovery
+```
+
+The first command runs the two conditions and saves a resumable manifest.
+The second writes `metrics.json`, `metrics.csv`, and `comparison.html`
+alongside the individual run reports. See the [researcher guide](docs/RESEARCHER_GUIDE.md),
+[scenario gallery](docs/SCENARIOS.md), and
+[institutional governance documentation](docs/INSTITUTIONAL_RECOVERY.md).
 
 ---
 

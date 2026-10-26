@@ -156,8 +156,8 @@ def test_stageB_offline_run_completes_and_replays(tmp_path):
     assert all(e.kind == "amendment_enacted" for e in gov)
     for t in (8, 16, 24):
         assert f"t{t:02d}" in res.checkpoints
-    # reflection moved to t11 (scenario lifecycle) with a checkpoint.
-    assert "t11" in res.checkpoints
+    # Checkpoints are taken at assembly ticks and the final tick only; the
+    # t11 reflection probe is recorded in res.probes, not as a checkpoint.
     assert "t29" in res.checkpoints
 
     # probe battery: 9 lifecycle probe ticks x 12 agents x 3 channels.
