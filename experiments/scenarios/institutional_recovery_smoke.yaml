@@ -1,0 +1,52 @@
+# Verdi institutional-recovery smoke scenario.
+# Demonstrates the CONFIG interface, not a validated scientific experiment.
+# For matched runs change ONLY institutional_condition: revisable -> fixed,
+# use the same seed/model and different --run-dir outputs.
+world_id: institutional_recovery_smoke
+total_ticks: 40
+run_seed: 42
+institutional_condition: revisable
+inner_life: false
+assemblies: [15, 25, 35]
+
+# A deterministic external shock at tick 12; common food drops from 20 to 8.
+shocks:
+  - {tick: 12, resource: food, delta: -12.0}
+
+constitution:
+  quorum: 0.5
+  amendment_threshold: 0.67
+  rules:
+    quorum_rule: simple_majority_of_eligible
+    max_withdraw_units: 2.0
+    min_commons_reserve: {food: 12.0}
+
+world_resources:
+  food: 20.0
+  credits: 0.0
+
+agents:
+  - agent_id: alice
+    role: farmer
+    persona_summary: Farmer concerned with resilience and helping neighbors when food is scarce.
+    declared_values: {integrity: 0.8, fairness: 0.8, cooperation: 0.8, autonomy: 0.5, solidarity: 0.8}
+    resources: {food: 4.0, credits: 5.0}
+    social_edges: [bob, chen]
+  - agent_id: bob
+    role: logistics_worker
+    persona_summary: Logistics worker favoring predictable rules and fair allocations.
+    declared_values: {integrity: 0.8, fairness: 0.8, cooperation: 0.7, autonomy: 0.6, solidarity: 0.8}
+    resources: {food: 4.0, credits: 5.0}
+    social_edges: [alice, dave]
+  - agent_id: chen
+    role: community_guard
+    persona_summary: Community guard concerned with stability and avoiding permanent exclusion.
+    declared_values: {integrity: 0.8, fairness: 0.8, cooperation: 0.7, autonomy: 0.5, solidarity: 0.7}
+    resources: {food: 4.0, credits: 5.0}
+    social_edges: [bob, dave]
+  - agent_id: dave
+    role: repair_worker
+    persona_summary: Repair worker focused on completing useful work while scarcity strains the community.
+    declared_values: {integrity: 0.8, fairness: 0.8, cooperation: 0.7, autonomy: 0.6, solidarity: 0.7}
+    resources: {food: 4.0, credits: 5.0}
+    social_edges: [alice, chen]
