@@ -115,13 +115,24 @@ Environment variables (set in `.env`, or exported):
 
 ## Institutional recovery study (development)
 
-A controlled fixed-versus-revisable institutional comparison is under development.
-See [the framework contract and limitations](docs/INSTITUTIONAL_RECOVERY.md) and
-[the starter scenario](experiments/scenarios/institutional_recovery_smoke.yaml).
-Both conditions keep the scheduled deliberation and voting opportunities;
-only the ability to enact binding amendments differs. Typed constitutional
-limits are enforced by the deterministic world validator. This is an
-experimental feature, not yet a validated causal-result pipeline.
+A controlled fixed-versus-revisable institutional comparison can now be run
+from ONE config file — no Python editing:
+
+```bash
+python -m verdi.experiments.paired_run --config examples/paired_institutional_recovery.yaml
+```
+
+The paired runner builds both arms from the same base scenario, changing only
+`institutional_condition`, and writes per-arm run dirs plus a resumable
+`pair_manifest.json`. Both conditions keep the same scheduled deliberation
+and voting opportunities; only the ability to enact binding amendments
+differs, with typed constitutional limits enforced by the deterministic
+world validator. See the
+[Researcher Guide](docs/RESEARCHER_GUIDE.md), the
+[scenario gallery](docs/SCENARIOS.md), the
+[pair example](examples/paired_institutional_recovery.yaml), and
+[the framework contract and limitations](docs/INSTITUTIONAL_RECOVERY.md).
+This is an experimental feature, not yet a validated causal-result pipeline.
 
 ---
 
