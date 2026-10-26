@@ -364,10 +364,13 @@ def exclusion_episodes(run_dir: Path) -> dict[str, Any]:
             lo, hi = episode["effective_tick"], episode["restored_tick"]
             entry["excluded_ticks"] += max(0, hi - lo)
         elif rtype == "appeal":
-            phase = rec.get("phase") or rec.get("kind") or ""
-            if phase == "filed":
+            # sanctions.jsonl appeal records: kind appeal_filed (phase "filed")
+            # and adjudication events with kind appeal_upheld / appeal_dismissed
+            # (phase "adjudicated").
+            kind = str(rec.get("kind") or "")
+            if kind == "appeal_filed":
                 totals["appeals_filed"] += 1
-            elif phase == "upheld":
+            elif kind == "appeal_upheld":
                 totals["appeals_upheld"] += 1
 
     # Open episodes: excluded until the last ledger tick (inclusive count).
@@ -436,23 +439,64 @@ def recovery_time(
         raise ValueError("post_shock_start must be >= 0")
 
     events = _read_jsonl(run_dir, "events")
-    by_tick: dict[int, list[tuple[int, bool]]] = {}
-    for ev in events:
-        if ev.get("kind") not in ("task_completed", "task_failed"):
-            continue
-        by_tick.setdefault(int(ev.get("tick", -1)), []).append(
-            (int(ev["event_id"]), ev["kind"] == "task_completed")
-        )
+    # Ticks: the campaign labels each ledgered transition with the NEXT
+    # internal cursor value (the reducer advances tick/event_cursor per step),
+    # so a delivery objective due at loop tick D is ledgered with a tick
+    # offset by the number of ledger steps earlier in that same loop tick.
+    # The objective's OWN due tick is recovered deterministically: the
+    # resources.jsonl snapshot recorded at the END of loop tick D is labeled
+    # ``D``, and the evaluation runs just before it — so the outcome event's
+    # ledger tick equals ``snapshot_tick(D) + (steps committed in tick D)``.
+    # Simpler and exact: an objective evaluated during loop tick D has a
+    # ledger tick strictly between snapshot D-1 and snapshot D+1 ... we avoid
+    # that reasoning entirely by using the scenario's declared due ticks,
+    # matched to outcome events IN ORDER (objectives are evaluated in due-tick
+    # order, one ledger event each).
+    manifest = _read_json(run_dir, "manifest") or {}
+    due_ticks: list[int] = []
+    scenario = manifest.get("scenario") if isinstance(manifest.get("scenario"), dict) else {}
+    for delivery in (scenario.get("tasks") or {}).get("deliveries", []) or []:
+        if isinstance(delivery, dict) and delivery.get("due_tick") is not None:
+            due_ticks.append(int(delivery["due_tick"]))
+    # Fallback: the frozen resolved scenario next to the artifacts.
+    if not due_ticks:
+        try:
+            import yaml  # type: ignore[import-not-found]
+
+            resolved = yaml.safe_load(
+                (run_dir / "scenario_resolved.yaml").read_text(encoding="utf-8"))
+            for delivery in (resolved.get("tasks") or {}).get("deliveries", []) or []:
+                if isinstance(delivery, dict) and delivery.get("due_tick") is not None:
+                    due_ticks.append(int(delivery["due_tick"]))
+        except (OSError, ValueError):
+            due_ticks = []
+
+    outcomes = [
+        ev for ev in events if ev.get("kind") in ("task_completed", "task_failed")
+    ]
+    by_due_tick: dict[int, list[tuple[int, bool]]] = {}
+    if len(due_ticks) == len(outcomes):
+        for due, ev in zip(due_ticks, outcomes, strict=True):
+            by_due_tick.setdefault(due, []).append(
+                (int(ev["event_id"]), ev["kind"] == "task_completed")
+            )
+    else:
+        # No trustworthy due-tick mapping (legacy/custom scenario): fall back
+        # to the raw ledger tick so the metric stays total, never guesses.
+        for ev in outcomes:
+            by_due_tick.setdefault(int(ev.get("tick", -1)), []).append(
+                (int(ev["event_id"]), ev["kind"] == "task_completed")
+            )
 
     def _rate(tick: int) -> float | None:
-        rows = by_tick.get(tick)
+        rows = by_due_tick.get(tick)
         if not rows:
             return None
         return sum(1 for _, ok in rows if ok) / len(rows)
 
     baseline_rows: list[tuple[int, bool]] = []
     for tick in range(b_start, b_end + 1):
-        baseline_rows.extend(by_tick.get(tick, []))
+        baseline_rows.extend(by_due_tick.get(tick, []))
     pre_shock_rate = (
         sum(1 for _, ok in baseline_rows if ok) / len(baseline_rows)
         if baseline_rows else None
@@ -476,7 +520,7 @@ def recovery_time(
                 recovery_tick = t
                 break
 
-    evidence = sorted(eid for rows in by_tick.values() for eid, _ in rows)
+    evidence = sorted(eid for rows in by_due_tick.values() for eid, _ in rows)
     return {
         "recovered": recovered,
         "recovery_tick": recovery_tick,
