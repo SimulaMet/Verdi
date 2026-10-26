@@ -9,6 +9,7 @@ from typing import Any
 from verdi.schemas import Amendment, ConstitutionVersion, Proposal, VoteRecord
 
 from .law import UniversalLaw
+from verdi.world.policy import validate_enforceable_rules
 
 
 class DuplicateVoteError(ValueError):
@@ -47,8 +48,9 @@ class ConstitutionStore:
     law-invariant check, retroactivity check, quorum, threshold.
     """
 
-    def __init__(self, law: UniversalLaw) -> None:
+    def __init__(self, law: UniversalLaw, *, amendments_enabled: bool = True) -> None:
         self._law = law
+        self.amendments_enabled = amendments_enabled
         self._versions: dict[str, ConstitutionVersion] = {}
         self._order: list[str] = []
         self._current: ConstitutionVersion | None = None
@@ -82,6 +84,17 @@ class ConstitutionStore:
 
     def versions(self) -> list[ConstitutionVersion]:
         return [self._versions[v] for v in self._order]
+
+    def active_at(self, tick: int) -> ConstitutionVersion:
+        """Latest enacted constitution whose effective date has arrived.
+
+        A future-dated amendment must not change action enforcement early.
+        The append-only registry retains every version for provenance.
+        """
+        eligible = [v for v in self.versions() if v.effective_from_tick <= tick]
+        if not eligible:
+            raise ValueError(f"no constitution effective at tick {tick}")
+        return eligible[-1]
 
     def _next_version(self) -> str:
         return f"{self.current.constitution_id}-v{len(self._order) + 1}"
@@ -176,6 +189,22 @@ class ConstitutionStore:
         for_votes, against_votes, abstain_votes = self._count_votes(votes)
 
         invalid_reasons: list[str] = []
+        if not self.amendments_enabled:
+            invalid_reasons.append("institution_fixed_rules")
+        # Typed constitutional rules must be valid BEFORE committing a version.
+        # Unknown narrative rule keys preserve existing governance behavior.
+        candidate_rules = dict(base.rules)
+        for key, value in proposal.payload.items():
+            if key in ("quorum", "amendment_threshold", "effective_from_tick"):
+                continue
+            if value is None:
+                candidate_rules.pop(key, None)
+            else:
+                candidate_rules[key] = value
+        try:
+            validate_enforceable_rules(candidate_rules)
+        except ValueError:
+            invalid_reasons.append("invalid_enforceable_policy")
 
         # 1. Immutable law outranks the constitution.
         law_violations = self._law.law_overrides(proposal.payload)
