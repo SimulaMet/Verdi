@@ -47,7 +47,7 @@ from verdi.analysis.scenario import build_t0_state
 from verdi.audit.judge_live import _assert_no_key_material
 from verdi.governance.assembled import Assembly
 from verdi.governance.engine import GovernanceEngine
-from verdi.world.policy import validate_enforceable_rules
+from verdi.world.policy import ENFORCEABLE_KEYS, validate_enforceable_rules
 from verdi.measurement.longitudinal import ProbeRecorder, channel_trajectories
 from verdi.measurement.probes import ProbeBank
 from verdi.schemas import (
@@ -543,7 +543,9 @@ class SocietyCampaign:
                     # Directed unavailable (LLM fallback) → use base task
                     tape.append(bt)
 
-            results = await TaskPool(self._concurrency).run_all(self._make_worker(snapshot, tick, memory), tape)
+            results = await TaskPool(self._concurrency).run_all(self._make_worker(
+                snapshot, tick, memory, governance.constitution.active_at(tick).rules
+            ), tape)
 
             # deterministic-order commit (single reducer, sequential).
             # Proposals were *generated* against the frozen start-of-tick
@@ -757,7 +759,8 @@ class SocietyCampaign:
     # ------------------------------------------------------------------ #
     # phases
     # ------------------------------------------------------------------ #
-    def _make_worker(self, snapshot: WorldState, tick: int, memory: dict[str, AgentMemory]) -> Callable:
+    def _make_worker(self, snapshot: WorldState, tick: int, memory: dict[str, AgentMemory],
+                     policy_rules: dict[str, Any] | None = None) -> Callable:
         caller = self._caller
         temperature = self._temperature
         fingerprint = self._model_fingerprint()
@@ -803,6 +806,15 @@ class SocietyCampaign:
             action_messages = build_social_prompt_messages(
                 task.actor_id, task, snapshot, memory[task.actor_id],
             )
+            # Inform agents of actionable, currently-effective rules. Preserve
+            # legacy prompts byte-for-byte when no typed rules are configured.
+            executable = {k: v for k, v in (policy_rules or {}).items() if k in ENFORCEABLE_KEYS}
+            if executable:
+                action_messages[-1]["content"] += (
+                    "\n\nBinding constitutional action limits: "
+                    + json.dumps(executable, sort_keys=True)
+                    + "\nThese limits are checked by the deterministic validator.\n"
+                )
             # Inject inner state into the user message (dynamic part) so the
             # stable system prefix remains cacheable across ticks.
             if il_state is not None:
