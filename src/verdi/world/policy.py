@@ -11,12 +11,13 @@ from typing import Any
 
 ENFORCEABLE_KEYS = frozenset({
     "max_transfer_units", "max_withdraw_units", "min_commons_reserve",
+    "max_produce_units_per_tick",
 })
 
 
 def validate_enforceable_rules(rules: Mapping[str, Any]) -> None:
     """Reject malformed recognized policy keys, preserving old narrative rules."""
-    for key in ("max_transfer_units", "max_withdraw_units"):
+    for key in ("max_transfer_units", "max_withdraw_units", "max_produce_units_per_tick"):
         if key in rules:
             _number(rules[key], key, strictly_positive=True)
     if "min_commons_reserve" in rules:
@@ -55,6 +56,12 @@ def policy_block(kind: str, arguments: Mapping[str, Any],
         cap = float(rules["max_transfer_units"])
         if units > cap:
             return "max_transfer_units", f"transfer units {units:g} exceed limit {cap:g}"
+    if kind == "produce" and "max_produce_units_per_tick" in rules:
+        amount = float(arguments["amount"])
+        cap = float(rules["max_produce_units_per_tick"])
+        if amount > cap:
+            return ("max_produce_units_per_tick",
+                    f"produce amount {amount:g} exceeds per-tick limit {cap:g}")
     if kind == "withdraw":
         amount = float(arguments["amount"])
         if "max_withdraw_units" in rules:
