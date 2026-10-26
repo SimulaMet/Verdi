@@ -458,18 +458,18 @@ def recovery_time(
     for delivery in (scenario.get("tasks") or {}).get("deliveries", []) or []:
         if isinstance(delivery, dict) and delivery.get("due_tick") is not None:
             due_ticks.append(int(delivery["due_tick"]))
-    # Fallback: the frozen resolved scenario next to the artifacts.
-    if not due_ticks:
-        try:
-            import yaml  # type: ignore[import-not-found]
+    # The campaign writes the frozen scenario it actually ran next to the
+    # artifacts; that is the authoritative source of declared due ticks.
+    try:
+        import yaml  # type: ignore[import-not-found]
 
-            resolved = yaml.safe_load(
-                (run_dir / "scenario_resolved.yaml").read_text(encoding="utf-8"))
-            for delivery in (resolved.get("tasks") or {}).get("deliveries", []) or []:
-                if isinstance(delivery, dict) and delivery.get("due_tick") is not None:
-                    due_ticks.append(int(delivery["due_tick"]))
-        except (OSError, ValueError):
-            due_ticks = []
+        resolved = yaml.safe_load(
+            (run_dir / "scenario_resolved.yaml").read_text(encoding="utf-8"))
+        for delivery in (resolved.get("tasks") or {}).get("deliveries", []) or []:
+            if isinstance(delivery, dict) and delivery.get("due_tick") is not None:
+                due_ticks.append(int(delivery["due_tick"]))
+    except (OSError, ValueError):
+        due_ticks = []
 
     outcomes = [
         ev for ev in events if ev.get("kind") in ("task_completed", "task_failed")
@@ -567,13 +567,20 @@ def institutional_mechanism(run_dir: Path) -> dict[str, Any]:
     meetings = _read_jsonl(run_dir, "meetings")
     history = _read_jsonl(run_dir, "constitution_history")
     events = _read_jsonl(run_dir, "events")
-    manifest = _read_json(run_dir, "manifest") or {}
 
+    # Eligible voters: agents of the frozen resolved scenario (written by the
+    # runner/campaign next to the artifacts), falling back to ledger actors.
     eligible: list[str] = []
-    scenario = manifest.get("scenario") if isinstance(manifest.get("scenario"), dict) else {}
-    for agent in scenario.get("agents", []) or []:
-        if isinstance(agent, dict) and agent.get("agent_id"):
-            eligible.append(str(agent["agent_id"]))
+    try:
+        import yaml  # type: ignore[import-not-found]
+
+        resolved = yaml.safe_load(
+            (run_dir / "scenario_resolved.yaml").read_text(encoding="utf-8"))
+        for agent in (resolved or {}).get("agents", []) or []:
+            if isinstance(agent, dict) and agent.get("agent_id"):
+                eligible.append(str(agent["agent_id"]))
+    except (OSError, ValueError):
+        eligible = []
     if not eligible:
         # Fall back to actors ever seen voting or acting in the ledger.
         seen = set()
