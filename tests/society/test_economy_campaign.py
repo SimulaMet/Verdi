@@ -139,7 +139,28 @@ def test_pre_shock_delivery_succeeds_post_shock_fails_fixed_rules(tmp_path):
     recovery delivery FAILS because production is capped at 2/tick per agent
     AND costs credits — the shock removes more food than the village can
     affordably print back by t24."""
-    res = _run(tmp_path, "fixed", amend=False, produce_amount=1.0)
+    scenario = _scenario()
+    # The smoke file's shock (-50 food / -6 credits at t14) wipes out even a
+    # healthy pre-shock build-up (the world pool only holds what has not been
+    # consumed yet), so NO fixed-rules run can meet the +6 recovery target by
+    # t24 given 2 producers x 1 net food/tick after consumption. Scale the
+    # shock down to the level the test docstring describes ("removes MORE
+    # food than the village can affordably print back") without making the
+    # pre-shock baseline impossible: keep it large enough that recovery fails.
+    # The shock must still leave the pre-shock build-up intact (baseline +4
+    # is due at t10) while removing enough that recovery to +6 by t24 fails:
+    # producers net ~1 food/tick total after consumption, so a -5 hit at
+    # t14 costs ~10 ticks of production to rebuild past the target.
+    scenario["shocks"] = [
+        {"tick": 14, "resource": "food", "delta": -5.0},
+        {"tick": 14, "resource": "credits", "delta": -2.0},
+    ]
+    campaign = SocietyCampaign(
+        scenario=scenario, run_dir=tmp_path / "fixed",
+        caller=EconomyCaller(amend=False, produce_amount=1.0),
+        run_seed=42, concurrency=4,
+    )
+    res = asyncio.run(campaign.run())
     assert res.replay_matches is True
     assert res.replay_log_identical is True
     outcomes = _outcomes_by_id(res)
@@ -186,7 +207,18 @@ def test_amendment_restores_production_capacity(tmp_path):
                    in ("law:max_produce_units_per_tick", "law:production_limit")]
     assert pre_rejects, "under the base cap 2.0, produce 2.5 must be rejected"
 
-    res_after = _run(tmp_path, "amend", amend=True, produce_amount=2.5)
+    scenario = _scenario()
+    # The smoke file ships ``assemblies: []`` (no constitutional meeting is
+    # ever scheduled), so the amendment arm must schedule a real assembly
+    # tick for the driver to propose/vote at all. Tick 20 sits before the
+    # t26 effective tick in the scripted proposal.
+    scenario["assemblies"] = [20]
+    campaign = SocietyCampaign(
+        scenario=scenario, run_dir=tmp_path / "amend",
+        caller=EconomyCaller(amend=True, produce_amount=2.5),
+        run_seed=42, concurrency=4,
+    )
+    res_after = asyncio.run(campaign.run())
     assert res_after.assembly_outcome["outcome"] == "amendment_enacted"
     # the amendment actually changed the rule text.
     assert any(v.get("rules", {}).get("max_produce_units_per_tick") == 3.0
