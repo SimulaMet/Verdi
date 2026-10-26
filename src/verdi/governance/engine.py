@@ -65,6 +65,7 @@ class GovernanceEngine:
                  eligible_voters: Sequence[str] | None = None, *,
                  amendments_enabled: bool = True) -> None:
         self.law = UniversalLaw(law)
+        self._constitution_tick = constitution.effective_from_tick
         self.constitution = ConstitutionStore(self.law, amendments_enabled=amendments_enabled)
         self.constitution.register(constitution)
         if eligible_voters is not None:
@@ -104,8 +105,14 @@ class GovernanceEngine:
 
     def propose(self, proposal_id: str, submitted_by: str, tick: int,
                 change_summary: str, payload: dict[str, Any]) -> dict[str, Any]:
+        # A proposal bases on the version ENFORCEABLE at its submission tick.
+        # With future-dated amendments, the last REGISTERED version may not be
+        # in force yet; basing on it would silently drop deltas from versions
+        # that are effective but registered later.
+        self._constitution_tick = tick
         proposal = self.constitution.propose(
-            proposal_id, submitted_by, tick, change_summary, payload
+            proposal_id, submitted_by, tick, change_summary, payload,
+            base_tick=self._constitution_tick,
         )
         return self._emit(
             KIND_PROPOSAL_SUBMITTED, submitted_by, tick, "accepted",
@@ -165,6 +172,12 @@ class GovernanceEngine:
                 invalid_reasons=amendment.invalid_reasons,
             )
         self._last_amendment = amendment
+        if amendment.deterministically_valid:
+            # Keep the proposal base version pinned to the currently
+            # enforceable version until a future-dated amendment takes effect.
+            self._constitution_tick = max(
+                self._constitution_tick, amendment.effective_from_tick - 1
+            )
         return event
 
     @property

@@ -88,6 +88,10 @@ class AssemblyOutcome(BaseModel):
 
     outcome: str  # "amendment_enacted" | "amendment_rejected" | "no_change"
     enacted_version: str | None
+    # Tick at which the enacted amendment takes effect (may be > tick for
+    # future-dated amendments; WorldState.constitution_version must not flip
+    # before this tick).
+    enacted_effective_from_tick: int | None = None
     proposals: list[str]  # proposal_ids, in submitted order
     votes: list[dict[str, Any]]  # per-voter: {voter_id, proposal_id, choice, attempt_id}
     abstentions: int
@@ -168,7 +172,7 @@ class Assembly:
             f"world \"{state.world_id}\" at tick {tick}.\n"
             f"Role: {agent.role}\n"
             f"Persona: {agent.persona_summary}\n\n"
-            f"Current constitution version: {state.constitution_version}\n"
+            f"Current constitution version: {self._engine.constitution.active_at(tick).version}\n"
             f"Effective constitutional rules: {json.dumps(self._engine.constitution.active_at(tick).rules, sort_keys=True)}\n"
             "Executable rule keys: max_transfer_units (positive number), "
             "max_withdraw_units (positive number), min_commons_reserve "
@@ -376,6 +380,7 @@ class Assembly:
 
         any_accepted = False
         enacted_version: str | None = None
+        enacted_effective_from_tick: int | None = None
         enact_events: list[dict[str, Any]] = []
         for proposal_id in self._proposal_order:
             event = engine.enact(
@@ -385,6 +390,9 @@ class Assembly:
             if event.get("decision") == "accepted":
                 any_accepted = True
                 enacted_version = engine.constitution.current.version
+                effective = event.get("effective_from_tick")
+                if isinstance(effective, int):
+                    enacted_effective_from_tick = effective
 
         if any_accepted:
             outcome = "amendment_enacted"
@@ -396,6 +404,7 @@ class Assembly:
         return AssemblyOutcome(
             outcome=outcome,
             enacted_version=enacted_version,
+            enacted_effective_from_tick=enacted_effective_from_tick,
             proposals=list(self._proposal_order),
             votes=[
                 {
