@@ -312,7 +312,6 @@ def _parse_orchestrator_response(content: str, state: WorldState, tick: int) -> 
         resource = spec.get("resource") or "food"
         amount = int(spec.get("amount", 1))
         target = spec.get("to")
-        signal_text = spec.get("text")
 
         # Sanity-clamp: never exceed what the agent holds
         agent = state.agents[aid]

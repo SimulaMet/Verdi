@@ -176,11 +176,8 @@ class AgentMemory:
         del entries[:overflow]
         # Merge with existing summary if any (keep most recent summary content)
         existing = self._summary.get(agent_id, "")
-        if existing:
-            # Prepend new consolidated content, cap total length
-            combined = f"{summary_text}; {existing}"
-        else:
-            combined = summary_text
+        # Prepend new consolidated content, cap total length
+        combined = f"{summary_text}; {existing}" if existing else summary_text
         self._summary[agent_id] = combined[:_MAX_SUMMARY_CHARS]
 
     # ------------------------------------------------------------------ #

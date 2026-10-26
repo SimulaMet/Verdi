@@ -47,7 +47,6 @@ from verdi.analysis.scenario import build_t0_state
 from verdi.audit.judge_live import _assert_no_key_material
 from verdi.governance.assembled import Assembly
 from verdi.governance.engine import GovernanceEngine
-from verdi.world.policy import ENFORCEABLE_KEYS, validate_enforceable_rules
 from verdi.measurement.longitudinal import ProbeRecorder, channel_trajectories
 from verdi.measurement.probes import ProbeBank
 from verdi.schemas import (
@@ -64,18 +63,19 @@ from verdi.schemas import (
     WorldEvent,
     WorldState,
 )
-from verdi.society.interview import run_interviews
 from verdi.society.inner_life import (
     InnerLifeState,
     build_inner_life_prompt_messages,
     parse_inner_life,
     update_inner_life,
 )
+from verdi.society.interview import run_interviews
 from verdi.society.memory import AgentMemory
 from verdi.society.prompting import SOCIAL_PROMPT_VERSION, build_social_prompt_messages
 from verdi.society.tasks import generate_llm_tape, generate_tick_tape
 from verdi.world.log import EventLog
 from verdi.world.observation import agent_observation
+from verdi.world.policy import ENFORCEABLE_KEYS, validate_enforceable_rules
 from verdi.world.reducer import GENESIS_HASH, WorldReducer, canonical_state_hash
 from verdi.world.replay import TapeStep
 from verdi.world.validate import validate_action
@@ -867,8 +867,6 @@ class SocietyCampaign:
         This is the agent *reflecting on and compressing* their past, not a
         mechanical truncation.
         """
-        from verdi.society.memory import _RECENT_WINDOW
-
         # Find agents that need consolidation
         to_consolidate = [
             aid for aid in sorted(state.agents)

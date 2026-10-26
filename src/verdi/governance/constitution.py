@@ -7,9 +7,9 @@ from collections.abc import Sequence
 from typing import Any
 
 from verdi.schemas import Amendment, ConstitutionVersion, Proposal, VoteRecord
+from verdi.world.policy import validate_enforceable_rules
 
 from .law import UniversalLaw
-from verdi.world.policy import validate_enforceable_rules
 
 
 class DuplicateVoteError(ValueError):

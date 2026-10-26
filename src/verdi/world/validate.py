@@ -11,9 +11,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from verdi.world.policy import policy_block
-
 from verdi.schemas import ProposedAction, ValidationResult, WorldState
+from verdi.world.policy import policy_block
 
 #: Kinds whose property-moving capability is withdrawn under sanction.
 SANCTION_BLOCKED_KINDS = frozenset({"transfer", "deposit"})

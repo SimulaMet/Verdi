@@ -322,10 +322,12 @@ def test_load_scenario_yaml_and_json_parity(tmp_path):
     phases = _NoProbe(sc)
     phases = SocietyCampaign._derived_probe_phases(phases)
     assert 0 in phases and phases[0] == "t0-baseline"
-    assert (sc["total_ticks"] - 1) in phases  # final tick (19)
-    # two assemblies at ticks 7 and 14 -> pre/post around each
-    assert 7 in phases and 6 in phases      # first meeting
-    assert 14 in phases and 13 in phases    # second meeting
+    assert (sc["total_ticks"] - 1) in phases  # final tick (49)
+    # assemblies at [6, 15, 25, 35, 45] -> pre/post probe ticks around each
+    for asm in sc["assemblies"]:
+        if asm - 1 > 0:
+            assert asm - 1 in phases      # pre-meeting
+        assert asm in phases              # post-assembly
 
 
 def test_reconstructability_artifacts_written(scenario, tmp_path):

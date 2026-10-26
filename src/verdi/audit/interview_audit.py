@@ -499,7 +499,7 @@ async def audit_interviews_batch(
     probe_turns: int = 3,
     client: Any = None,
     agent_context_by_id: dict[str, str] | None = None,
-    semaphore: "asyncio.Semaphore | None" = None,
+    semaphore: asyncio.Semaphore | None = None,
 ) -> list[dict[str, Any]]:
     """Audit many interview records x axes with bounded concurrency, preserving
     input order (record-major, then axis order). One provenance row per

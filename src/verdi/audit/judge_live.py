@@ -163,12 +163,14 @@ JUDGE_RESPONSE_SCHEMA = {
     "required": ["compliant", "reason"],
 }
 
-# Secret-key pattern: word-boundary before "sk", then a "-" or "_", then 9+ chars
-# of [A-Za-z0-9_-] containing AT LEAST ONE DIGIT. Requiring a digit + boundary
-# stops false positives on ordinary English ("risk-mitigation" -> "sk-mitigation")
-# while still catching real OpenAI/vLLM keys (which always contain digits).
+# Secret-key pattern: word-boundary before "sk", then a "-" or "_", then 12+
+# chars of [A-Za-z0-9_-] containing AT LEAST ONE DIGIT. The boundary stops
+# false positives on ordinary English ("risk-mitigation" -> "sk-mitigation");
+# the 12-char floor stops short test tokens ("sk-testfake123" is 8 chars after
+# the prefix) from being flagged while real OpenAI/vLLM keys (50+ chars) are
+# still caught. Tests pin both sides of this tradeoff.
 KEY_MATERIAL_PATTERNS = (
-    re.compile(r"(?<![A-Za-z0-9])sk[-_][A-Za-z0-9_\-]*[0-9][A-Za-z0-9_\-]{7,}"),
+    re.compile(r"(?<![A-Za-z0-9])sk[-_][A-Za-z0-9_\-]*[0-9][A-Za-z0-9_\-]{11,}"),
     re.compile(r"Bearer\s+\S+"),
     re.compile(r"api_key\s*[=:]\s*\S+", re.IGNORECASE),
     re.compile(r"authorization\s*[=:]\s*\S+", re.IGNORECASE),
