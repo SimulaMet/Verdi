@@ -2,7 +2,9 @@
 
 This guide is written for researchers who want to **run and compare** the
 fixed vs revisable institutional experiment using **only config files and
-documented commands** — no Python editing required.
+documented commands** — no Python editing required. Related docs: the
+[scenario gallery](SCENARIOS.md) and the
+[framework contract and limitations](INSTITUTIONAL_RECOVERY.md).
 
 ---
 
