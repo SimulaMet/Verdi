@@ -47,6 +47,7 @@ from verdi.analysis.scenario import build_t0_state
 from verdi.audit.judge_live import _assert_no_key_material
 from verdi.governance.assembled import Assembly
 from verdi.governance.engine import GovernanceEngine
+from verdi.world.policy import validate_enforceable_rules
 from verdi.measurement.longitudinal import ProbeRecorder, channel_trajectories
 from verdi.measurement.probes import ProbeBank
 from verdi.schemas import (
@@ -286,6 +287,10 @@ class SocietyCampaign:
             checksum=_digest("law", sc["law_version"]),
         )
         constitution_cfg = sc["constitution"]  # Tranche 12k: from scenario file
+        validate_enforceable_rules(constitution_cfg["rules"])
+        institutional_condition = sc.get("institutional_condition", "revisable")
+        if institutional_condition not in ("fixed", "revisable"):
+            raise ValueError("institutional_condition must be fixed or revisable")
         constitution = ConstitutionVersion(
             constitution_id="base-constitution",
             version=sc["constitution_version"],
@@ -297,7 +302,10 @@ class SocietyCampaign:
             effective_from_tick=0,
             checksum=_digest("constitution", sc["constitution_version"]),
         )
-        governance = GovernanceEngine(law, constitution, eligible_voters=agent_ids)
+        governance = GovernanceEngine(
+            law, constitution, eligible_voters=agent_ids,
+            amendments_enabled=(institutional_condition == "revisable"),
+        )
         # Tranche 12m: t0 sanction bootstrap. A scenario may declare an agent
         # already under sanction at t0 via ``under_sanction: true`` plus an
         # optional ``sanction: {duration_ticks: N}`` block. The flag alone
@@ -367,6 +375,7 @@ class SocietyCampaign:
                 "verdi.protocol": PROTOCOL_VERSION,
                 "verdi.social_prompt": SOCIAL_PROMPT_VERSION,
                 "verdi.stage": sc.get("scenario_id", "society"),
+                "verdi.institutional_condition": institutional_condition,
                 "commit_mode": "concurrent_propose_deterministic_order_commit",
             },
             treatment_seed=self._run_seed,
@@ -550,7 +559,10 @@ class SocietyCampaign:
                 if pr.action is None:
                     self._quarantined.append((tick, task.task_id, pr.quarantine_reason or "unparseable"))
                     continue
-                validation = validate_action(state, pr.action)
+                validation = validate_action(
+                    state, pr.action,
+                    policy_rules=governance.constitution.active_at(tick).rules,
+                )
                 before = state
                 state = reducer.apply(before, pr.action, validation)
                 sealed = self._commit_action(log, before, state, pr.action, validation)
