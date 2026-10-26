@@ -34,7 +34,7 @@ pip install -e .
 cp .env.example .env
 #    then edit .env and set VERDI_VLLM_BASE_URL, VERDI_VLLM_MODEL, VERDI_VLLM_API_KEY
 
-# 3. Run the minimal society (4 agents, 20 ticks, 2 constitutional meetings)
+# 3. Run the minimal society (4 agents, 50 ticks, 5 constitutional meetings)
 source .env
 python -m verdi.society.live \
   --scenario experiments/scenarios/minimal.yaml \
@@ -59,7 +59,7 @@ A finished run of this exact scenario is committed at
 [examples/minimal/society-minimal-report.html](examples/minimal/society-minimal-report.html)
 — open it in a browser. It shows one agent who starts **already under sanction**:
 his rejected transfer attempts, the `law:under_sanction` code, his rights being
-restored when the sanction expires, and two constitutional meetings.
+restored when the sanction expires, and constitutional meetings.
 
 ---
 
@@ -109,6 +109,19 @@ Environment variables (set in `.env`, or exported):
 | `VERDI_VLLM_MODEL` | Model name served by the endpoint |
 | `VERDI_VLLM_API_KEY` | Endpoint key (never committed) |
 | `VERDI_MAX_CONCURRENCY` | Bounded parallelism for model calls (default 4) |
+
+---
+
+
+## Institutional recovery study (development)
+
+A controlled fixed-versus-revisable institutional comparison is under development.
+See [the framework contract and limitations](docs/INSTITUTIONAL_RECOVERY.md) and
+[the starter scenario](experiments/scenarios/institutional_recovery_smoke.yaml).
+Both conditions keep the scheduled deliberation and voting opportunities;
+only the ability to enact binding amendments differs. Typed constitutional
+limits are enforced by the deterministic world validator. This is an
+experimental feature, not yet a validated causal-result pipeline.
 
 ---
 
