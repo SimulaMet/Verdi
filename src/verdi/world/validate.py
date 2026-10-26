@@ -156,6 +156,7 @@ def validate_action(state: WorldState, action: ProposedAction, *,
                 economy_spec, action.actor_id, state,
                 resource=resource, amount=float(amount),
                 already_produced_this_tick=produced,
+                policy_rules=policy_rules,
             )
             if blocked is not None:
                 blocked_by, codes, details = blocked

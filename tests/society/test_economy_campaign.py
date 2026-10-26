@@ -39,14 +39,14 @@ class EconomyCaller:
     """
 
     PRODUCERS = ("alice", "bob")
-    CREDIT_TRADERS = ("chen", "dave")  # withdraw credits from the commons reserve
-    FOOD_DEPOSITORS = ()
+    CREDIT_TRADERS = ("chen", "dave")  # deposit credits into the commons reserve
     AGENTS = ("alice", "bob", "chen", "dave")
 
     def __init__(self, *, amend: bool = False, produce_amount: float = 1.0) -> None:
         self.amend = amend
         self.produce_amount = produce_amount
         self.n = 0
+        self._produces_of: dict[str, int] = {}
 
     async def generate_structured(
         self, messages: list[dict[str, str]], **kwargs: Any,
@@ -88,15 +88,25 @@ class EconomyCaller:
             payload = {"action_kind": "deposit",
                        "arguments": {"resource": "credits", "amount": 1.0},
                        "reason": "contribute to the commons"}
+        elif actor in self.PRODUCERS:
+            # Producers grow food AND contribute it to the commons pool, so
+            # world-pool delivery objectives are reachable under the
+            # constrained economy (produce is capped + credit-costly).
+            n_produces = getattr(self, "_produces_of", {}).get(actor, 0)
+            self._produces_of[actor] = n_produces + 1
+            if n_produces % 2 == 0:
+                payload = {"action_kind": "produce",
+                           "arguments": {"resource": "food",
+                                          "amount": self.produce_amount},
+                           "reason": "grow food for the commons"}
+            else:
+                payload = {"action_kind": "deposit",
+                           "arguments": {"resource": "food", "amount": 1.0},
+                           "reason": "share the harvest with the commons"}
         else:
-            # All other agents (producers and non-producers): produce food
-            # every tick at the configured amount. The validator enforces the
-            # per-tick cap deterministically; over-cap attempts are rejected
-            # with law:production_limit (visible in the ledger).
-            payload = {"action_kind": "produce",
-                       "arguments": {"resource": "food",
-                                      "amount": self.produce_amount},
-                       "reason": "grow food for the commons"}
+            payload = {"action_kind": "emit_signal",
+                       "arguments": {"text": "working together"},
+                       "reason": "cooperation"}
         return ModelResult(content=json.dumps(payload), request_id=f"r{self.n}",
                            model="fake", trace_id=trace)
 
@@ -151,10 +161,20 @@ def test_pre_shock_delivery_succeeds_post_shock_fails_fixed_rules(tmp_path):
     # is due at t10) while removing enough that recovery to +6 by t24 fails:
     # producers net ~1 food/tick total after consumption, so a -5 hit at
     # t14 costs ~10 ticks of production to rebuild past the target.
+    # Feasibility (fixed rules, scripted caller): producers net ~0.5 world
+    # food/tick pre-shock (produce 1 + share 1, minus 1 consumption each);
+    # the shock wipes the pool AND burns most of the credit reserve, so the
+    # post-shock recovery target (+4 by t24) is unattainable without a rule
+    # change, while the pre-shock baseline (+2 by t10) is comfortably met.
     scenario["shocks"] = [
         {"tick": 14, "resource": "food", "delta": -5.0},
-        {"tick": 14, "resource": "credits", "delta": -2.0},
+        {"tick": 14, "resource": "credits", "delta": -8.0},
     ]
+    for obj in scenario["tasks"]["deliveries"]:
+        if obj["objective_id"] == "pre-shock-baseline":
+            obj["amount"] = 2.0
+        elif obj["objective_id"] == "post-shock-recovery":
+            obj["amount"] = 4.0
     campaign = SocietyCampaign(
         scenario=scenario, run_dir=tmp_path / "fixed",
         caller=EconomyCaller(amend=False, produce_amount=1.0),

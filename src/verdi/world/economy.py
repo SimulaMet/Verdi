@@ -230,6 +230,24 @@ def withdraw_into_holdings(
     return new_agent, new_world
 
 
+def effective_production_cap(
+    spec: EconomySpec,
+    resource: str,
+    policy_rules: Mapping[str, Any] | None = None,
+) -> float | None:
+    """The enforceable per-tick production cap for ``resource``.
+
+    The CONSTITUTIONAL key ``max_produce_units_per_tick`` (enacted via
+    amendment) overrides the scenario ``economy`` block's cap when present —
+    this is what makes an enacted amendment change enforcement at its
+    effective tick. Returns None when no cap applies.
+    """
+    const_cap = (policy_rules or {}).get("max_produce_units_per_tick")
+    if isinstance(const_cap, (int, float)) and not isinstance(const_cap, bool):
+        return float(const_cap)
+    return spec.production_limit_per_tick.get(resource)
+
+
 def validate_production(
     spec: EconomySpec,
     actor_id: str,
@@ -238,18 +256,23 @@ def validate_production(
     resource: str,
     amount: float,
     already_produced_this_tick: float,
+    policy_rules: Mapping[str, Any] | None = None,
 ) -> tuple[str, list[str], str] | None:
     """Full deterministic pre-check for a ``produce`` action under an active
     economy. Returns (blocked_by, codes, details) or None when accepted.
 
-    Check order: per-tick cap first (``law:production_limit``), then
-    affordability (``law:insufficient_production_input``).
+    Check order: per-tick cap first (``law:production_limit``; the
+    constitutional ``max_produce_units_per_tick`` overrides the scenario
+    cap when present), then affordability
+    (``law:insufficient_production_input``).
     """
-    blocked = check_production_limits(spec, resource, amount, already_produced_this_tick)
-    if blocked is not None:
-        _key, details = blocked
-        # The scenario-economy cap uses the stable code ``law:production_limit``;
-        # the constitutional key (policy_block) yields ``law:max_produce_units_per_tick``.
+    cap = effective_production_cap(spec, resource, policy_rules)
+    if cap is not None and amount > 0 and already_produced_this_tick + amount > cap + 1e-9:
+        _key, details = (
+            "max_produce_units_per_tick",
+            f"producing {amount:g} {resource} exceeds the per-tick limit of "
+            f"{cap:g} ({already_produced_this_tick:g} already produced)",
+        )
         return "law:production_limit", ["production_limit"], details
     cost = production_input_cost(spec, resource, amount)
     if cost > 0:

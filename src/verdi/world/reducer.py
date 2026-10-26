@@ -81,6 +81,15 @@ class WorldReducer:
             nxt = state.model_copy(update={"tick": tick, "event_cursor": event_cursor})
             return self._with_hash(nxt)
 
+        if action.action_kind == "task_objective" or action.actor_id == "world":
+            # Deterministic record-only world steps (P0-B delivery-objective
+            # outcomes): content is unchanged by construction (before ==
+            # after); only the ledger bookkeeping advances. The campaign's
+            # replay path rebuilds these events from the recorded tape
+            # payload, so they never reach _apply_mutation.
+            nxt = state.model_copy(update={"tick": tick, "event_cursor": event_cursor})
+            return self._with_hash(nxt)
+
         agents, world_resources = self._apply_mutation(state, action)
         nxt = state.model_copy(
             update={

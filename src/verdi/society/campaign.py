@@ -1101,9 +1101,16 @@ class SocietyCampaign:
             executable = {k: v for k, v in (policy_rules or {}).items() if k in ENFORCEABLE_KEYS}
             # P0-B: when a constrained economy is active, surface its typed
             # production parameters so agents can plan against the real caps.
+            # The CONSTITUTIONAL key (enacted via amendment, in policy_rules)
+            # overrides the scenario block for the same resource: this is what
+            # makes an enacted max_produce_units_per_tick amendment change
+            # enforcement (and prompts) at its effective tick.
             if self._economy_spec is not None:
-                executable["economy_production_limit_per_tick"] = dict(
-                    self._economy_spec.production_limit_per_tick)
+                _econ_limits = dict(self._economy_spec.production_limit_per_tick)
+                _const_cap = (policy_rules or {}).get("max_produce_units_per_tick")
+                if isinstance(_const_cap, (int, float)) and not isinstance(_const_cap, bool):
+                    _econ_limits["food"] = float(_const_cap)
+                executable["economy_production_limit_per_tick"] = _econ_limits
                 executable["economy_production_cost_per_unit"] = dict(
                     self._economy_spec.production_cost)
             if executable:
