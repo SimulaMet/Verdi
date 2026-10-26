@@ -1,0 +1,17 @@
+# P0-C paired experiment: fixed vs revisable institutional condition.
+#
+# Run with (no Python editing needed):
+#   python -m verdi.experiments.paired_run --config examples/paired_institutional_recovery.yaml
+#
+# The runner loads base_scenario ONCE and builds the SAME scenario for each
+# arm, changing ONLY `institutional_condition`. Everything else (agents,
+# resources, shocks, assemblies, economy, tasks, constitution) is asserted
+# byte-identical between arms before any run starts. Each (arm, seed) pair
+# gets its own run dir with a frozen scenario_resolved.yaml; results land in
+# <output_root>/pair_manifest.json (atomic, resumable).
+experiment_id: institutional-recovery-smoke
+base_scenario: experiments/scenarios/institutional_recovery_smoke.yaml
+arms: [fixed, revisable]        # order defines run naming: <arm>-seed<seed>
+seeds: [42]                     # each seed -> one matched pair of runs
+total_ticks_override: null      # optional: e.g. 20 for a quick smoke
+output_root: runs/paired-institutional-recovery
