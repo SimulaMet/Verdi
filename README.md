@@ -98,7 +98,7 @@ works too — YAML is a superset.
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.10+
 - An OpenAI-compatible model endpoint (Qwen on vLLM in the examples)
 
 Environment variables (set in `.env`, or exported):
@@ -112,16 +112,17 @@ Environment variables (set in `.env`, or exported):
 
 ---
 
+## Institutional governance
 
-## Institutional recovery study (development)
+Verdi provides fixed and revisable constitutional conditions for studying
+collective responses to disruptions. In the revisable condition, agents can
+propose and vote on enforceable amendments; the fixed condition keeps the
+same meeting opportunities without changing the rules. Scenarios are configured
+in YAML, and the resulting actions and governance decisions remain auditable.
 
-A controlled fixed-versus-revisable institutional comparison is under development.
-See [the framework contract and limitations](docs/INSTITUTIONAL_RECOVERY.md) and
-[the starter scenario](experiments/scenarios/institutional_recovery_smoke.yaml).
-Both conditions keep the scheduled deliberation and voting opportunities;
-only the ability to enact binding amendments differs. Typed constitutional
-limits are enforced by the deterministic world validator. This is an
-experimental feature, not yet a validated causal-result pipeline.
+See [institutional governance experiments](docs/INSTITUTIONAL_RECOVERY.md)
+for policy semantics and
+[the example scenario](experiments/scenarios/institutional_recovery_smoke.yaml).
 
 ---
 
