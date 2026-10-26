@@ -1,0 +1,129 @@
+# Verdi institutional-recovery CONSTRAINED economy example (P0-B).
+#
+# A fully specified opt-in constrained economy demonstrating every knob:
+# role-aware consumption, per-resource production caps + credit costs, a
+# mid-run shock that removes food AND makes recovery hard (production is
+# capped and costly, so agents cannot print food back), and delivery
+# objectives around the shock so recovery is objectively measurable from
+# committed world state alone.
+#
+# For matched runs change ONLY institutional_condition: revisable -> fixed,
+# use the same seed/model and different --run-dir outputs. The intervention
+# under study is constitutional enactment (e.g. amending
+# max_produce_units_per_tick); the exogenous circumstances are identical.
+world_id: institutional_recovery_constrained
+total_ticks: 48
+run_seed: 7
+institutional_condition: revisable
+inner_life: false
+assemblies: [16, 32]
+
+# Deterministic external disruption at tick 14: common food drops from 24 to 6.
+shocks:
+  - {tick: 14, resource: food, delta: -18.0}
+
+constitution:
+  quorum: 0.5
+  amendment_threshold: 0.67
+  rules:
+    quorum_rule: simple_majority_of_eligible
+    max_withdraw_units: 2.0
+    min_commons_reserve: {food: 10.0}
+    # Enforceable typed key (W2): per-agent per-tick produce cap. An enacted
+    # amendment may raise this (e.g. to 3.0) to restore production capacity —
+    # the validator rejects produces above the active value deterministically.
+    max_produce_units_per_tick: 2.0
+
+# OPT-IN constrained economy (versioned). Absent in legacy scenarios =>
+# unlimited produce, no demand, no costs (today's semantics exactly).
+economy:
+  version: 1
+  # Per-agent per-tick production caps (a missing resource = unlimited).
+  production_limit_per_tick:
+    food: 2.0
+    credits: 1.0
+  # Credit input cost per unit produced (finite input; unaffordable =>
+  # rejected law:insufficient_production_input, never negative balances).
+  production_cost:
+    food: 1.0
+    credits: 0.5
+  # End-of-tick deterministic consumption per agent (clamped at zero;
+  # shortfall => deficit, tracked per tick in the ledger payload).
+  consumption_per_tick:
+    food: 1.0
+  # Role overrides: farmers eat less (they are the producers), guards more.
+  role_consumption:
+    farmer:
+      food: 0.5
+    community_guard:
+      food: 1.5
+
+# Objective task-success oracle: each delivery succeeds iff by due_tick the
+# target holds >= amount MORE of the resource than at start_tick, computed
+# purely from committed world state (state diff, never self-report).
+tasks:
+  deliveries:
+    # Pre-shock baseline: the village can feed its commons before the crisis.
+    - objective_id: pre-shock-baseline
+      start_tick: 0
+      due_tick: 12
+      resource: food
+      amount: 6.0
+      target_pool: world
+    # The recovery target: rebuild the commons after the shock.
+    - objective_id: post-shock-recovery
+      start_tick: 14
+      due_tick: 30
+      resource: food
+      amount: 8.0
+      target_pool: world
+    # Sustained recovery into the late run (censored if not met by t46).
+    - objective_id: late-run-sustainment
+      start_tick: 30
+      due_tick: 46
+      resource: food
+      amount: 6.0
+      target_pool: world
+    # Agent-level delivery: the farmer must hold a personal reserve by t30.
+    - objective_id: farmer-reserve
+      start_tick: 14
+      due_tick: 30
+      resource: food
+      amount: 3.0
+      target_pool: marta
+
+world_resources:
+  food: 24.0
+  credits: 0.0
+
+agents:
+  - agent_id: marta
+    role: farmer
+    persona_summary: Farmer who plans ahead and keeps a reserve for lean seasons.
+    declared_values: {integrity: 0.9, fairness: 0.8, cooperation: 0.8, autonomy: 0.5, solidarity: 0.8}
+    resources: {food: 5.0, credits: 8.0}
+    social_edges: [jonas, priya]
+  - agent_id: jonas
+    role: logistics_worker
+    persona_summary: Logistics worker who moves goods between neighbors and the common pool.
+    declared_values: {integrity: 0.8, fairness: 0.8, cooperation: 0.7, autonomy: 0.6, solidarity: 0.8}
+    resources: {food: 4.0, credits: 6.0}
+    social_edges: [marta, elias]
+  - agent_id: priya
+    role: repair_worker
+    persona_summary: Repair worker focused on keeping shared tools working during scarcity.
+    declared_values: {integrity: 0.8, fairness: 0.8, cooperation: 0.7, autonomy: 0.7, solidarity: 0.7}
+    resources: {food: 4.0, credits: 6.0}
+    social_edges: [marta, sara]
+  - agent_id: elias
+    role: trader
+    persona_summary: Trader balancing fair exchange against keeping the village supplied.
+    declared_values: {integrity: 0.7, fairness: 0.8, cooperation: 0.7, autonomy: 0.8, solidarity: 0.7}
+    resources: {food: 3.0, credits: 9.0}
+    social_edges: [jonas, sara]
+  - agent_id: sara
+    role: community_guard
+    persona_summary: Community guard concerned with stability and avoiding permanent exclusion.
+    declared_values: {integrity: 0.8, fairness: 0.9, cooperation: 0.7, autonomy: 0.5, solidarity: 0.8}
+    resources: {food: 4.0, credits: 5.0}
+    social_edges: [priya, elias]

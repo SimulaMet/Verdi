@@ -154,6 +154,26 @@ def _normalize_governance(scenario: dict[str, Any]) -> None:
     # Give them standard defaults so a minimal scenario need not spell them out.
     scenario.setdefault("law_version", "universal-law")
     scenario.setdefault("constitution_version", "base-constitution")
+    _normalize_economy(scenario)
+
+
+def _normalize_economy(scenario: dict[str, Any]) -> None:
+    """Validate the optional versioned ``economy`` and ``tasks`` blocks.
+
+    Both are OPT-IN: absent (or empty) they stay absent and every legacy run
+    keeps today's semantics exactly (unlimited produce, no demand, no costs,
+    no objectives). When present they are parsed through the pure economy
+    module up front so a malformed block is a config error at load time,
+    never a silent degenerate run. The campaign reads the raw blocks back
+    from the scenario dict — this function only validates, it does not add
+    keys, so existing scenarios' normalized dicts are unchanged.
+    """
+    from verdi.world.economy import parse_economy_spec, parse_task_objectives
+
+    if "economy" in scenario and scenario["economy"]:
+        parse_economy_spec(scenario["economy"])  # raises on malformed
+    if "tasks" in scenario and scenario["tasks"]:
+        parse_task_objectives(scenario["tasks"])  # raises on malformed
 
 
 @dataclass(frozen=True)

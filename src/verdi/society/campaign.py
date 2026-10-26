@@ -73,6 +73,13 @@ from verdi.society.interview import run_interviews
 from verdi.society.memory import AgentMemory
 from verdi.society.prompting import SOCIAL_PROMPT_VERSION, build_social_prompt_messages
 from verdi.society.tasks import generate_llm_tape, generate_tick_tape
+from verdi.world.economy import (
+    EconomySpec,
+    apply_consumption,
+    check_delivery,
+    parse_economy_spec,
+    parse_task_objectives,
+)
 from verdi.world.log import EventLog
 from verdi.world.observation import agent_observation
 from verdi.world.policy import ENFORCEABLE_KEYS, validate_enforceable_rules
@@ -154,6 +161,10 @@ class SocietyResult:
     #: Read-only checkpoint interviews of the actual agents (opt-in via the
     #: scenario's ``interviews`` block); empty for runs without it.
     interviews: list[dict[str, Any]] = field(default_factory=list)
+    #: P0-B: objective task-success outcomes (delivery objectives evaluated
+    #: from committed state at their due tick). Empty when the scenario has no
+    #: ``tasks`` block — legacy runs are unaffected.
+    task_outcomes: list[dict[str, Any]] = field(default_factory=list)
     wall_seconds: float = 0.0
     replay_matches: bool = False
     replay_state_hash: str = ""
@@ -266,6 +277,16 @@ class SocietyCampaign:
         # Current loop tick, shared with the assembly-caller recorder
         # (N1) so assembly calls are attributed to the right tick.
         self._tick: int = 0
+        # P0-B opt-in constrained economy + objective task oracle. Both are
+        # None unless the scenario carries an ``economy`` / ``tasks`` block;
+        # legacy scenarios keep today's semantics exactly.
+        self._economy_spec: EconomySpec | None = parse_economy_spec(scenario.get("economy"))
+        self._task_objectives: list[dict[str, Any]] = parse_task_objectives(scenario.get("tasks"))
+        self._objective_start_states: dict[str, WorldState] = {}
+        self._objectives_due: dict[int, list[dict[str, Any]]] = {}
+        for _obj in self._task_objectives:
+            self._objectives_due.setdefault(int(_obj["due_tick"]), []).append(_obj)
+        self._task_outcomes: list[dict[str, Any]] = []
 
     # ------------------------------------------------------------------ #
     # public entrypoint
@@ -388,6 +409,13 @@ class SocietyCampaign:
         self._checkpoints["t00"] = initial_state
         _write_json(run_dir / "snapshots/t00.json", _state_dict(initial_state))
 
+        # P0-B: capture the baseline state at each delivery objective's start
+        # tick (default 0 => the t0 snapshot) so success/failure is a pure
+        # state diff computed only from committed world state.
+        for _obj in self._task_objectives:
+            if int(_obj["start_tick"]) == 0:
+                self._objective_start_states[_obj["objective_id"]] = initial_state
+
         self._constitution_versions.append(constitution.version)
         self._constitution_texts.append(_constitution_dump(constitution))
         violations: list[dict[str, Any]] = []
@@ -443,10 +471,24 @@ class SocietyCampaign:
                     f"Everyone feels the pressure."
                 )
 
+            # P0-B: capture baselines for delivery objectives that start this
+            # tick (start_tick > 0), from committed state before any action.
+            for _obj in self._task_objectives:
+                if int(_obj["start_tick"]) == tick and tick > 0:
+                    self._objective_start_states[_obj["objective_id"]] = state
+
             # Clear shock context after the first tick it appears in
             if not self._shocks_at(tick):
                 self._current_shock_info = ""
             snapshot = state  # frozen start-of-tick state (concurrency base)
+
+            # P0-B: per-tick production accounting under an active economy —
+            # resets each tick; only consulted by the validator when the
+            # economy block is present, so legacy runs are unaffected.
+            produced_this_tick = {}
+            # Live-state mirror for same-tick prompt building (economy only);
+            # kept in sync at every commit point below.
+            self._live_state = state
 
             if tick in self._probe_phases:
                 await self._probe_phase(snapshot, tick, self._probe_phases[tick], recorder)
@@ -544,7 +586,8 @@ class SocietyCampaign:
                     tape.append(bt)
 
             results = await TaskPool(self._concurrency).run_all(self._make_worker(
-                snapshot, tick, memory, governance.constitution.active_at(tick).rules
+                snapshot, tick, memory, governance.constitution.active_at(tick).rules,
+                produced_this_tick if self._economy_spec else None,
             ), tape)
 
             # deterministic-order commit (single reducer, sequential).
@@ -564,10 +607,54 @@ class SocietyCampaign:
                 validation = validate_action(
                     state, pr.action,
                     policy_rules=governance.constitution.active_at(tick).rules,
+                    economy_spec=self._economy_spec,
+                    produced_this_tick=produced_this_tick if self._economy_spec else None,
                 )
                 before = state
                 state = reducer.apply(before, pr.action, validation)
+                self._live_state = state
                 sealed = self._commit_action(log, before, state, pr.action, validation)
+                if (
+                    validation.accepted
+                    and self._economy_spec is not None
+                    and pr.action.action_kind == "produce"
+                ):
+                    # P0-B: production has a finite credit input. The validator
+                    # already checked the per-tick cap + affordability; here we
+                    # apply the cost deduction as a deterministic state-only
+                    # step (like rights_change / world_shock: no ledger event,
+                    # no tick advance) AFTER the produce commit, so the output
+                    # added by the reducer and the input deducted here net to
+                    # exactly "cost paid, food gained". Replay applies the same
+                    # step at the same recorded position.
+                    _resource = str(pr.action.arguments.get("resource", ""))
+                    _amount = float(pr.action.arguments.get("amount", 0.0))
+                    # The producer first withdraws the credit reserve it needs
+                    # for the input cost (personal credits are drawn inside the
+                    # deduction itself; only the remainder comes from the pool).
+                    from verdi.world.economy import production_input_cost
+
+                    _cost = production_input_cost(self._economy_spec, _resource, _amount)
+                    if _cost > 0:
+                        state = self._withdraw_production_input(
+                            state, pr.action.actor_id, _cost,
+                        )
+                    state = self._deduct_production_input(state, pr.action.actor_id, _resource, _amount)
+                    self._live_state = state
+                    produced_this_tick[_resource] = (
+                        produced_this_tick.get(_resource, 0.0) + _amount
+                    )
+                    self._tape.append(TapeStep(
+                        action=None,  # type: ignore[arg-type]
+                        validation=ValidationResult(accepted=True),
+                        kind="production_cost",
+                        production={
+                            "actor_id": pr.action.actor_id,
+                            "resource": _resource,
+                            "amount": _amount,
+                            "input_cost": _cost,
+                        },
+                    ))
                 if not validation.accepted:
                     # Tranche 11: only SUBSTANTIVE violations (the agent tried
                     # an action the world rules genuinely forbid) feed the
@@ -640,6 +727,19 @@ class SocietyCampaign:
                         # clear the world-state flag this tick.
                         state = self._commit_rights_change(state, p["subject_id"], False)
 
+            # P0-B: end-of-tick deterministic consumption (economy active only).
+            # Runs after all actions are committed, before the assembly tick, so
+            # the ledger event lands at the same tape position in replay.
+            if self._economy_spec is not None:
+                state = self._apply_end_of_tick_consumption(state, log)
+                self._live_state = state
+
+            # P0-B: evaluate delivery objectives due this tick from committed
+            # state only (state diff vs the start-tick baseline snapshot).
+            for _obj in self._objectives_due.get(tick, []):
+                state = self._evaluate_objective(_obj, state, log)
+            self._live_state = state
+
             # Tranche 12i: per-tick resource ledger (world pool + agent
             # holdings), plot-ready for wealth/flow curves.
             self._resource_timeline.append({
@@ -678,6 +778,7 @@ class SocietyCampaign:
             constitution_versions=self._constitution_versions,
             constitution_texts=self._constitution_texts,
             interviews=self._interviews,
+            task_outcomes=self._task_outcomes,
             final_state_hash=canonical_state_hash(state),
             checkpoints=self._checkpoints,
             wall_seconds=time.monotonic() - t0_start,
@@ -762,10 +863,190 @@ class SocietyCampaign:
         return state
 
     # ------------------------------------------------------------------ #
+    # P0-B: constrained economy + objective task oracle
+    # ------------------------------------------------------------------ #
+    def _current_state(self) -> WorldState | None:
+        """The campaign's live world state (read-only for prompt building)."""
+        return getattr(self, "_live_state", None)
+
+    @staticmethod
+    def _withdraw_production_input(state: WorldState, actor_id: str, cost: float) -> WorldState:
+        """Withdraw up to the production input cost from the shared credit pool
+        into the producer's holdings (state-only; personal credits are already
+        counted by the affordability check). Clamped at the pool balance so no
+        balance can go negative."""
+        from verdi.world.economy import withdraw_into_holdings
+
+        agent = state.agents[actor_id]
+        new_agent_res, new_world = withdraw_into_holdings(
+            agent.resources, state.world_resources, "credits", cost,
+        )
+        if new_agent_res == agent.resources and new_world == state.world_resources:
+            return state
+        new_agents = {
+            aid: (a.model_copy(update={"resources": new_agent_res}) if aid == actor_id else a)
+            for aid, a in state.agents.items()
+        }
+        nxt = state.model_copy(update={"agents": new_agents, "world_resources": new_world})
+        return WorldReducer()._with_hash(nxt)
+
+    def _deduct_production_input(
+        self, state: WorldState, actor_id: str, resource: str, amount: float,
+    ) -> WorldState:
+        """Deduct the credit input cost of an accepted produce (state-only).
+
+        The reducer already added the produced units; this step removes the
+        finite input (personal credits first, then the shared commons pool)
+        so conservation holds (inputs deducted, outputs added). Affordability
+        was checked by the validator before commit, so no balance can go
+        negative. No ledger event / tick advance — exactly like rights_change
+        and world_shock.
+        """
+        assert self._economy_spec is not None
+        from verdi.world.economy import apply_production_deduction
+
+        nxt = apply_production_deduction(
+            state, actor_id, resource=resource, amount=amount, spec=self._economy_spec,
+        )
+        return WorldReducer()._with_hash(nxt)
+
+    def _apply_end_of_tick_consumption(self, state: WorldState, log: EventLog) -> WorldState:
+        """Deterministic end-of-tick consumption step (economy active only).
+
+        Mirrors the world_shock pattern: a state-only mutation recorded on the
+        tape (kind ``consumption``) plus ONE ledger event per tick whose
+        payload carries the full per-agent breakdown. Both are fully
+        determined by (state, economy spec), so replay reproduces them.
+        """
+        assert self._economy_spec is not None
+        before = state
+        # Advance tick/event_cursor FIRST (the reducer does this for every
+        # ledgered transition), then apply the deterministic deduction — so
+        # the event's before/after hashes and ids follow the exact same
+        # contract as action/governance events.
+        advanced = before.model_copy(
+            update={"tick": before.tick + 1, "event_cursor": before.event_cursor + 1}
+        )
+        after, payload = apply_consumption(advanced, self._economy_spec)
+        action = ProposedAction(
+            actor_id="world",
+            task_id=f"economy-consumption-{before.event_cursor}",
+            action_kind="consume",
+            arguments={k: v for k, v in sorted(payload.items())},
+        )
+        validation = ValidationResult(
+            accepted=True, details="deterministic end-of-tick consumption",
+        )
+        event = self._build_economy_ledger_event(
+            before, after, action, validation, "consumption", payload,
+        )
+        event = event.model_copy(update={"prev_hash": log.last_hash()})
+        log.append(event)
+        self._tape.append(TapeStep(
+            action=None,  # type: ignore[arg-type]
+            validation=validation,
+            kind="consumption",
+            consumption=payload,
+        ))
+        # The ledgered transition advanced tick/event_cursor by exactly one;
+        # carry that bookkeeping into the live state (content already updated).
+        return after.model_copy(
+            update={
+                "tick": before.tick + 1,
+                "event_cursor": before.event_cursor + 1,
+                "state_hash": WorldReducer.canonical_state_hash(after),
+            }
+        )
+
+    def _evaluate_objective(
+        self, objective: dict[str, Any], state: WorldState, log: EventLog,
+    ) -> WorldState:
+        """Evaluate one delivery objective at its due tick from committed
+        state only, and ledger the outcome (task_completed / task_failed).
+
+        The outcome is a ledgered RECORD-ONLY transition: content is unchanged
+        (before == after), but tick/event_cursor advance by exactly one — the
+        same bookkeeping contract as every other ledgered step, so the event
+        ids stay in lockstep with the log length in both live run and replay.
+        """
+        start_state = self._objective_start_states.get(str(objective["objective_id"]))
+        if start_state is None:
+            raise KeyError(
+                f"delivery objective {objective['objective_id']!r} has no baseline "
+                f"state at start_tick {objective['start_tick']}"
+            )
+        outcome = check_delivery(objective, start_state, state)
+        self._task_outcomes.append({"tick": int(objective["due_tick"]), **outcome})
+        before = state
+        after = before.model_copy(
+            update={
+                "tick": before.tick + 1,
+                "event_cursor": before.event_cursor + 1,
+                "state_hash": WorldReducer.canonical_state_hash(before),
+            }
+        )
+        kind = "task_completed" if outcome["status"] == "completed" else "task_failed"
+        action = ProposedAction(
+            actor_id="world",
+            task_id=f"economy-{kind}-{before.event_cursor}",
+            action_kind="task_objective",
+            arguments={"objective_id": outcome["objective_id"]},
+        )
+        validation = ValidationResult(
+            accepted=outcome["status"] == "completed",
+            blocked_by=None if outcome["status"] == "completed" else "law:delivery_unmet",
+            details=(
+                f"delivery of {outcome['required']:g} {outcome['resource']} to "
+                f"{outcome['target_pool']!r}: delta {outcome['delta']:g} "
+                f"(baseline {outcome['baseline']:g} -> actual {outcome['actual']:g})"
+            ),
+        )
+        # The full outcome record (state diff) goes on the TAPE so replay can
+        # rebuild the identical ledger payload; the live event carries it too.
+        payload = {k: v for k, v in sorted(outcome.items()) if k != "status"}
+        event = self._build_economy_ledger_event(
+            before, after, action, validation, kind, payload,
+        )
+        event = event.model_copy(update={"prev_hash": log.last_hash()})
+        log.append(event)
+        # Carry the full outcome on the tape (objective + recorded payload) so
+        # a replay rebuilds the byte-identical ledger event.
+        self._tape.append(TapeStep(
+            action=action, validation=validation, kind="task_objective",
+            governance={"objective_id": outcome["objective_id"], "payload": payload},
+        ))
+        return after
+
+    @staticmethod
+    def _build_economy_ledger_event(
+        before: WorldState, after: WorldState, action: ProposedAction,
+        validation: ValidationResult, kind: str, payload: dict[str, Any],
+    ) -> WorldEvent:
+        """Ledger event for a deterministic non-action world step (consumption
+        or task-objective outcome): same construction as the governance
+        events, keyed off the reducer's canonical hashes."""
+        reducer = WorldReducer()
+        event_id = before.event_cursor
+        return WorldEvent(
+            event_id=event_id,
+            tick=after.tick,
+            cause_event_id=event_id - 1 if event_id > 0 else None,
+            actor_id=action.actor_id,
+            kind=kind,
+            payload=payload,
+            before_hash=reducer.canonical_state_hash(before),
+            after_hash=reducer.canonical_state_hash(after) if validation.accepted else None,
+            decision="accepted" if validation.accepted else "rejected",
+            prev_hash=GENESIS_HASH,
+            event_hash="",
+        )
+
+    # ------------------------------------------------------------------ #
     # phases
     # ------------------------------------------------------------------ #
     def _make_worker(self, snapshot: WorldState, tick: int, memory: dict[str, AgentMemory],
-                     policy_rules: dict[str, Any] | None = None) -> Callable:
+                     policy_rules: dict[str, Any] | None = None,
+                     produced_this_tick: dict[str, float] | None = None) -> Callable:
         caller = self._caller
         temperature = self._temperature
         fingerprint = self._model_fingerprint()
@@ -808,12 +1089,35 @@ class SocietyCampaign:
             # --- Public action generation (now informed by inner state) ---
             t_start = time.monotonic()
             ts_start = _utc_now_iso()
+            # P0-B: under an active economy the agent sees its CURRENT holdings
+            # (production cost deductions from earlier same-tick produces are
+            # already visible), not just the start-of-tick snapshot. Legacy runs
+            # (no economy block) keep the snapshot exactly as before.
+            prompt_state = snapshot
+            if produced_this_tick is not None:
+                _cur = self._current_state()
+                if _cur is not None:
+                    prompt_state = _cur
             action_messages = build_social_prompt_messages(
-                task.actor_id, task, snapshot, memory[task.actor_id],
+                task.actor_id, task, prompt_state, memory[task.actor_id],
             )
             # Inform agents of actionable, currently-effective rules. Preserve
             # legacy prompts byte-for-byte when no typed rules are configured.
             executable = {k: v for k, v in (policy_rules or {}).items() if k in ENFORCEABLE_KEYS}
+            # P0-B: when a constrained economy is active, surface its typed
+            # production parameters so agents can plan against the real caps.
+            # The CONSTITUTIONAL key (enacted via amendment, in policy_rules)
+            # overrides the scenario block for the same resource: this is what
+            # makes an enacted max_produce_units_per_tick amendment change
+            # enforcement (and prompts) at its effective tick.
+            if self._economy_spec is not None:
+                _econ_limits = dict(self._economy_spec.production_limit_per_tick)
+                _const_cap = (policy_rules or {}).get("max_produce_units_per_tick")
+                if isinstance(_const_cap, (int, float)) and not isinstance(_const_cap, bool):
+                    _econ_limits["food"] = float(_const_cap)
+                executable["economy_production_limit_per_tick"] = _econ_limits
+                executable["economy_production_cost_per_unit"] = dict(
+                    self._economy_spec.production_cost)
             if executable:
                 action_messages[-1]["content"] += (
                     "\n\nBinding constitutional action limits: "
@@ -1240,10 +1544,89 @@ class SocietyCampaign:
                             "world_resources": {**state.world_resources, _res: _nv},
                         })
                     continue
+                # P0-B: production input withdrawal + cost deduction
+                # (state-only, applied AFTER the surrounding produce commit,
+                # exactly as in the live run).
+                if step.kind == "production_cost" and step.production is not None:
+                    _prod = step.production
+                    _cost = float(_prod.get("input_cost", 0.0))
+                    if _cost > 0:
+                        state = self._withdraw_production_input(
+                            state, str(_prod["actor_id"]), _cost,
+                        )
+                    state = self._deduct_production_input(
+                        state, str(_prod["actor_id"]),
+                        str(_prod["resource"]), float(_prod["amount"]),
+                    )
+                    continue
+                # P0-B: end-of-tick consumption (state-only mutation; the ledger
+                # event is rebuilt from the recorded payload below). The live run
+                # applies consumption BEFORE advancing tick/event_cursor on its
+                # ledger event, so replay must mirror that order exactly.
+                if step.kind == "consumption" and step.consumption is not None:
+                    assert self._economy_spec is not None
+                    before = state
+                    # Mirror the live run: advance tick/event_cursor first,
+                    # then apply the deterministic deduction.
+                    advanced = before.model_copy(
+                        update={"tick": before.tick + 1,
+                                "event_cursor": before.event_cursor + 1}
+                    )
+                    after, _replayed_payload = apply_consumption(advanced, self._economy_spec)
+                    assert _replayed_payload == step.consumption, (
+                        "consumption replay diverged from the recorded payload"
+                    )
+                    action = ProposedAction(
+                        actor_id="world",
+                        task_id=f"economy-consumption-{before.event_cursor}",
+                        action_kind="consume",
+                        arguments={k: v for k, v in sorted(step.consumption.items())},
+                    )
+                    validation = ValidationResult(
+                        accepted=True, details="deterministic end-of-tick consumption",
+                    )
+                    event = self._build_economy_ledger_event(
+                        before, after, action, validation, "consumption",
+                        dict(step.consumption),
+                    )
+                    event = event.model_copy(update={"prev_hash": fresh_log.last_hash()})
+                    fresh_log.append(event)
+                    # Mirror the live run's bookkeeping: the ledgered transition
+                    # advances tick/event_cursor by exactly one.
+                    state = after.model_copy(
+                        update={
+                            "tick": before.tick + 1,
+                            "event_cursor": before.event_cursor + 1,
+                            "state_hash": WorldReducer.canonical_state_hash(after),
+                        }
+                    )
+                    continue
                 before = state
                 state = reducer.apply(before, step.action, step.validation)
                 if step.kind == "governance" and step.governance is not None:
                     event = self._build_governance_ledger_event(before, state, step.action, step.validation, step.governance)
+                elif step.kind == "task_objective":
+                    # P0-B: task outcome events are record-only content-wise,
+                    # but they advance tick/event_cursor by one (the ledgered
+                    # bookkeeping contract). Rebuild from the recorded
+                    # action/validation so the ledger bytes match the live run.
+                    after_obj = state.model_copy(
+                        update={
+                            "tick": before.tick + 1,
+                            "event_cursor": before.event_cursor + 1,
+                            "state_hash": WorldReducer.canonical_state_hash(before),
+                        }
+                    )
+                    # The full outcome payload was recorded on the tape, so the
+                    # replayed ledger bytes match the live run exactly.
+                    _recorded = (step.governance or {}).get("payload") or {
+                        "objective_id": str(step.action.arguments.get("objective_id", "")),
+                    }
+                    event = self._build_economy_ledger_event(
+                        before, after_obj, step.action, step.validation,
+                        "task_completed" if step.validation.accepted else "task_failed",
+                        dict(_recorded),
+                    )
                 else:
                     event = reducer.build_event(before, state, step.action, step.validation, prev_hash=fresh_log.last_hash())
                 event = event.model_copy(update={"prev_hash": fresh_log.last_hash()})

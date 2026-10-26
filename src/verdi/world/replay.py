@@ -41,6 +41,14 @@ class TapeStep:
     # position; takes no action, advances no ledger event or tick — so a live
     # run and its replay both apply it identically and the state hash matches.
     shock: dict | None = None
+    # P0-B (constrained economy): deterministic production cost deduction
+    # ({actor_id, resource, amount}) applied at this position before the
+    # produce commit; state-only, like rights_change / world_shock.
+    production: dict | None = None
+    # P0-B: end-of-tick consumption payload ({tick_consumed, deficit_agents})
+    # recorded so replay applies the same deterministic deduction and rebuilds
+    # the identical ledger event.
+    consumption: dict | None = None
 
 
 def replay(
