@@ -62,9 +62,10 @@ class GovernanceEngine:
     """
 
     def __init__(self, law: LawVersion, constitution: ConstitutionVersion,
-                 eligible_voters: Sequence[str] | None = None) -> None:
+                 eligible_voters: Sequence[str] | None = None, *,
+                 amendments_enabled: bool = True) -> None:
         self.law = UniversalLaw(law)
-        self.constitution = ConstitutionStore(self.law)
+        self.constitution = ConstitutionStore(self.law, amendments_enabled=amendments_enabled)
         self.constitution.register(constitution)
         if eligible_voters is not None:
             self.constitution.set_eligible_voters(eligible_voters)
