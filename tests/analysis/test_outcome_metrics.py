@@ -572,11 +572,17 @@ def test_write_metrics_csv_long_format(tmp_path, pair_root):
     # Every completion aggregate row carries non-empty ledger evidence.
     completion_rows = [r for r in rows if r["metric"].startswith("completion")]
     assert completion_rows and all(r["evidence_ref"] for r in completion_rows)
-    # pandas can read it (installed in the project venv).
-    import pandas as pd
-    frame = pd.read_csv(path)
-    assert list(frame.columns) == expected_cols
-    assert frame["arm"].isin(["fixed", "revisable"]).all()
+    # Optional cross-check: if pandas happens to be installed, the CSV must also
+    # parse through it. pandas is NOT a declared dependency, so skip otherwise
+    # (the stdlib csv checks above already validate structure and content).
+    try:
+        import pandas as pd
+    except ImportError:
+        pytest.skip("pandas not installed")
+    else:
+        frame = pd.read_csv(path)
+        assert list(frame.columns) == expected_cols
+        assert frame["arm"].isin(["fixed", "revisable"]).all()
 
 
 def test_comparison_html_contains_both_arms(tmp_path, pair_root):
