@@ -40,7 +40,7 @@ nondeterministic. The run is reproducible FROM the recorded judge tape
 (full judge prompt + response + usage captured verbatim under
 ``runs/live/judge/<ts>/``), not bit-reproducible on re-run.
 
-Advisor-only (AGENTS.md hard rule): the judge output is a report artifact.
+Advisor-only: the judge output is a report artifact.
 It never feeds world state, scoring, or the event log; the deterministic
 engine decision is the only ground truth.
 """

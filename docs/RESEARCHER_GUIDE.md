@@ -15,7 +15,7 @@ a common constitution, and periodically meet to propose and vote on rule
 changes. At a scheduled moment an external **shock** hits (food and credits
 disappear from the commons), and the simulation then measures whether the
 village can rebuild through production and cooperation. The experiment runs
-the *same* village twice: once where the constitution is **fixed** (agents
+the *same* configured village twice: once where the constitution is **fixed** (agents
 can still deliberate and vote, but no amendment can ever be enacted) and once
 where it is **revisable** (valid amendments can take effect). Comparing the
 two tells us whether the *ability to change the rules itself* helps a society
@@ -218,17 +218,20 @@ interpret differences carefully — the intervention is *enactment*, not
 | `pair_manifest.json` | Which pairs completed/failed/stalled; final state hashes; replay integrity |
 | Per-run `events.jsonl` / `metrics.json` / `timeline.md` | Raw evidence behind any aggregate: ledgers, counts, tick-by-tick story |
 | Per-run `scenario_resolved.yaml` | The exact frozen scenario — reproducibility proof |
-| Cross-run comparison view / metrics exports | Side-by-side fixed-vs-revisable numbers |
+| `comparison.html`, `metrics.json`, `metrics.csv` | Cross-condition comparison and machine-readable outcomes after running the metrics command |
 
-**Coming in the same release:** dedicated comparative-report and metrics
-tooling (cross-condition CSV/JSON exports, a single comparison page over a
-pair manifest) lands in a sibling change. Until it is merged into your
-branch, compare arms by opening each arm's `report.html` and raw ledgers side
-by side — do not invent flags for tools that are not yet in your checkout.
-(If `src/verdi/analysis/outcome_metrics.py` exists in your working tree, the
-planned primary-outcome extraction described in
-[INSTITUTIONAL_RECOVERY.md](INSTITUTIONAL_RECOVERY.md) is available; verify
-its CLI in that module before relying on it.)
+After the paired run completes, generate the comparison report and
+machine-readable metrics with:
+
+```bash
+python -m verdi.analysis.outcome_metrics --pair-root runs/paired-institutional-recovery
+```
+
+This writes `comparison.html`, `metrics.json`, and `metrics.csv`
+at the paired output root. The comparison includes objective completion,
+committed and attempted resource flows, exclusion episodes, institutional
+mechanisms, and recovery measurements where there is enough recorded
+evidence. Inspect the individual `events.jsonl` ledgers for provenance.
 
 Interpretation guardrails:
 
@@ -260,7 +263,7 @@ Interpretation guardrails:
 - **Delivery objective** — an objectively checkable task: deliver X units of
   a resource to a pool by a due tick, verified from committed world state
   only.
-- **Recovery time** — (planned definition) ticks needed to regain a
+- **Recovery time** — ticks needed to regain a
   preregistered target fraction of pre-shock successful-task rate; runs that
   never recover are **censored**, not dropped.
 - **Censored** — a run that did not reach the recovery target within the

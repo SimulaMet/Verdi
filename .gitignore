@@ -10,5 +10,3 @@ artifacts/
 .env
 .env.*
 *.local.env
-.worktrees/
-.fleet/

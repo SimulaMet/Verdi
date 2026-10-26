@@ -98,7 +98,7 @@ works too — YAML is a superset.
 
 ## Requirements
 
-- Python 3.11+
+- Python 3.10+
 - An OpenAI-compatible model endpoint (Qwen on vLLM in the examples)
 
 Environment variables (set in `.env`, or exported):
@@ -112,27 +112,22 @@ Environment variables (set in `.env`, or exported):
 
 ---
 
+## Institutional governance experiments
 
-## Institutional recovery study (development)
-
-A controlled fixed-versus-revisable institutional comparison can now be run
-from ONE config file — no Python editing:
+Run matched societies with fixed or amendable rules from one configuration.
+Both conditions use the same scenario, model, shock schedule, and meeting
+opportunities; the fixed condition cannot enact amendments.
 
 ```bash
 python -m verdi.experiments.paired_run --config examples/paired_institutional_recovery.yaml
+python -m verdi.analysis.outcome_metrics --pair-root runs/paired-institutional-recovery
 ```
 
-The paired runner builds both arms from the same base scenario, changing only
-`institutional_condition`, and writes per-arm run dirs plus a resumable
-`pair_manifest.json`. Both conditions keep the same scheduled deliberation
-and voting opportunities; only the ability to enact binding amendments
-differs, with typed constitutional limits enforced by the deterministic
-world validator. See the
-[Researcher Guide](docs/RESEARCHER_GUIDE.md), the
-[scenario gallery](docs/SCENARIOS.md), the
-[pair example](examples/paired_institutional_recovery.yaml), and
-[the framework contract and limitations](docs/INSTITUTIONAL_RECOVERY.md).
-This is an experimental feature, not yet a validated causal-result pipeline.
+The first command runs the two conditions and saves a resumable manifest.
+The second writes `metrics.json`, `metrics.csv`, and `comparison.html`
+alongside the individual run reports. See the [researcher guide](docs/RESEARCHER_GUIDE.md),
+[scenario gallery](docs/SCENARIOS.md), and
+[institutional governance documentation](docs/INSTITUTIONAL_RECOVERY.md).
 
 ---
 
