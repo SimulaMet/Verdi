@@ -37,7 +37,7 @@ import pytest
 from verdi.agents.client import ModelResult
 from verdi.society import live as live_module
 
-SCEN = Path(__file__).resolve().parents[2] / "experiments/scenarios/society_v2_stageC1.json"
+SCEN = Path(__file__).resolve().parents[2] / "tests/fixtures/scenarios/society_v2_stageC1.json"
 
 # Observed SimulaChat Qwen3.8-27B latencies from Stage B / C-1 attempts
 # (runs/society-v2/stageB-* health.json): mean 3.36-4.65 s/call,

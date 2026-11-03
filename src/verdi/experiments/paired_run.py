@@ -9,7 +9,7 @@ file — no Python editing::
 Config format (YAML)::
 
     experiment_id: institutional-recovery-smoke
-    base_scenario: experiments/scenarios/institutional_recovery_smoke.yaml
+    base_scenario: examples/institutional_recovery_constrained.yaml
     arms: [fixed, revisable]          # order defines run naming
     seeds: [42]                       # each seed -> one pair of runs
     total_ticks_override: null        # optional; default = base scenario value
@@ -404,15 +404,13 @@ def run_pair(config: dict[str, Any],
 # --------------------------------------------------------------------------- #
 
 def _real_caller_factory():
-    """Build the live ModelClient factory (endpoint resolved once)."""
+    """Build the live ModelClient factory (endpoint resolved per arm scenario)."""
     from verdi.agents.client import ModelClient
     from verdi.society.live import resolve_endpoint_config
 
-    endpoint = resolve_endpoint_config()
-
     def factory(scenario: dict[str, Any], run_dir: Path) -> ModelClient:
         # One pooled client per arm run; closed in _run_one_arm's finally.
-        return ModelClient(endpoint)
+        return ModelClient(resolve_endpoint_config(scenario))
 
     return factory
 

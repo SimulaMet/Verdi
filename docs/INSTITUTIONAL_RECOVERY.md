@@ -71,9 +71,8 @@ configuration retain their original semantics.
 
 Delivery objectives are checked against committed world-state changes,
 rather than what an agent reports accomplishing. The
-`institutional_recovery_smoke.yaml` and
-`institutional_recovery_constrained.yaml` examples demonstrate the relevant
-scenario settings.
+`examples/institutional_recovery_constrained.yaml` and `examples/full.yaml`
+demonstrate the relevant scenario settings.
 
 ## Interpreting the results
 

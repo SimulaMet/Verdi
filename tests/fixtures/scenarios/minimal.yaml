@@ -6,7 +6,7 @@
 #
 #   source .venv/bin/activate
 #   python -m verdi.society.live \
-#     --scenario experiments/scenarios/minimal.yaml \
+#     --scenario tests/fixtures/scenarios/minimal.yaml \
 #     --run-dir runs/my-run \
 #     --concurrency 4
 #
@@ -55,6 +55,11 @@
 # ---- REQUIRED (the engine cannot run without these) -----------
 
 # Unique name for this world. Keep it stable to replay/compare runs.
+model:
+  base_url: https://simulachat.sushant.pp.ua/api/v1
+  name: default
+  # key: MODEL_API_KEY from .env
+
 world_id: society_minimal
 
 # How many steps the society runs. Each tick every agent acts once and the

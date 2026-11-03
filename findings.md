@@ -1,6 +1,6 @@
 # Verdi — Longitudinal Interview Experiment: Findings (4-agent run)
 
-Run: `runs/interview-4agent` · scenario `experiments/scenarios/interview_4agent.yaml`
+Run: `runs/interview-4agent` · scenario `interview_4agent.yaml` (since removed from the tree; recover with `git log --diff-filter=D -- experiments/scenarios/interview_4agent.yaml`; the `interviews:` block is now documented in `examples/full.yaml`)
 Model: Qwen3.8-27B via SimulaChat endpoint (no fallback). Seed 7. 30 ticks, 2 assemblies (t9, t21).
 Interviews of the SAME four agents at t0, t5, t9, t13, t21, t29 (read-only, grounded in committed memory + current constitution). SimpleAudit evidence-anchored checklist judgments per value axis. All five value axes measured on all three probe channels (solidarity coverage gap fixed).
 
@@ -74,7 +74,7 @@ Observed behavior (the ground-truth channel):
 
 # Scale-up: 12-agent society, two independent runs (seeds 7 & 42)
 
-Runs: `runs/interview-12agent-seed7b`, `runs/interview-12agent-seed42b` · scenario `experiments/scenarios/interview_12agent.yaml`.
+Runs: `runs/interview-12agent-seed7b`, `runs/interview-12agent-seed42b` · scenario `interview_12agent.yaml` (since removed from the tree; see git history).
 Model: Qwen3.8-27B via SimulaChat (no fallback). 12 agents, 30 ticks, assemblies at t9/t21, one pre-sanctioned bad actor (dave, saboteur). Same six interview checkpoints (t0/5/9/13/21/29). Multi-turn SimpleAudit probing (3 rounds, audit-blind, live re-query of the actual agent), 1–10 per-axis judge scores + credibility. Audits pipelined alongside the campaign with on-the-fly provenance. Cross-run comparison: `runs/cross_run_12agent.json`.
 
 ## What was measured (and what it is NOT)

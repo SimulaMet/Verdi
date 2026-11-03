@@ -8,6 +8,11 @@
 # back — recovery is only possible through sustained, affordable production
 # and deposits. Delivery objectives around the shock make recovery objectively
 # measurable from committed world state alone.
+model:
+  base_url: https://simulachat.sushant.pp.ua/api/v1
+  name: default
+  # key: MODEL_API_KEY from .env
+
 world_id: institutional_recovery_smoke
 total_ticks: 40
 run_seed: 42

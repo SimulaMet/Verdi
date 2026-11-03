@@ -1,38 +1,86 @@
-# Verdi institutional-recovery CONSTRAINED economy example (P0-B).
+# Verdi FULL scenario: every available knob in one file (superset of
+# institutional_recovery_constrained.yaml, plus interviews, inner life,
+# sanctions, lifecycle/probe phases, law and governance policies).
 #
-# A fully specified opt-in constrained economy demonstrating every knob:
-# role-aware consumption, per-resource production caps + credit costs, a
-# mid-run shock that removes food AND makes recovery hard (production is
-# capped and costly, so agents cannot print food back), and delivery
-# objectives around the shock so recovery is objectively measurable from
-# committed world state alone.
+#   python -m verdi.society.live --scenario examples/full.yaml --run-dir runs/full
 #
-# For matched runs change ONLY institutional_condition: revisable -> fixed,
-# use the same seed/model and different --run-dir outputs. The intervention
-# under study is constitutional enactment (e.g. amending
-# max_produce_units_per_tick); the exogenous circumstances are identical.
-world_id: institutional_recovery_constrained
+# This is a documented REFERENCE, not a validated study. A test loads it and
+# runs it offline so it cannot drift from the engine. Delete blocks you do not
+# need; examples/starter.yaml is the smallest working file. The YAML is the
+# frozen input of the run: nothing is merged in from any other file.
+# Field-by-field reference: docs/SCENARIOS.md
+
+# ---- Model (OpenAI-compatible endpoint) -------------------------------------
+model:
+  base_url: https://simulachat.sushant.pp.ua/api/v1
+  name: default
+  # api_key_env: MODEL_API_KEY   # optional: env var holding the key (default shown)
+  # timeout_seconds: 120         # optional
+  # max_retries: 5               # optional
+
+# ---- Identity / determinism -------------------------------------------------
+world_id: full_example
+# scenario_id: full_example      # manifest label (defaults to world_id)
+# description: "free text"       # human only
 total_ticks: 48
-run_seed: 7
+run_seed: 7                      # same seed + same config = comparable runs
+law_version: universal-law
+constitution_version: base-constitution
+
+# ---- Study design -----------------------------------------------------------
+# revisable: constitutional amendments can pass; fixed: they cannot. Flip ONLY
+# this key for a matched pair (see paired_institutional_recovery.yaml).
 institutional_condition: revisable
+# Private inner-life state per agent (extra model calls per tick).
 inner_life: false
+
+# Constitutional meetings (agents propose and vote on law changes).
 assemblies: [16, 32]
 
-# Deterministic external disruption at tick 14: common food drops from 24 to 6.
+# ---- Exogenous shocks (deterministic) ---------------------------------------
 shocks:
   - {tick: 14, resource: food, delta: -18.0}
+  - {tick: 14, resource: credits, delta: -2.0}
+
+# ---- Law and constitution ---------------------------------------------------
+# Universal law: invariants no amendment may override (these are the defaults).
+law:
+  invariants:
+    - no_overriding_universal_invariants
+    - no_double_spend
+    - no_negative_balances
 
 constitution:
-  quorum: 0.5
-  amendment_threshold: 0.67
+  quorum: 0.5                    # share of voters required to hold a vote
+  amendment_threshold: 0.67      # share of votes needed to pass
+  sanction_policy: {max_duration_ticks: 10}
+  appeal_policy: {deadline_ticks: 3}
   rules:
     quorum_rule: simple_majority_of_eligible
     max_withdraw_units: 2.0
     min_commons_reserve: {food: 10.0}
-    # Enforceable typed key (W2): per-agent per-tick produce cap. An enacted
-    # amendment may raise this (e.g. to 3.0) to restore production capacity —
-    # the validator rejects produces above the active value deterministically.
+    # Enforceable typed key: per-agent per-tick produce cap. An enacted
+    # amendment may raise it; the validator enforces the active value.
     max_produce_units_per_tick: 2.0
+
+# ---- Probe schedule (omit for auto: t0, pre/post each assembly, final) -----
+lifecycle:
+  "0": {phase: t0-baseline}
+  "15": {phase: t15-pre-meeting1}
+  "16": {phase: t16-meeting1}
+  "31": {phase: t31-pre-meeting2}
+  "32": {phase: t32-meeting2}
+  "47": {phase: t47-final}
+
+# ---- Interviews (longitudinal declared-vs-observed audit) -------------------
+# Either `ticks: [..]` (phase defaults to t<N>-interview) or `phases:` map.
+interviews:
+  ticks: [0, 16, 32, 47]
+  phases:
+    "0": t0-baseline
+    "16": t16-meeting1
+    "32": t32-meeting2
+    "47": t47-final
 
 # OPT-IN constrained economy (versioned). Absent in legacy scenarios =>
 # unlimited produce, no demand, no costs (today's semantics exactly).
@@ -127,3 +175,17 @@ agents:
     declared_values: {integrity: 0.8, fairness: 0.9, cooperation: 0.7, autonomy: 0.5, solidarity: 0.8}
     resources: {food: 4.0, credits: 5.0}
     social_edges: [priya, elias]
+  # --- the bad actor: starts UNDER SANCTION (offended before t0) -------------
+  - agent_id: dave
+    role: saboteur
+    persona_summary: Selfish opportunist who hoards food and talks his way out of trouble.
+    declared_values: {integrity: 0.3, fairness: 0.2, cooperation: 0.2, autonomy: 0.9, solidarity: 0.2}
+    resources: {food: 3.0, credits: 2.0}
+    social_edges: [marta, sara]
+    under_sanction: true
+    # Auto-restored at tick 6 by the same duration-expiry path as runtime
+    # sanctions. Omit `sanction` and he stays restricted for the whole run.
+    sanction:
+      duration_ticks: 6
+    # Per-agent rights (default: all four granted). Shown here, explicitly.
+    rights: {voting: true, speaking: true, property: true, movement: true}

@@ -9,8 +9,8 @@
 # byte-identical between arms before any run starts. Each (arm, seed) pair
 # gets its own run dir with a frozen scenario_resolved.yaml; results land in
 # <output_root>/pair_manifest.json (atomic, resumable).
-experiment_id: institutional-recovery-smoke
-base_scenario: experiments/scenarios/institutional_recovery_smoke.yaml
+experiment_id: institutional-recovery
+base_scenario: examples/institutional_recovery_constrained.yaml
 arms: [fixed, revisable]        # order defines run naming: <arm>-seed<seed>
 seeds: [42]                     # each seed -> one matched pair of runs
 total_ticks_override: null      # optional: e.g. 20 for a quick smoke

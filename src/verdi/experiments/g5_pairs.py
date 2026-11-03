@@ -772,9 +772,9 @@ def arm_run_dict(run: PilotRun, arm: str) -> dict[str, Any]:
 
 
 def _api_key_value() -> str | None:
-    import os
+    from verdi.config import api_key_values
 
-    return os.environ.get("VERDI_VLLM_API_KEY") or None
+    return next(iter(api_key_values()), None)
 
 
 def audit_artifacts(run_root: str | Path) -> dict[str, Any]:
@@ -1067,6 +1067,7 @@ def write_run_meta(
             "VERDI_MAX_CONCURRENCY",
             "VERDI_MAX_RETRIES",
             "VERDI_REQUEST_TIMEOUT",
+            "MODEL_API_KEY",
             "VERDI_VLLM_API_KEY",
             "VERDI_VLLM_BASE_URL",
             "VERDI_VLLM_MODEL",

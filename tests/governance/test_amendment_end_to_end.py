@@ -2,7 +2,7 @@
 amendment changes a SUBSEQUENT action-validation decision inside a real
 SocietyCampaign run.
 
-Scenario (small variant of experiments/scenarios/institutional_recovery_smoke.yaml):
+Scenario (small variant of tests/fixtures/scenarios/institutional_recovery_smoke.yaml):
 4 agents, 30 ticks, ONE assembly at tick 15, institutional_condition revisable,
 and an initial constitution WITHOUT ``max_transfer_units``.
 
