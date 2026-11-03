@@ -100,6 +100,19 @@ works too — YAML is a superset.
 
 ---
 
+## Sweeps: compare models and settings
+
+Rerun a scenario many times, changing only what you list, with every
+combination on several seeds. The result is one spreadsheet and one
+comparison page:
+
+```bash
+python -m verdi.sweep examples/sweeps/model_comparison.yaml --dry-run   # plan + cost
+python -m verdi.sweep examples/sweeps/model_comparison.yaml             # run (asks first, resumes)
+```
+
+Guide: [docs/SWEEPS.md](docs/SWEEPS.md).
+
 ## Requirements
 
 - Python 3.10+
