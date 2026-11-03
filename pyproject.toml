@@ -3,7 +3,7 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "verdi"
+name = "verdi-agents"
 version = "0.1.0"
 description = "Auditable testbed for temporal value expression and institutional recovery in LLM agent societies"
 readme = "README.md"
@@ -43,6 +43,8 @@ Issues = "https://github.com/SimulaMet/Verdi/issues"
 
 [project.scripts]
 verdi = "verdi.cli:main"
+# Same name as the package so `uvx verdi-agents ...` works with no --from.
+verdi-agents = "verdi.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/verdi"]
