@@ -32,12 +32,12 @@ pip install -e .
 
 # 2. Configure the endpoint (never commit real values)
 cp .env.example .env
-#    then edit .env and set VERDI_VLLM_BASE_URL, VERDI_VLLM_MODEL, VERDI_VLLM_API_KEY
+#    then edit .env and set MODEL_API_KEY; model name + base_url go in the scenario `model:` block
 
-# 3. Run the minimal society (4 agents, 50 ticks, 5 constitutional meetings)
+# 3. Run the starter society (4 agents, 20 ticks, 1 constitutional meeting)
 source .env
 python -m verdi.society.live \
-  --scenario experiments/scenarios/minimal.yaml \
+  --scenario examples/starter.yaml \
   --run-dir runs/my-run \
   --concurrency 4
 ```
@@ -55,7 +55,7 @@ of every run (local, no extra model calls); pass `--no-report` to skip it.
 
 ### See it without running first
 
-A finished run of this exact scenario is committed at
+A finished run of a larger 4-agent, 50-tick society (kept at `tests/fixtures/scenarios/minimal.yaml`) is committed at
 [examples/minimal/society-minimal-report.html](examples/minimal/society-minimal-report.html)
 — open it in a browser. It shows one agent who starts **already under sanction**:
 his rejected transfer attempts, the `law:under_sanction` code, his rights being
@@ -83,12 +83,16 @@ rest is the raw, reconstructable evidence:
 
 ---
 
-## The minimal scenario
+## Scenarios
 
-[experiments/scenarios/minimal.yaml](experiments/scenarios/minimal.yaml) is a
-single, fully-commented config file — the constitution, the law, the four
-agents, the resources, and the probe schedule all live in it. Copy it, tweak a
-few numbers, and run the command above.
+Each scenario YAML is a self-contained, frozen input: model, agents, resources,
+governance and schedule all live in one file.
+
+- [examples/starter.yaml](examples/starter.yaml) — the smallest working scenario (~40 lines). Copy it and tweak.
+- [examples/full.yaml](examples/full.yaml) — every available knob, commented. Tested offline so it cannot drift.
+- [examples/institutional_recovery_constrained.yaml](examples/institutional_recovery_constrained.yaml) — the constrained-economy base for the paired study.
+
+Reference: [docs/SCENARIOS.md](docs/SCENARIOS.md).
 
 You only need to fill the **Required** section (plus each agent's fields); the
 **Derivable** section is optional and the engine fills sensible defaults. JSON
@@ -101,13 +105,23 @@ works too — YAML is a superset.
 - Python 3.10+
 - An OpenAI-compatible model endpoint (Qwen on vLLM in the examples)
 
+Model name and endpoint are experiment config; set them in the scenario YAML so
+each run records which model it used:
+
+```yaml
+model:
+  base_url: http://localhost:8000/v1   # any OpenAI-compatible endpoint
+  name: qwen2.5-7b-instruct
+  # optional: api_key_env, timeout_seconds, max_retries
+```
+
+Legacy `VERDI_VLLM_BASE_URL` / `VERDI_VLLM_MODEL` / `VERDI_VLLM_API_KEY` still work as fallbacks.
+
 Environment variables (set in `.env`, or exported):
 
 | Variable | Meaning |
 |----------|---------|
-| `VERDI_VLLM_BASE_URL` | OpenAI-compatible base URL (e.g. `http://localhost:8000/v1`) |
-| `VERDI_VLLM_MODEL` | Model name served by the endpoint |
-| `VERDI_VLLM_API_KEY` | Endpoint key (never committed) |
+| `MODEL_API_KEY` | Endpoint key (never committed). Override the variable name with `model.api_key_env` |
 | `VERDI_MAX_CONCURRENCY` | Bounded parallelism for model calls (default 4) |
 
 ---

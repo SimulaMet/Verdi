@@ -1,0 +1,45 @@
+# Verdi STARTER: the smallest useful scenario (4 agents, 20 ticks, 1 meeting).
+#
+#   python -m verdi.society.live --scenario examples/starter.yaml --run-dir runs/starter
+#   open runs/starter/report.html
+#
+# Every run records this file's `model:` block, so the YAML is the frozen input.
+# For every available knob see examples/full.yaml.
+
+model:
+  base_url: https://simulachat.sushant.pp.ua/api/v1   # any OpenAI-compatible endpoint
+  name: qwen2.5-7b-instruct
+  # key: MODEL_API_KEY from .env
+
+world_id: starter
+total_ticks: 20
+run_seed: 42
+assemblies: [10]            # constitutional meeting at tick 10 ([] for none)
+
+world_resources: {credits: 0.0, food: 20.0}   # shared commons
+
+agents:
+  - agent_id: alice
+    role: producer
+    persona_summary: Steady farmer who values cooperation.
+    declared_values: {integrity: 0.8, fairness: 0.7, cooperation: 0.8, autonomy: 0.4, solidarity: 0.8}
+    resources: {credits: 10.0, food: 5.0}
+    social_edges: [bob, dave]
+  - agent_id: bob
+    role: researcher
+    persona_summary: Careful researcher, skeptical of rule changes.
+    declared_values: {integrity: 0.9, fairness: 0.8, cooperation: 0.6, autonomy: 0.7, solidarity: 0.5}
+    resources: {credits: 8.0, food: 4.0}
+    social_edges: [alice, chen]
+  - agent_id: chen
+    role: guard
+    persona_summary: Guard who wants firm rules.
+    declared_values: {integrity: 0.7, fairness: 0.7, cooperation: 0.6, autonomy: 0.5, solidarity: 0.7}
+    resources: {credits: 6.0, food: 4.0}
+    social_edges: [bob, dave]
+  - agent_id: dave
+    role: saboteur
+    persona_summary: Selfish opportunist who hoards food.
+    declared_values: {integrity: 0.3, fairness: 0.2, cooperation: 0.2, autonomy: 0.9, solidarity: 0.2}
+    resources: {credits: 2.0, food: 3.0}
+    social_edges: [alice, chen]

@@ -31,7 +31,7 @@ from verdi.agents.client import ModelResult
 from verdi.society.campaign import SocietyCampaign
 from verdi.world.log import EventLog
 
-SCENARIOS_DIR = Path(__file__).resolve().parents[2] / "experiments/scenarios"
+SCENARIOS_DIR = Path(__file__).resolve().parents[2] / "tests/fixtures/scenarios"
 
 
 def _scenario(name: str) -> dict:

@@ -64,15 +64,13 @@ real secrets**; `.env` is gitignored. See [.env.example](../.env.example):
 
 ```bash
 cp .env.example .env
-# edit .env: set VERDI_VLLM_BASE_URL, VERDI_VLLM_MODEL, VERDI_VLLM_API_KEY
+# edit .env: set MODEL_API_KEY. Model name + base_url live in the scenario `model:` block.
 source .env
 ```
 
 | Variable | Meaning |
 |----------|---------|
-| `VERDI_VLLM_BASE_URL` | OpenAI-compatible base URL (e.g. `http://localhost:8000/v1`) |
-| `VERDI_VLLM_MODEL` | Model name served by the endpoint |
-| `VERDI_VLLM_API_KEY` | Endpoint key (never committed, never printed) |
+| `MODEL_API_KEY` | Endpoint key (never committed, never printed) |
 | `VERDI_MAX_CONCURRENCY` | Parallel model calls (default 4) |
 
 ### Run the paired experiment — ONE command
@@ -129,7 +127,7 @@ python -m verdi.experiments.paired_run \
 Everything is driven by two YAML files:
 
 1. **The paired config** — [examples/paired_institutional_recovery.yaml](../examples/paired_institutional_recovery.yaml)
-2. **The base scenario** it points at — [experiments/scenarios/institutional_recovery_smoke.yaml](../experiments/scenarios/institutional_recovery_smoke.yaml)
+2. **The base scenario** it points at — [examples/institutional_recovery_constrained.yaml](../examples/institutional_recovery_constrained.yaml)
 
 ### Editable fields in the paired config
 
@@ -283,7 +281,7 @@ Interpretation guardrails:
 | You see | It means | What to do |
 |---------|----------|------------|
 | `paired-run config error:` followed by lines (no traceback) | Your paired config has a problem (unknown key, missing required key, bad arm name, base scenario path not found) | Read the message — it lists exactly what's wrong and what's allowed. Fix the YAML; paths are relative to where you run the command. |
-| Endpoint-related failure before any arm starts (e.g. missing/unreachable `VERDI_VLLM_BASE_URL`) | The environment isn't configured. Endpoint resolution happens **up front** on purpose, so a misconfigured environment fails before spending any model calls. | Check `.env` exists, is sourced, and the three `VERDI_VLLM_*` variables point at a live endpoint. Test the endpoint directly first. |
+| Endpoint-related failure before any arm starts (e.g. missing/unreachable `model.base_url`) | The environment isn't configured. Endpoint resolution happens **up front** on purpose, so a misconfigured environment fails before spending any model calls. | Check `.env` exists, is sourced, and the scenario `model:` block (or legacy `VERDI_VLLM_*`) points at a live endpoint. Test the endpoint directly first. |
 | `WARNING: one or more pairs did not complete — the comparison is PARTIAL` | One or more arms failed (network blip, timeout, model error). The manifest records `status: failed` and the error. | Re-run the SAME command — completed pairs are skipped (resume), failed ones retry into the same run dirs. Do not interpret a partial comparison as unbiased. |
 | `internal error: arm scenarios diverged outside institutional_condition` | Internal consistency check tripped — should never happen with valid input. | Treat as a bug: stop, check you haven't edited something the runner owns, and report it. The runner refuses to run a biased comparison on purpose. |
 | A run dir exists but has no `report.html` | That run didn't finish. Its manifest entry says why. | Re-run to resume; inspect `events.jsonl`/logs in the run dir if the failure repeats. |

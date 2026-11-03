@@ -17,7 +17,7 @@ from verdi.agents.client import ModelClient
 from verdi.config import ModelEndpointConfig
 from verdi.society import live as live_module
 
-SCENARIO = Path("experiments/scenarios/society_v2_stageA.json")
+SCENARIO = Path("tests/fixtures/scenarios/society_v2_stageA.json")
 
 
 class _ActionRouter:

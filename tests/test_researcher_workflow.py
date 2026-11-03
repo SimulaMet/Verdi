@@ -35,7 +35,7 @@ def test_example_paired_config_validates_offline():
     validate cleanly with no endpoint configured."""
     assert PAIRED_CONFIG.is_file(), "examples/paired_institutional_recovery.yaml missing"
     cfg = load_paired_config(PAIRED_CONFIG)  # raises SystemExit on any user error
-    assert cfg["experiment_id"] == "institutional-recovery-smoke"
+    assert cfg["experiment_id"] == "institutional-recovery"
     assert cfg["arms"] == ["fixed", "revisable"]
     assert cfg["seeds"] == [42]
     assert cfg["output_root"] == "runs/paired-institutional-recovery"
