@@ -392,7 +392,10 @@ def describe(cfg: SweepConfig, runs: list[RunSpec]) -> str:
         lines += [f"  {f.path.ljust(width)}  {' | '.join(f.labels)}" for f in cfg.factors]
     else:
         lines.append("Varying:  nothing (seed replication only)")
-    lines.append(f"Seeds:    {', '.join(map(str, cfg.seeds))}")
+    if len(cfg.seeds) == 1:
+        lines.append(f"Seed:     {cfg.seeds[0]} (add `seeds:` to repeat each condition)")
+    else:
+        lines.append(f"Seeds:    {', '.join(map(str, cfg.seeds))}")
     if cfg.ticks:
         lines.append(f"Ticks:    {cfg.ticks} (shortened from {cfg.base.get('total_ticks')})")
     lines += [

@@ -13,6 +13,5 @@ vary:
     mild: -9.0
     severe: -18.0
 
-seeds: [42, 43]
 parallel_runs: 2
 agent_concurrency: 4

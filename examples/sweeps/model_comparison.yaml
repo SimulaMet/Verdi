@@ -1,5 +1,5 @@
 # Does the underlying LLM change how the society behaves?
-# Reruns the FULL scenario once per model and seed; nothing else changes.
+# Reruns the FULL scenario once per model; nothing else changes.
 #
 #   python -m verdi.sweep examples/sweeps/model_comparison.yaml --dry-run   # plan + cost only
 #   python -m verdi.sweep examples/sweeps/model_comparison.yaml             # run (asks first)
@@ -17,7 +17,6 @@ vary:
   #   qwen:     {name: Qwen3.8-27B}
   #   deepseek: {name: deepseek-v4, base_url: https://api.deepseek.com/v1, api_key_env: DEEPSEEK_API_KEY}
 
-seeds: [42, 43, 44]       # same seeds for every model, so comparisons are fair
 parallel_runs: 2          # simulations at the same time
 agent_concurrency: 4      # model calls at the same time, per simulation
 # ticks: 10               # uncomment for a quick, cheap pilot first
