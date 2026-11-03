@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "verdi-agents"
-version = "0.1.0"
+version = "0.1.1"
 description = "Auditable testbed for temporal value expression and institutional recovery in LLM agent societies"
 readme = "README.md"
 license = "MIT"
