@@ -26,14 +26,15 @@ The easiest way is [uv](https://docs.astral.sh/uv/). Nothing to set up:
 `uvx` fetches Verdi into a cached, isolated environment on first use.
 
 ```bash
-uvx verdi init my-study                  # example scenarios + sweeps + a .env template
+uvx verdi-agents init my-study           # example scenarios + sweeps + a .env template
 cd my-study                              # put your key in .env, your endpoint in examples/starter.yaml
-uvx verdi run examples/starter.yaml      # one run -> runs/starter/report.html
-uvx verdi sweep examples/sweeps/model_comparison.yaml --dry-run
+uvx verdi-agents run examples/starter.yaml  # one run -> runs/starter/report.html
+uvx verdi-agents sweep examples/sweeps/model_comparison.yaml --dry-run
 ```
 
-Prefer a permanent `verdi` command? Run `uv tool install verdi` (then drop the
-`uvx` prefix), or use `pip install verdi`.
+Prefer a permanent command? Run `uv tool install verdi-agents` or
+`pip install verdi-agents`, then use `verdi init`, `verdi run` and `verdi sweep`.
+The package is `verdi-agents` on PyPI; the command and `import verdi` are `verdi`.
 
 To work on Verdi itself, use the source checkout below.
 

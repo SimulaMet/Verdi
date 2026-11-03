@@ -64,7 +64,7 @@ Next:
   # 2. set base_url/name in examples/starter.yaml's `model:` block
   verdi run examples/starter.yaml          # results: runs/starter/report.html
   verdi sweep examples/sweeps/model_comparison.yaml --dry-run
-(With uvx, prefix each command: uvx verdi run ...)""")
+(Not installed? Use uvx: uvx verdi-agents run ...)""")
     return 0
 
 
