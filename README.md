@@ -20,6 +20,23 @@ auditable artifacts; findings are published only after validation.
 
 ---
 
+## Install
+
+The easiest way is [uv](https://docs.astral.sh/uv/). Nothing to set up:
+`uvx` fetches Verdi into a cached, isolated environment on first use.
+
+```bash
+uvx verdi init my-study                  # example scenarios + sweeps + a .env template
+cd my-study                              # put your key in .env, your endpoint in examples/starter.yaml
+uvx verdi run examples/starter.yaml      # one run -> runs/starter/report.html
+uvx verdi sweep examples/sweeps/model_comparison.yaml --dry-run
+```
+
+Prefer a permanent `verdi` command? Run `uv tool install verdi` (then drop the
+`uvx` prefix), or use `pip install verdi`.
+
+To work on Verdi itself, use the source checkout below.
+
 ## Quickstart (60 seconds)
 
 Verdi calls any OpenAI-compatible endpoint. For this example it is pointed at a
@@ -168,5 +185,4 @@ with controlled baselines, independent audits, and repeated experiments.
 
 ## License
 
-A license has not yet been selected. Do not assume third-party code or datasets
-are authorized for redistribution.
+MIT. See [LICENSE](LICENSE).

@@ -26,7 +26,7 @@ on runs that would fail. Skip it with `--skip-check`.
 If the sweep stops (laptop closed, Ctrl-C, endpoint down), run command 2
 again. Finished runs are kept and only the missing or failed ones run.
 
-`verdi sweep ...` works the same as `python -m verdi.sweep ...`.
+`verdi sweep ...` (or `uvx verdi sweep ...` when installed with uv) works the same as `python -m verdi.sweep ...`.
 
 ## Writing a sweep file
 

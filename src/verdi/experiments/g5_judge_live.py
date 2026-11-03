@@ -140,15 +140,17 @@ def _write_cap_abort_meta(
 def _load_dotenv_into_environ(repo_root: Path | None = None) -> None:
     """Load a ``.env`` file into ``os.environ`` (setvars; no overwrite).
 
-    Resolves the file via ``VERDI_DOTENV_PATH`` when set, else
-    ``<repo_root>/.env`` (worktree repo root by default). Missing file is
-    a no-op: the integrator may instead source the main checkout's ``.env``
-    into the process environment.
+    Resolves the file via ``VERDI_DOTENV_PATH`` when set, else ``./.env``
+    in the current folder (installed use: ``verdi init`` creates it there),
+    else ``<repo_root>/.env`` (source checkout). Missing file is a no-op:
+    the integrator may instead source the main checkout's ``.env`` into the
+    process environment.
     """
     path_str = os.environ.get("VERDI_DOTENV_PATH")
     if not path_str:
         root = repo_root or Path(__file__).resolve().parents[3]
-        path_str = str(root / ".env")
+        cwd_env = Path.cwd() / ".env"
+        path_str = str(cwd_env if repo_root is None and cwd_env.is_file() else root / ".env")
     path = Path(path_str)
     if not path.is_file():
         return
