@@ -124,7 +124,7 @@ each run records which model it used:
 ```yaml
 model:
   base_url: http://localhost:8000/v1   # any OpenAI-compatible endpoint
-  name: qwen2.5-7b-instruct
+  name: default
   # optional: api_key_env, timeout_seconds, max_retries
 ```
 
