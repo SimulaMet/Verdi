@@ -1,5 +1,10 @@
 # Verdi
 
+[![PyPI](https://img.shields.io/pypi/v/verdi-agents.svg)](https://pypi.org/project/verdi-agents/)
+[![Python](https://img.shields.io/pypi/pyversions/verdi-agents.svg)](https://pypi.org/project/verdi-agents/)
+[![CI](https://github.com/SimulaMet/Verdi/actions/workflows/ci.yml/badge.svg)](https://github.com/SimulaMet/Verdi/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/SimulaMet/Verdi/blob/main/LICENSE)
+
 **An auditable testbed for value drift and recovery in societies of AI agents.**
 
 Verdi runs a society of LLM-driven agents over time and measures how their
@@ -77,7 +82,7 @@ of every run (local, no extra model calls); pass `--no-report` to skip it.
 ### See it without running first
 
 A finished run of a larger 4-agent, 50-tick society (kept at `tests/fixtures/scenarios/minimal.yaml`) is committed at
-[examples/minimal/society-minimal-report.html](examples/minimal/society-minimal-report.html)
+[examples/minimal/society-minimal-report.html](https://github.com/SimulaMet/Verdi/blob/main/examples/minimal/society-minimal-report.html)
 — open it in a browser. It shows one agent who starts **already under sanction**:
 his rejected transfer attempts, the `law:under_sanction` code, his rights being
 restored when the sanction expires, and constitutional meetings.
@@ -109,11 +114,11 @@ rest is the raw, reconstructable evidence:
 Each scenario YAML is a self-contained, frozen input: model, agents, resources,
 governance and schedule all live in one file.
 
-- [examples/starter.yaml](examples/starter.yaml) — the smallest working scenario (~40 lines). Copy it and tweak.
-- [examples/full.yaml](examples/full.yaml) — every available knob, commented. Tested offline so it cannot drift.
-- [examples/institutional_recovery_constrained.yaml](examples/institutional_recovery_constrained.yaml) — the constrained-economy base for the paired study.
+- [examples/starter.yaml](https://github.com/SimulaMet/Verdi/blob/main/examples/starter.yaml) — the smallest working scenario (~40 lines). Copy it and tweak.
+- [examples/full.yaml](https://github.com/SimulaMet/Verdi/blob/main/examples/full.yaml) — every available knob, commented. Tested offline so it cannot drift.
+- [examples/institutional_recovery_constrained.yaml](https://github.com/SimulaMet/Verdi/blob/main/examples/institutional_recovery_constrained.yaml) — the constrained-economy base for the paired study.
 
-Reference: [docs/SCENARIOS.md](docs/SCENARIOS.md).
+Reference: [docs/SCENARIOS.md](https://github.com/SimulaMet/Verdi/blob/main/docs/SCENARIOS.md).
 
 You only need to fill the **Required** section (plus each agent's fields); the
 **Derivable** section is optional and the engine fills sensible defaults. JSON
@@ -132,7 +137,7 @@ python -m verdi.sweep examples/sweeps/model_comparison.yaml --dry-run   # plan +
 python -m verdi.sweep examples/sweeps/model_comparison.yaml             # run (asks first, resumes)
 ```
 
-Guide: [docs/SWEEPS.md](docs/SWEEPS.md).
+Guide: [docs/SWEEPS.md](https://github.com/SimulaMet/Verdi/blob/main/docs/SWEEPS.md).
 
 ## Requirements
 
@@ -173,9 +178,9 @@ python -m verdi.analysis.outcome_metrics --pair-root runs/paired-institutional-r
 
 The first command runs the two conditions and saves a resumable manifest.
 The second writes `metrics.json`, `metrics.csv`, and `comparison.html`
-alongside the individual run reports. See the [researcher guide](docs/RESEARCHER_GUIDE.md),
-[scenario gallery](docs/SCENARIOS.md), and
-[institutional governance documentation](docs/INSTITUTIONAL_RECOVERY.md).
+alongside the individual run reports. See the [researcher guide](https://github.com/SimulaMet/Verdi/blob/main/docs/RESEARCHER_GUIDE.md),
+[scenario gallery](https://github.com/SimulaMet/Verdi/blob/main/docs/SCENARIOS.md), and
+[institutional governance documentation](https://github.com/SimulaMet/Verdi/blob/main/docs/INSTITUTIONAL_RECOVERY.md).
 
 ---
 
@@ -184,7 +189,7 @@ alongside the individual run reports. See the [researcher guide](docs/RESEARCHER
 1. Bump `version` in `pyproject.toml` and `__version__` in `src/verdi/__init__.py`, and merge.
 2. Publish a GitHub Release tagged `v<version>` (for example `v0.1.1`).
 
-The [Publish to PyPI](.github/workflows/pypi.yml) workflow runs only on a
+The [Publish to PyPI](https://github.com/SimulaMet/Verdi/blob/main/.github/workflows/pypi.yml) workflow runs only on a
 published release. It checks the tag matches the version, runs lint and tests,
 builds, and uploads `verdi-agents` through PyPI trusted publishing (no token
 stored in GitHub).
@@ -199,4 +204,4 @@ with controlled baselines, independent audits, and repeated experiments.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/SimulaMet/Verdi/blob/main/LICENSE).
