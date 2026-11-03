@@ -13,7 +13,7 @@
 # ---- Model (OpenAI-compatible endpoint) -------------------------------------
 model:
   base_url: https://simulachat.sushant.pp.ua/api/v1
-  name: qwen2.5-7b-instruct
+  name: default
   # api_key_env: MODEL_API_KEY   # optional: env var holding the key (default shown)
   # timeout_seconds: 120         # optional
   # max_retries: 5               # optional

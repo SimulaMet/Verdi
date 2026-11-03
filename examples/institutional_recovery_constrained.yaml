@@ -13,7 +13,7 @@
 # max_produce_units_per_tick); the exogenous circumstances are identical.
 model:
   base_url: https://simulachat.sushant.pp.ua/api/v1
-  name: qwen2.5-7b-instruct
+  name: default
   # key: MODEL_API_KEY from .env
 
 world_id: institutional_recovery_constrained
