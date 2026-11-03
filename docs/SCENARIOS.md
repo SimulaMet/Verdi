@@ -13,6 +13,7 @@ it used. Run with
 | [`examples/full.yaml`](../examples/full.yaml) | Every knob, commented: model, shocks, law, constitution, economy, delivery tasks, interviews, lifecycle, sanctions, rights. |
 | [`examples/institutional_recovery_constrained.yaml`](../examples/institutional_recovery_constrained.yaml) | Constrained-economy base for the fixed-vs-revisable study. |
 | [`examples/paired_institutional_recovery.yaml`](../examples/paired_institutional_recovery.yaml) | Not a scenario: drives both arms of the paired study via `python -m verdi.experiments.paired_run`. See [RESEARCHER_GUIDE.md](RESEARCHER_GUIDE.md). |
+| [`examples/sweeps/`](../examples/sweeps/) | Sweep files: rerun a scenario across models, seeds and settings. See [SWEEPS.md](SWEEPS.md). |
 | `experiments/scenarios/pilot_v1.json` | Frozen t0-t11 pilot slice used by the pilot driver and G5 pipeline. |
 | `tests/fixtures/scenarios/` | Test inputs only (Society V2 stage fixtures, a 50-tick minimal, the institutional smoke). Not user-facing examples. |
 
