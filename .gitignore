@@ -10,3 +10,6 @@ artifacts/
 .env
 .env.*
 *.local.env
+
+# GitHub Pages build output (site/build.py)
+_site/

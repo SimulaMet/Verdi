@@ -37,8 +37,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/SimulaMet/Verdi"
-Documentation = "https://github.com/SimulaMet/Verdi/tree/main/docs"
+Homepage = "https://simulamet.github.io/Verdi/"
+Documentation = "https://simulamet.github.io/Verdi/sweeps.html"
+Source = "https://github.com/SimulaMet/Verdi"
 Issues = "https://github.com/SimulaMet/Verdi/issues"
 
 [project.scripts]
