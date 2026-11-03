@@ -9,7 +9,7 @@ measured (protocol §4).
 
 Usage::
 
-    python -m verdi.society.live --scenario experiments/scenarios/minimal.yaml \
+    python -m verdi.society.live --scenario examples/starter.yaml \
         --run-dir runs/my-run [--seed 42] [--concurrency 4]
 
 On completion the run auto-generates ``<run-dir>/report.html`` (a local,
@@ -24,6 +24,7 @@ import argparse
 import asyncio
 import json
 import os
+import shutil
 import sys
 import time
 from datetime import datetime, timezone
@@ -32,7 +33,7 @@ from pathlib import Path
 from verdi.agents.client import ModelClient
 from verdi.analysis.scenario import load_scenario
 from verdi.audit.judge_live import _assert_no_key_material
-from verdi.config import ModelEndpointConfig, model_endpoint_from_env
+from verdi.config import ModelEndpointConfig, api_key_values, model_endpoint_from_env
 from verdi.experiments.g5_judge_live import _load_dotenv_into_environ
 from verdi.society.campaign import PROTOCOL_VERSION, SocietyCampaign
 
@@ -123,13 +124,21 @@ async def _stall_watchdog(run_dir: Path, stall_timeout_seconds: float) -> None:
             os._exit(3)
 
 
-def resolve_endpoint_config() -> ModelEndpointConfig:
-    """Load .env (if any) then build the endpoint config; fail loudly if unset."""
+def resolve_endpoint_config(scenario: dict | None = None) -> ModelEndpointConfig:
+    """Load .env (if any) then build the endpoint config; fail loudly if unset.
+
+    ``scenario`` supplies the optional ``model:`` block (base_url, name, ...).
+    """
     _load_dotenv_into_environ()
-    config = model_endpoint_from_env()
+    block = (scenario or {}).get("model")
+    config = model_endpoint_from_env(block)
+    if config is not None and scenario is not None and not block:
+        print("WARNING: scenario has no `model:` block; using legacy VERDI_VLLM_* env "
+              "(add `model:` so the run records its model).", file=sys.stderr, flush=True)
     if config is None:
         raise SystemExit(
-            "model endpoint not configured: set VERDI_VLLM_BASE_URL and VERDI_VLLM_MODEL "
+            "model endpoint not configured: add a `model:` block (base_url, name) to the "
+            "scenario, or set VERDI_VLLM_BASE_URL and VERDI_VLLM_MODEL "
             "(or provide a .env file / VERDI_DOTENV_PATH)"
         )
     return config
@@ -157,20 +166,23 @@ async def smoke_call(client: ModelClient) -> dict:
 
 async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency: int | None,
                stall_timeout_seconds: float | None = None, export_report: bool = True) -> int:
-    config = resolve_endpoint_config()
     scenario = load_scenario(scenario_path)
+    config = resolve_endpoint_config(scenario)
     seed = int(seed if seed is not None else scenario["run_seed"])
     if concurrency is None:
         concurrency = int(os.environ.get("VERDI_MAX_CONCURRENCY", str(DEFAULT_CONCURRENCY)))
         concurrency = max(1, min(concurrency, config.max_concurrency))
 
     run_dir.mkdir(parents=True, exist_ok=True)
+    # Frozen input: the exact scenario file this run was started from.
+    shutil.copyfile(scenario_path, run_dir / f"scenario_input{Path(scenario_path).suffix}")
     _write_run_meta(run_dir, {
         "protocol": PROTOCOL_VERSION,
         "scenario": str(scenario_path),
         "world_id": scenario["world_id"],
         "run_seed": seed,
         "model": config.model,
+        "base_url": config.base_url,
         "endpoint_alias": "simula",
         "concurrency": concurrency,
         "timeout_seconds": config.timeout_seconds,
@@ -284,9 +296,9 @@ def _guard_report_clean(html: str) -> None:
     is a genuine leak and we refuse to write it. Skips cleanly when the key is
     unset (offline / test context).
     """
-    key = os.environ.get("VERDI_VLLM_API_KEY", "")
-    if key and key in html:
-        raise AssertionError("report.html would contain the endpoint API key")
+    for key in api_key_values():
+        if key in html:
+            raise AssertionError("report.html would contain the endpoint API key")
 
 
 def _guard_artifacts_clean(run_dir: Path) -> None:

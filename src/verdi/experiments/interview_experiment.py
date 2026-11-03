@@ -16,7 +16,7 @@ the SAME run's artifacts to produce the longitudinal evidence:
 Usage::
 
     python -m verdi.experiments.interview_experiment \
-        --scenario experiments/scenarios/interview_4agent.yaml \
+        --scenario examples/full.yaml \
         --run-dir runs/interview-4agent [--concurrency 6] [--no-audit]
 """
 from __future__ import annotations
@@ -74,8 +74,8 @@ async def _run_campaign(scenario_path: Path, run_dir: Path, seed: int | None,
         write_audit_provenance,
     )
     from verdi.society.live import resolve_endpoint_config, smoke_call
-    config = resolve_endpoint_config()
     scenario = load_scenario(scenario_path)
+    config = resolve_endpoint_config(scenario)
     seed = int(seed if seed is not None else scenario["run_seed"])
     if concurrency is None:
         concurrency = int(os.environ.get("VERDI_MAX_CONCURRENCY", "6"))
@@ -282,7 +282,7 @@ def _audit_run(run_dir: Path, *, base_url: str, api_key: str, model: str,
     agent_context_by_id = None
     if scenario_path is not None:
         from verdi.society.live import resolve_endpoint_config
-        config = resolve_endpoint_config()
+        config = resolve_endpoint_config(load_scenario(scenario_path))
         client = ModelClient(config)
         agent_context_by_id = _agent_context_map(scenario_path, run_dir)
     try:

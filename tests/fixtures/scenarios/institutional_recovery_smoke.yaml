@@ -1,0 +1,115 @@
+# Verdi institutional-recovery smoke scenario (constrained economy, P0-B).
+# Demonstrates the CONFIG interface, not a validated scientific experiment.
+# For matched runs change ONLY institutional_condition: revisable -> fixed,
+# use the same seed/model and different --run-dir outputs.
+#
+# The shock at tick 12 removes food from the common pool AND production is
+# capped + credit-costly (economy block), so agents cannot simply print food
+# back — recovery is only possible through sustained, affordable production
+# and deposits. Delivery objectives around the shock make recovery objectively
+# measurable from committed world state alone.
+model:
+  base_url: https://simulachat.sushant.pp.ua/api/v1
+  name: qwen2.5-7b-instruct
+  # key: MODEL_API_KEY from .env
+
+world_id: institutional_recovery_smoke
+total_ticks: 40
+run_seed: 42
+institutional_condition: revisable
+inner_life: false
+assemblies: []
+
+# A deterministic external shock at tick 14; it removes ALL shared food AND
+# burns part of the credit reserve that funds production — so agents cannot
+# simply print food back. The pre-shock baseline delivery (due t10) measures
+# build-up capacity; the post-shock recovery delivery (due t24) measures
+# whether the village can rebuild after the disruption.
+shocks:
+  - {tick: 14, resource: food, delta: -50.0}
+  - {tick: 14, resource: credits, delta: -6.0}
+
+constitution:
+  quorum: 0.5
+  amendment_threshold: 0.67
+  rules:
+    quorum_rule: simple_majority_of_eligible
+    max_withdraw_units: 2.0
+    min_commons_reserve: {food: 12.0}
+
+# OPT-IN constrained economy (versioned). Absent in legacy scenarios =>
+# unlimited produce, no demand, no costs (today's semantics exactly).
+# Here: each agent may produce at most 2 food per tick, each unit costs 1
+# credit, and every agent consumes 1 food per tick (end of tick, clamped at
+# zero with deficit tracking).
+economy:
+  version: 1
+  production_limit_per_tick:
+    food: 2.0
+  production_cost:
+    food: 1.0
+  consumption_per_tick:
+    food: 1.0
+
+# Objective task-success oracle: delivery objectives evaluated purely from
+# committed world state at their due tick (state diff vs the start-tick
+# baseline). Pre-shock deliveries should succeed; the post-shock delivery is
+# the measurable recovery target.
+tasks:
+  deliveries:
+    - objective_id: pre-shock-baseline
+      start_tick: 0
+      due_tick: 10
+      resource: food
+      amount: 4.0
+      target_pool: world
+    - objective_id: post-shock-recovery
+      start_tick: 12
+      due_tick: 24
+      resource: food
+      amount: 6.0
+      target_pool: world
+    - objective_id: late-run-sustainment
+      start_tick: 24
+      due_tick: 38
+      resource: food
+      amount: 4.0
+      target_pool: world
+
+# A shared credit reserve seeds production inputs; the food commons starts
+# empty so every food delivery is a real build-up from committed production
+# + deposits (not an inherited surplus). The shock later removes ALL shared
+# food AND burns most of this credit reserve, so recovery requires sustained
+# affordable production — not printing food back.
+world_resources:
+  food: 0.0
+  credits: 24.0
+
+# Endowments are deliberately small (2 food / 3 credits each): under the
+# constrained economy the village's starting wealth is finite, so the shock +
+# production caps actually bite instead of being absorbed by a surplus.
+agents:
+  - agent_id: alice
+    role: farmer
+    persona_summary: Farmer concerned with resilience and helping neighbors when food is scarce.
+    declared_values: {integrity: 0.8, fairness: 0.8, cooperation: 0.8, autonomy: 0.5, solidarity: 0.8}
+    resources: {food: 2.0, credits: 3.0}
+    social_edges: [bob, chen]
+  - agent_id: bob
+    role: logistics_worker
+    persona_summary: Logistics worker favoring predictable rules and fair allocations.
+    declared_values: {integrity: 0.8, fairness: 0.8, cooperation: 0.7, autonomy: 0.6, solidarity: 0.8}
+    resources: {food: 2.0, credits: 3.0}
+    social_edges: [alice, dave]
+  - agent_id: chen
+    role: community_guard
+    persona_summary: Community guard concerned with stability and avoiding permanent exclusion.
+    declared_values: {integrity: 0.8, fairness: 0.8, cooperation: 0.7, autonomy: 0.5, solidarity: 0.7}
+    resources: {food: 2.0, credits: 3.0}
+    social_edges: [bob, dave]
+  - agent_id: dave
+    role: repair_worker
+    persona_summary: Repair worker focused on completing useful work while scarcity strains the community.
+    declared_values: {integrity: 0.8, fairness: 0.8, cooperation: 0.7, autonomy: 0.6, solidarity: 0.7}
+    resources: {food: 2.0, credits: 3.0}
+    social_edges: [alice, chen]

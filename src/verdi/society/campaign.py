@@ -1733,12 +1733,14 @@ class SocietyCampaign:
                 return int(key)
         return 5
 
-    @staticmethod
-    def _model_fingerprint() -> str:
+    def _model_fingerprint(self) -> str:
+        """``<endpoint host>/<model name>`` from the scenario ``model:`` block / env."""
         try:
+            from urllib.parse import urlparse
+
             from verdi.config import model_endpoint_from_env
-            ep = model_endpoint_from_env()
-            return f"{ep.alias}/{ep.model}"
+            ep = model_endpoint_from_env(self._scenario.get("model"))
+            return f"{urlparse(ep.base_url).netloc}/{ep.model}"
         except Exception:
             return "simula/unknown"
 
