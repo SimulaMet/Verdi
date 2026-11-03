@@ -319,7 +319,7 @@ def validate_runs(runs: list[RunSpec]) -> list[str]:
     from verdi.experiments.g5_judge_live import _load_dotenv_into_environ
 
     _load_dotenv_into_environ()
-    warnings: set[str] = set()
+    keyless: dict[str, set[str]] = {}
     for run in runs:
         try:
             build_t0_state(copy.deepcopy(run.scenario))
@@ -334,9 +334,9 @@ def validate_runs(runs: list[RunSpec]) -> list[str]:
                              "base_url and name to the scenario)")
         if endpoint.api_key == "EMPTY":
             key_env = (block or {}).get("api_key_env") or API_KEY_ENV
-            warnings.add(f"{key_env} is not set ({run.condition}); "
-                         "fine only for a keyless local server")
-    return sorted(warnings)
+            keyless.setdefault(key_env, set()).add(run.condition)
+    return [f"{env} is not set (used by {len(conds)} condition(s)); "
+            "fine only for a keyless local server" for env, conds in sorted(keyless.items())]
 
 
 def preflight(runs: list[RunSpec]) -> list[str]:

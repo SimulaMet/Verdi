@@ -1,11 +1,26 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
 
 [project]
 name = "verdi"
-version = "0.0.1"
+version = "0.1.0"
 description = "Auditable testbed for temporal value expression and institutional recovery in LLM agent societies"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Sushant Gautam" }]
+keywords = ["llm", "agents", "multi-agent", "simulation", "governance", "ai-safety", "evaluation"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
 requires-python = ">=3.10"
 dependencies = [
     "pydantic>=2.5",
@@ -21,11 +36,28 @@ dev = [
     "ruff>=0.4",
 ]
 
+[project.urls]
+Homepage = "https://github.com/SimulaMet/Verdi"
+Documentation = "https://github.com/SimulaMet/Verdi/tree/main/docs"
+Issues = "https://github.com/SimulaMet/Verdi/issues"
+
 [project.scripts]
 verdi = "verdi.cli:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.hatch.build.targets.wheel]
+packages = ["src/verdi"]
+
+# Ship the researcher examples inside the package so `verdi init` works
+# after `pip install verdi` (the repo copy under examples/ stays canonical).
+[tool.hatch.build.targets.wheel.force-include]
+"examples/starter.yaml" = "verdi/examples/starter.yaml"
+"examples/full.yaml" = "verdi/examples/full.yaml"
+"examples/institutional_recovery_constrained.yaml" = "verdi/examples/institutional_recovery_constrained.yaml"
+"examples/paired_institutional_recovery.yaml" = "verdi/examples/paired_institutional_recovery.yaml"
+"examples/sweeps" = "verdi/examples/sweeps"
+
+[tool.hatch.build.targets.sdist]
+include = ["src/verdi", "examples/*.yaml", "examples/sweeps", "tests", "docs", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
