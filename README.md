@@ -179,6 +179,16 @@ alongside the individual run reports. See the [researcher guide](docs/RESEARCHER
 
 ---
 
+## Releasing
+
+1. Bump `version` in `pyproject.toml` and `__version__` in `src/verdi/__init__.py`, and merge.
+2. Publish a GitHub Release tagged `v<version>` (for example `v0.1.1`).
+
+The [Publish to PyPI](.github/workflows/pypi.yml) workflow runs only on a
+published release. It checks the tag matches the version, runs lint and tests,
+builds, and uploads `verdi-agents` through PyPI trusted publishing (no token
+stored in GitHub).
+
 ## Research principles
 
 We distinguish **declared** values, **private** behavioral preferences, and

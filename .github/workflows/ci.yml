@@ -2,9 +2,9 @@ name: CI
 
 on:
   pull_request:
-    branches: [main, dev/institutional-recovery]
+    branches: [main]
   push:
-    branches: [main, dev/institutional-recovery]
+    branches: [main]
 
 jobs:
   checks:
