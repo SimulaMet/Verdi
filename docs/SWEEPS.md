@@ -2,7 +2,7 @@
 
 A sweep reruns one scenario many times. You list what should change, for
 example the model, the quorum or the shock size. Verdi runs every combination
-on several seeds and gives you one spreadsheet and one comparison page.
+and gives you one spreadsheet and one comparison page.
 The baseline scenario file is never edited.
 
 ## The 3 commands you need
@@ -40,7 +40,6 @@ scenario: examples/full.yaml      # the baseline
 vary:                             # every combination is run
   model.name: [default, Borealis2-preview]
 
-seeds: [42, 43, 44]               # or a count: `seeds: 3`
 parallel_runs: 2                  # simulations at the same time
 agent_concurrency: 4              # model calls at the same time, per simulation
 # ticks: 10                       # shorten every run for a cheap pilot
@@ -86,7 +85,7 @@ rest is kept. Put each key in `.env` (`DEEPSEEK_API_KEY=...`), never in the YAML
 
 ### Several things at once
 
-Every combination is run. This runs 2 x 2 x 2 = 8 conditions, each on every seed:
+Every combination is run. This runs 2 x 2 x 2 = 8 conditions:
 
 ```yaml
 vary:
@@ -103,7 +102,7 @@ See [examples/sweeps/governance_grid.yaml](../examples/sweeps/governance_grid.ya
 python -m verdi.sweep --scenario examples/full.yaml \
   --vary model.name=default,Borealis2-preview \
   --vary constitution.quorum=0.5,0.75 \
-  --seeds 42,43,44 --parallel-runs 2 --dry-run
+  --parallel-runs 2 --dry-run
 ```
 
 The other settings work as flags too: `--ticks`, `--agent-concurrency`,
@@ -136,7 +135,9 @@ To rebuild `summary.csv` and `comparison.html` without running anything:
 
 - **Pilot first.** Run with `ticks: 5` and one seed, check the comparison
   page, then remove `ticks` for the real sweep.
-- **Use the same seeds for every condition.** The sweep does this for you.
+- **Repeat with seeds when you need it.** Without `seeds:` every condition runs
+  once, on the scenario's own `run_seed`. Add `seeds: [42, 43, 44]` (or a count,
+  `seeds: 3`) to repeat every condition on each seed; all conditions get the same seeds.
 - **Compare across seeds, not single runs.** The same seed does not give the
   same model output, especially with remote APIs. The comparison page shows
   the mean and standard deviation over seeds for this reason.
