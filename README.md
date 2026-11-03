@@ -36,15 +36,18 @@ Prefer a permanent command? Run `uv tool install verdi-agents` or
 `pip install verdi-agents`, then use `verdi init`, `verdi run` and `verdi sweep`.
 The package is `verdi-agents` on PyPI; the command and `import verdi` are `verdi`.
 
-To work on Verdi itself, use the source checkout below.
+To work on Verdi itself, clone the repo instead (next section).
 
-## Quickstart (60 seconds)
+## Quickstart from source (60 seconds)
 
-Verdi calls any OpenAI-compatible endpoint. For this example it is pointed at a
-Qwen model served by vLLM — but any compatible endpoint works.
+For working on Verdi itself. Verdi calls any OpenAI-compatible endpoint. For
+this example it is pointed at a Qwen model served by vLLM — but any compatible
+endpoint works.
 
 ```bash
-# 1. Install
+# 1. Get the code and install it
+git clone https://github.com/SimulaMet/Verdi.git
+cd Verdi
 python -m venv .venv && source .venv/bin/activate
 pip install -e .
 
