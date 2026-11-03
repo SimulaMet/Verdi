@@ -1,11 +1,14 @@
 # Verdi
 
+[![Website](https://img.shields.io/badge/website-simulamet.github.io%2FVerdi-2f5bd3.svg)](https://simulamet.github.io/Verdi/)
 [![PyPI](https://img.shields.io/pypi/v/verdi-agents.svg)](https://pypi.org/project/verdi-agents/)
 [![Python](https://img.shields.io/pypi/pyversions/verdi-agents.svg)](https://pypi.org/project/verdi-agents/)
 [![CI](https://github.com/SimulaMet/Verdi/actions/workflows/ci.yml/badge.svg)](https://github.com/SimulaMet/Verdi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/SimulaMet/Verdi/blob/main/LICENSE)
 
 **An auditable testbed for value drift and recovery in societies of AI agents.**
+
+**Website and guides: https://simulamet.github.io/Verdi/**
 
 Verdi runs a society of LLM-driven agents over time and measures how their
 declared and observed values change as they interact, negotiate shared rules,
