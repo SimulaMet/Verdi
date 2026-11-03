@@ -38,6 +38,7 @@ Guarantees:
 from __future__ import annotations
 
 import argparse
+import contextlib
 import copy
 import csv
 import difflib
@@ -336,6 +337,44 @@ def validate_runs(runs: list[RunSpec]) -> list[str]:
             warnings.add(f"{key_env} is not set ({run.condition}); "
                          "fine only for a keyless local server")
     return sorted(warnings)
+
+
+def preflight(runs: list[RunSpec]) -> list[str]:
+    """One tiny model call per distinct endpoint+model. Returns problems found.
+
+    Catches wrong model names, unauthorized keys (401/403) and unreachable
+    servers before any simulation spends calls.
+    """
+    import asyncio
+    import dataclasses
+
+    from verdi.agents.client import ModelClient
+    from verdi.config import model_endpoint_from_env
+    from verdi.society.live import smoke_call
+
+    seen: dict[tuple[str, str, str], list[str]] = {}
+    configs = {}
+    for run in runs:
+        ep = model_endpoint_from_env(run.scenario.get("model"))
+        key = (ep.base_url, ep.model, ep.api_key)
+        seen.setdefault(key, []).append(run.condition)
+        configs[key] = dataclasses.replace(ep, max_retries=0, timeout_seconds=90.0)
+
+    async def check(cfg) -> str | None:
+        try:
+            async with ModelClient(cfg) as client:
+                result = await smoke_call(client)
+        except Exception as exc:  # noqa: BLE001 - report any failure readably
+            return str(exc).split("\n")[0][:200]
+        return None if result["ok"] else "endpoint answered but not with valid JSON"
+
+    problems = []
+    for key, cfg in configs.items():
+        err = asyncio.run(check(cfg))
+        if err:
+            conditions = ", ".join(sorted(set(seen[key])))
+            problems.append(f"model {cfg.model!r} at {cfg.base_url} ({conditions}): {err}")
+    return problems
 
 
 # --------------------------------------------------------------------------- #
@@ -700,11 +739,16 @@ def main(argv: list[str] | None = None) -> int:
                         help="model calls at the same time inside each simulation")
     parser.add_argument("--ticks", type=int, help="shorten every run (quick pilot)")
     parser.add_argument("--output", help="output folder")
-    parser.add_argument("--dry-run", action="store_true", help="show the plan and stop")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="show the plan, check the models, and stop (no simulation runs)")
+    parser.add_argument("--skip-check", action="store_true",
+                        help="do not test each model endpoint before starting")
     parser.add_argument("--yes", "-y", action="store_true", help="do not ask before starting")
     parser.add_argument("--results", action="store_true",
                         help="only rebuild summary.csv and comparison.html")
     args = parser.parse_args(argv)
+    with contextlib.suppress(AttributeError, ValueError):
+        sys.stdout.reconfigure(line_buffering=True)  # keep order when piped to a file
 
     if bool(args.sweep_file) == bool(args.scenario):
         parser.error("give a sweep file OR --scenario (not both)")
@@ -744,6 +788,15 @@ def main(argv: list[str] | None = None) -> int:
     print(f"Check:    all {len(runs)} scenario(s) valid")
     for w in warnings:
         print(f"Warning:  {w}")
+    if not args.skip_check:
+        n_models = len({json.dumps(r.scenario.get("model"), sort_keys=True) for r in runs})
+        print(f"Check:    testing {n_models} model endpoint(s) with one small call each...")
+        problems = preflight(runs)
+        if problems:
+            raise SweepError("these models cannot be used, nothing was started:\n  "
+                             + "\n  ".join(problems)
+                             + "\nFix the model name/key, or remove it from `vary:`.")
+        print("Check:    all model endpoints answered")
     if args.dry_run:
         return 0
     if not args.yes:

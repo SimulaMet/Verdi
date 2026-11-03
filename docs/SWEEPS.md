@@ -8,7 +8,7 @@ The baseline scenario file is never edited.
 ## The 3 commands you need
 
 ```bash
-# 1. See the plan and the cost. Runs nothing.
+# 1. See the plan and the cost, and test each model with one tiny call. Runs no simulation.
 python -m verdi.sweep examples/sweeps/model_comparison.yaml --dry-run
 
 # 2. Run it. It shows the plan again and asks before starting.
@@ -17,6 +17,11 @@ python -m verdi.sweep examples/sweeps/model_comparison.yaml
 # 3. Open the results.
 open runs/sweeps/model_comparison/comparison.html
 ```
+
+Before anything runs, every model in the sweep gets one tiny test call. A
+wrong model name, a key without access (HTTP 401) or an unreachable server
+stops the sweep right there, naming the model, so no time or budget is spent
+on runs that would fail. Skip it with `--skip-check`.
 
 If the sweep stops (laptop closed, Ctrl-C, endpoint down), run command 2
 again. Finished runs are kept and only the missing or failed ones run.
@@ -33,7 +38,7 @@ name: model_comparison            # also the output folder name
 scenario: examples/full.yaml      # the baseline
 
 vary:                             # every combination is run
-  model.name: [qwen2.5-7b-instruct, qwen3.8-27b]
+  model.name: [default, Borealis2-preview]
 
 seeds: [42, 43, 44]               # or a count: `seeds: 3`
 parallel_runs: 2                  # simulations at the same time
@@ -71,7 +76,7 @@ vary:
     mild: -9.0
     severe: -18.0
   model:                          # a different endpoint and key per model
-    qwen:     {name: qwen3.8-27b}
+    qwen:     {name: Qwen3.8-27B}
     deepseek: {name: deepseek-v4, base_url: https://api.deepseek.com/v1,
                api_key_env: DEEPSEEK_API_KEY}
 ```
@@ -96,7 +101,7 @@ See [examples/sweeps/governance_grid.yaml](../examples/sweeps/governance_grid.ya
 
 ```bash
 python -m verdi.sweep --scenario examples/full.yaml \
-  --vary model.name=qwen2.5-7b-instruct,qwen3.8-27b \
+  --vary model.name=default,Borealis2-preview \
   --vary constitution.quorum=0.5,0.75 \
   --seeds 42,43,44 --parallel-runs 2 --dry-run
 ```
@@ -111,7 +116,7 @@ runs/sweeps/model_comparison/
   comparison.html        <- open this: mean ± spread per condition, links to every run
   summary.csv            <- one row per run, opens in Excel / Google Sheets
   sweep_manifest.json    <- what ran, status, timings, code commit
-  qwen2.5-7b-instruct/
+  default/
     seed-42/
       scenario.yaml      <- the exact input of this run (frozen)
       report.html        <- the single-run report

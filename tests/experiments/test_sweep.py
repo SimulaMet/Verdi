@@ -32,6 +32,8 @@ def _no_real_env(monkeypatch, tmp_path):
     monkeypatch.setenv("VERDI_DOTENV_PATH", str(tmp_path / "no.env"))
     for var in ("MODEL_API_KEY", "VERDI_VLLM_API_KEY"):
         monkeypatch.delenv(var, raising=False)
+    # no network: the endpoint check is tested separately
+    monkeypatch.setattr(sw, "preflight", lambda runs: [])
 
 
 def _cfg(tmp_path, **raw):
@@ -214,3 +216,11 @@ def test_verdi_cli_routes_sweep(capsys, tmp_path):
     from verdi.cli import main
     assert main(["sweep", "--scenario", STARTER, "--output", str(tmp_path), "--dry-run"]) == 0
     assert "Sweep:" in capsys.readouterr().out
+
+
+def test_cli_stops_before_running_when_a_model_fails_the_check(tmp_path, monkeypatch):
+    monkeypatch.setattr(sw, "preflight", lambda runs: ["model 'x' at u (x): HTTP 401"])
+    with pytest.raises(SystemExit, match="nothing was started"):
+        sw.main(["--scenario", STARTER, "--vary", "model.name=x", "--output",
+                 str(tmp_path), "--yes"])
+    assert not (tmp_path / sw.MANIFEST_NAME).exists()

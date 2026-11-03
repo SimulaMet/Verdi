@@ -11,10 +11,10 @@ scenario: examples/full.yaml
 
 vary:
   # Same endpoint, different model names:
-  model.name: [qwen2.5-7b-instruct, qwen3.8-27b]
+  model.name: [default, Borealis2-preview]
   # Different endpoints/keys? Give each option a name and a model block:
   # model:
-  #   qwen:     {name: qwen3.8-27b}
+  #   qwen:     {name: Qwen3.8-27B}
   #   deepseek: {name: deepseek-v4, base_url: https://api.deepseek.com/v1, api_key_env: DEEPSEEK_API_KEY}
 
 seeds: [42, 43, 44]       # same seeds for every model, so comparisons are fair
