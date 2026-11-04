@@ -17,7 +17,7 @@ from verdi.schemas import Task, WorldState
 from .memory import AgentMemory
 
 #: Versioned prompt constant. Bump deliberately; experiments log it.
-SOCIAL_PROMPT_VERSION = "verdi.society-prompt/4"
+SOCIAL_PROMPT_VERSION = "verdi.society-prompt/5"
 
 #: Exact required argument field names per action kind, mirroring
 #: ``verdi.world.validate``. Rendered into the prompt so the model cannot
@@ -183,7 +183,9 @@ def build_social_prompt(
     return _PROMPT_TEMPLATE.format(
         prompt_version=prompt_version,
         agent_id=agent_id,
-        tick=state.tick,
+        # The campaign's lifecycle tick (what sanction durations, deadlines and
+        # per-tick caps count), not WorldState.tick, the ledger transition counter.
+        tick=task.tick_created,
         role=agent.role,
         persona_summary=agent.persona_summary,
         resources_json=json.dumps(agent.resources, sort_keys=True),
@@ -233,7 +235,9 @@ def build_social_prompt_messages(
         prompt_version=prompt_version,
     )
     user = _build_user_prompt(
-        tick=state.tick,
+        # The campaign's lifecycle tick (what sanction durations, deadlines and
+        # per-tick caps count), not WorldState.tick, the ledger transition counter.
+        tick=task.tick_created,
         resources_json=json.dumps(agent.resources, sort_keys=True),
         voting=agent.rights.voting,
         speaking=agent.rights.speaking,

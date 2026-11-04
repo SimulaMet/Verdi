@@ -42,11 +42,15 @@ def _number(value: Any, key: str, *, strictly_positive: bool) -> float:
 
 def policy_block(kind: str, arguments: Mapping[str, Any],
                  world_resources: Mapping[str, float],
-                 rules: Mapping[str, Any] | None) -> tuple[str, str] | None:
+                 rules: Mapping[str, Any] | None,
+                 *, already_produced: float = 0.0) -> tuple[str, str] | None:
     """Return (rule key, explanation) if a valid action violates policy.
 
     Call after invariant checks: malformed actions and overdrafts retain their
     original rejection codes. Policy rejection does not itself impose sanctions.
+    ``already_produced`` is what this actor already produced of the resource
+    this tick, so ``max_produce_units_per_tick`` is a per-tick (not
+    per-action) cap.
     """
     if not rules:
         return None
@@ -59,9 +63,10 @@ def policy_block(kind: str, arguments: Mapping[str, Any],
     if kind == "produce" and "max_produce_units_per_tick" in rules:
         amount = float(arguments["amount"])
         cap = float(rules["max_produce_units_per_tick"])
-        if amount > cap:
+        if already_produced + amount > cap + 1e-9:
             return ("max_produce_units_per_tick",
-                    f"produce amount {amount:g} exceeds per-tick limit {cap:g}")
+                    f"produce amount {amount:g} exceeds per-tick limit {cap:g}"
+                    + (f" ({already_produced:g} already produced)" if already_produced else ""))
     if kind == "withdraw":
         amount = float(arguments["amount"])
         if "max_withdraw_units" in rules:

@@ -21,6 +21,7 @@ import asyncio
 import hashlib
 import importlib.metadata
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -308,8 +309,10 @@ class PilotDriver:
         # including quarantined proposals. Default dir when a live model is
         # injected but no dir given: runs/live/<UTC-stamp>/.
         if live_capture_dir is None and model is not None:
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            live_capture_dir = root / "runs" / "live" / stamp
+            # Microseconds + pid: two live runs started in the same second must
+            # not append into one live_tape.jsonl.
+            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+            live_capture_dir = root / "runs" / "live" / f"{stamp}-{os.getpid()}"
         self._live_capture_dir = Path(live_capture_dir) if live_capture_dir else None
 
     # ------------------------------------------------------------------ #
@@ -650,7 +653,11 @@ class PilotDriver:
                 if (
                     lifecycle_tick == _SANCTION_TICK
                     and action.actor_id == violation_subject
+                    and _VIOLATION_CODE in validation.attempted_violation_codes
                 ):
+                    # Only the scripted violation may serve as sanction
+                    # evidence -- never a quarantine rejection of the same
+                    # agent's proposal (that would manufacture a false sanction).
                     violation_event_id = sealed.event_id
                 trace_id = f"trace-ev-{sealed.event_id}"
                 source.add_span(

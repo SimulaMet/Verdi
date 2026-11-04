@@ -20,6 +20,7 @@ of value, never internal belief.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -69,22 +70,38 @@ def interview_axis_scores(parsed: dict[str, Any] | None) -> dict[str, float]:
 # --------------------------------------------------------------------------- #
 # Nearest-event linking
 # --------------------------------------------------------------------------- #
+_TASK_TICK = re.compile(r"-t(\d+)-")
+
+
 def _nearest_event(agent_id: str, tick: int, events: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """The most recent committed world event at-or-before ``tick`` that involves
-    this agent (or a society-level governance event if none agent-specific).
-    Returns {event_id, kind, tick} or None."""
+    """The most recent committed world event at-or-before lifecycle ``tick`` that
+    involves this agent (or a society-level governance event if none
+    agent-specific). Returns {event_id, kind, tick, lifecycle_tick} or None.
+
+    ``tick`` is the campaign's lifecycle tick, while a ledger event's ``tick``
+    is the reducer's transition counter, so the two are not comparable. The
+    lifecycle tick of an event is read from its task id (``soc-tNN-..``);
+    events without one (governance, consumption) inherit the tick of the
+    preceding event, since the ledger is chronological.
+    """
     agent_ev = None
     society_ev = None
+    current = 0
     for ev in events:
-        et = ev.get("tick")
-        if et is None or et > tick:
-            continue
+        task_id = str((ev.get("payload") or {}).get("task_id") or "")
+        m = _TASK_TICK.search(task_id)
+        if m:
+            current = int(m.group(1))
+        if current > tick:
+            break
         actor = ev.get("actor_id") or ev.get("actor")
-        kind = ev.get("kind", "")
-        if actor == agent_id and agent_ev is None or (actor == agent_id and (agent_ev is None)):
-            agent_ev = {"event_id": ev.get("event_id"), "kind": kind, "tick": et}
-        if actor in (None, "assembly", "governance") and society_ev is None:
-            society_ev = {"event_id": ev.get("event_id"), "kind": kind, "tick": et}
+        ref = {"event_id": ev.get("event_id"), "kind": ev.get("kind", ""),
+               "tick": ev.get("tick"), "lifecycle_tick": current}
+        # Later events overwrite earlier ones: we want the MOST RECENT match.
+        if actor == agent_id:
+            agent_ev = ref
+        elif actor in (None, "assembly", "governance"):
+            society_ev = ref
     return agent_ev or society_ev
 
 

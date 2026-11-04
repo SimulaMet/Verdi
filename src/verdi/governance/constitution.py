@@ -40,6 +40,13 @@ def deterministic_checksum(rules: dict[str, Any], quorum: float, threshold: floa
     return f"sha256:{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:32]}"
 
 
+def _is_fraction(value: Any) -> bool:
+    return (
+        isinstance(value, (int, float)) and not isinstance(value, bool)
+        and 0 < value <= 1
+    )
+
+
 class ConstitutionStore:
     """Append-only registry of constitution versions.
 
@@ -107,7 +114,12 @@ class ConstitutionStore:
         return best[2]
 
     def _next_version(self) -> str:
-        return f"{self.current.constitution_id}-v{len(self._order) + 1}"
+        n = len(self._order) + 1
+        # register() ignores a version name it has seen, so never reuse one
+        # (e.g. an initial version that happens to be named "<id>-v2").
+        while f"{self.current.constitution_id}-v{n}" in self._versions:
+            n += 1
+        return f"{self.current.constitution_id}-v{n}"
 
     # -- voters -----------------------------------------------------------
 
@@ -203,9 +215,27 @@ class ConstitutionStore:
                 raise ValueError("proposal_id required when no votes are given")
             proposal_id = votes[0].proposal_id
         proposal = self.get_proposal(proposal_id)
-        votes = self.votes_for(proposal_id) if not votes else list(votes)
+        if self._proposal_status[proposal_id] != "under_vote":
+            # Re-enacting would register a duplicate version for one proposal.
+            raise ProposalNotInVoteError(f"proposal {proposal_id} is not under vote")
+        # The recorded ballot is the single source of truth. Caller-supplied
+        # votes are routed through record_vote so they get the same checks
+        # (right proposal, one vote per voter); a vote that was already
+        # rejected or duplicated must never be counted.
+        for vote in votes:
+            if vote.proposal_id != proposal_id:
+                continue
+            recorded = self._votes[proposal_id].get(vote.voter_id)
+            if recorded is None:
+                self.record_vote(vote)
+        votes = self.votes_for(proposal_id)
         base = self.get(proposal.constitution_version_base)
-        for_votes, against_votes, abstain_votes = self._count_votes(votes)
+        # Only eligible, valid ballots decide the outcome (same filter as quorum).
+        counted = [
+            v for v in votes
+            if v.eligibility_valid and (not self._eligible_voters or v.voter_id in self._eligible_voters)
+        ]
+        for_votes, against_votes, abstain_votes = self._count_votes(counted)
 
         invalid_reasons: list[str] = []
         if not self.amendments_enabled:
@@ -224,6 +254,12 @@ class ConstitutionStore:
             validate_enforceable_rules(candidate_rules)
         except ValueError:
             invalid_reasons.append("invalid_enforceable_policy")
+        # Procedural parameters must be fractions in (0, 1]; an out-of-range
+        # value would otherwise fail ConstitutionVersion validation AFTER the
+        # amendment was recorded as valid, leaving the store inconsistent.
+        for key in ("quorum", "amendment_threshold"):
+            if key in proposal.payload and not _is_fraction(proposal.payload[key]):
+                invalid_reasons.append(f"invalid_{key}")
 
         # 1. Immutable law outranks the constitution.
         law_violations = self._law.law_overrides(proposal.payload)
@@ -270,7 +306,15 @@ class ConstitutionStore:
         self.amendments.append(amendment)
 
         if valid:
-            self._register_new_version(base, proposal.payload, new_version, effective_from_tick)
+            # Apply the delta onto the version that would otherwise be in force
+            # at the effective tick, not onto the (possibly stale) submission
+            # base: two amendments enacted in one assembly share a base, and
+            # building both from it would silently drop the first one's rules.
+            # Vote rules above still come from ``base`` (in force when voting).
+            self._register_new_version(
+                self.active_at(effective_from_tick), proposal.payload,
+                new_version, effective_from_tick,
+            )
             self._proposal_status[proposal_id] = "enacted"
         else:
             self._proposal_status[proposal_id] = "invalid" if law_violations else "rejected"

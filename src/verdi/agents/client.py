@@ -25,6 +25,8 @@ from verdi.config import ModelEndpointConfig
 RETRYABLE_STATUS = (429, 502, 503, 524)
 _BACKOFF_BASE = 0.5
 _BACKOFF_CAP = 10.0
+_CONNECT_TIMEOUT = 15.0
+_POOL_TIMEOUT = 30.0
 
 
 class ModelError(RuntimeError):
@@ -66,6 +68,11 @@ class ModelClient:
     ) -> None:
         self._config = config
         self._rng = rng or random.Random()
+        #: Successful completions so far. A liveness signal for the stall
+        #: watchdog: batched phases (reflection, consolidation) only write
+        #: model_calls.jsonl after the whole batch, so file lines alone can
+        #: stay flat for a long, healthy batch.
+        self.completed_calls = 0
         self._client = httpx.AsyncClient(
             base_url=config.base_url,
             headers={"Authorization": f"Bearer {config.api_key}"},
@@ -80,8 +87,8 @@ class ModelClient:
             # socket) always trips the read timeout and becomes retryable,
             # rather than blocking indefinitely.
             timeout=httpx.Timeout(
-                connect=15.0, read=config.timeout_seconds,
-                write=config.timeout_seconds, pool=30.0,
+                connect=_CONNECT_TIMEOUT, read=config.timeout_seconds,
+                write=config.timeout_seconds, pool=_POOL_TIMEOUT,
             ),
             # Bounded pool sized to the concurrency we actually run at. Keepalive
             # REUSE is allowed (capped) so sockets are recycled rather than opening
@@ -156,7 +163,9 @@ class ModelClient:
                 continue
 
             if response.status_code == 200:
-                return self._parse(response, trace_id)
+                result = self._parse(response, trace_id)
+                self.completed_calls += 1
+                return result
 
             raise ModelError(
                 f"request {trace_id} failed with HTTP {response.status_code}"
@@ -169,15 +178,26 @@ class ModelClient:
 
     @staticmethod
     def _parse(response: httpx.Response, trace_id: str) -> ModelResult:
-        body = json.loads(response.text)
         try:
+            body = json.loads(response.text)
             message = body["choices"][0]["message"]
             content = message["content"]
-        except (KeyError, IndexError, TypeError) as exc:
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            # ValueError covers JSONDecodeError: a proxy/CDN can answer 200 with
+            # an HTML page. Surface it as the typed ModelError callers handle.
             raise ModelError(
                 f"request {trace_id} returned a structurally invalid completion body",
                 trace_id=trace_id,
             ) from exc
+        # Reasoning models may return ``"content": null`` (e.g. max_tokens spent
+        # on thinking). Normalise to "" so callers can rely on a str.
+        if content is None:
+            content = ""
+        elif not isinstance(content, str):
+            raise ModelError(
+                f"request {trace_id} returned non-string completion content",
+                trace_id=trace_id,
+            )
         return ModelResult(
             content=content,
             request_id=str(body.get("id", "")),

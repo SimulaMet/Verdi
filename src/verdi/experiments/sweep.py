@@ -42,6 +42,7 @@ import contextlib
 import copy
 import csv
 import difflib
+import hashlib
 import html
 import json
 import os
@@ -52,7 +53,7 @@ import sys
 import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from itertools import product
@@ -130,8 +131,11 @@ class RunSpec:
 
 def _label(value: Any) -> str:
     text = value if isinstance(value, str) else json.dumps(value, sort_keys=True)
-    text = re.sub(r"[^A-Za-z0-9._-]+", "-", str(text)).strip("-")
-    return text[:40] or "value"
+    text = re.sub(r"[^A-Za-z0-9._-]+", "-", str(text)).strip("-")[:40]
+    # Labels become path components: "." / ".." would escape the sweep folder.
+    if not text.strip("."):
+        return "value"
+    return text
 
 
 def _factor(path: str, raw: Any) -> Factor:
@@ -423,6 +427,26 @@ def _atomic_write(path: Path, text: str) -> None:
     os.replace(tmp, path)
 
 
+def _set_aside_previous_attempt(run_dir: Path) -> Path | None:
+    """Move a non-empty run dir from an earlier attempt out of the way.
+
+    The ledger and model_calls files are opened in append mode, so relaunching
+    into an old directory would concatenate two runs (two event_id 0 lines,
+    broken hash chain). The old attempt is renamed, never deleted.
+    """
+    if not run_dir.is_dir() or not any(run_dir.iterdir()):
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    aside = run_dir.with_name(f"{run_dir.name}.prev-{stamp}")
+    run_dir.rename(aside)
+    return aside
+
+
+def _scenario_sha256(run: RunSpec) -> str:
+    blob = json.dumps(run.scenario, sort_keys=True, default=str, ensure_ascii=True)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
 def _write_scenario(run: RunSpec) -> Path:
     import yaml
 
@@ -496,7 +520,17 @@ def run_sweep(cfg: SweepConfig, runs: list[RunSpec],
     def save() -> None:
         _atomic_write(manifest_path, json.dumps(manifest, indent=2, sort_keys=True) + "\n")
 
-    todo = [r for r in runs if entries.get(r.run_id, {}).get("status") != "complete"]
+    def reusable(r: RunSpec) -> bool:
+        e = entries.get(r.run_id, {})
+        if e.get("status") != "complete":
+            return False
+        # A finished run is only reused if it ran this exact scenario; a run_id
+        # (condition/seed) alone does not capture e.g. a changed --ticks.
+        # Entries from before hashes were recorded are trusted as before.
+        recorded = e.get("scenario_sha256")
+        return recorded is None or recorded == _scenario_sha256(r)
+
+    todo = [r for r in runs if not reusable(r)]
     if len(todo) < len(runs):
         out(f"Resuming: {len(runs) - len(todo)} run(s) already complete, {len(todo)} to go.")
     for r in runs:
@@ -505,18 +539,26 @@ def run_sweep(cfg: SweepConfig, runs: list[RunSpec],
                                   "seed": r.seed, "run_dir": str(r.run_dir)})
         if r in todo:
             entries[r.run_id]["status"] = "pending"
+            entries[r.run_id]["scenario_sha256"] = _scenario_sha256(r)
+    # Runs left over from an earlier invocation with other seeds/factors stay
+    # on disk but are excluded from this sweep's results and exit code.
+    manifest["current_runs"] = sorted(r.run_id for r in runs)
     save()
 
     done = len(runs) - len(todo)
 
     def one(run: RunSpec) -> tuple[RunSpec, int, float]:
-        run.run_dir.mkdir(parents=True, exist_ok=True)
-        _write_scenario(run)
-        with lock:
-            entries[run.run_id].update({"status": "running", "started_at_utc": _utc_now()})
-            save()
         t0 = time.monotonic()
         try:
+            # Setup I/O is inside the guard too: one bad run dir must not
+            # abort the whole sweep.
+            _set_aside_previous_attempt(run.run_dir)
+            run.run_dir.mkdir(parents=True, exist_ok=True)
+            _write_scenario(run)
+            with lock:
+                entries[run.run_id].update({"status": "running", "started_at_utc": _utc_now()})
+                save()
+            t0 = time.monotonic()
             code = launcher(run, cfg.agent_concurrency)
         except Exception as exc:  # noqa: BLE001 - one run must never stop the sweep
             with lock:
@@ -524,21 +566,38 @@ def run_sweep(cfg: SweepConfig, runs: list[RunSpec],
             code = 1
         return run, code, time.monotonic() - t0
 
+    def record(run: RunSpec, code: int, secs: float) -> str:
+        status = _status(code)
+        with lock:
+            entries[run.run_id].update({"status": status, "exit_code": code,
+                                        "wall_seconds": round(secs, 1),
+                                        "finished_at_utc": _utc_now()})
+            save()
+        return status
+
+    pool = ThreadPoolExecutor(max_workers=cfg.parallel_runs)
+    futures: list[Future] = []
+    recorded: set[int] = set()
     try:
-        with ThreadPoolExecutor(max_workers=cfg.parallel_runs) as pool:
-            futures = [pool.submit(one, r) for r in todo]
-            for fut in as_completed(futures):
-                run, code, secs = fut.result()
-                status = _status(code)
-                with lock:
-                    done += 1
-                    entries[run.run_id].update({"status": status, "exit_code": code,
-                                                "wall_seconds": round(secs, 1),
-                                                "finished_at_utc": _utc_now()})
-                    save()
-                tail = "" if status == "complete" else f"  (see {run.run_dir / LOG_NAME})"
-                out(f"[{done}/{len(runs)}] {status:<8} {run.run_id}  {_fmt_secs(secs)}{tail}")
+        futures = [pool.submit(one, r) for r in todo]
+        for fut in as_completed(futures):
+            run, code, secs = fut.result()
+            recorded.add(id(fut))
+            status = record(run, code, secs)
+            done += 1
+            tail = "" if status == "complete" else f"  (see {run.run_dir / LOG_NAME})"
+            out(f"[{done}/{len(runs)}] {status:<8} {run.run_id}  {_fmt_secs(secs)}{tail}")
     except KeyboardInterrupt:
+        # Do not let the executor drain its queue (a `with` block would wait
+        # for, and so START, every queued run after Ctrl-C).
+        pool.shutdown(wait=False, cancel_futures=True)
+        # Keep results of runs that already finished but were not yet recorded.
+        for fut in futures:
+            if id(fut) in recorded or not fut.done() or fut.cancelled():
+                continue
+            with contextlib.suppress(BaseException):
+                record(*fut.result())
+                done += 1
         with lock:
             for e in entries.values():
                 if e.get("status") in ("running", "pending"):
@@ -546,7 +605,10 @@ def run_sweep(cfg: SweepConfig, runs: list[RunSpec],
             save()
         out("Interrupted. Run the same command again to resume.")
         raise
-    return SweepResult(output=cfg.output, entries=entries)
+    pool.shutdown(wait=True)
+    current = {r.run_id for r in runs}
+    return SweepResult(output=cfg.output,
+                       entries={k: v for k, v in entries.items() if k in current})
 
 
 # --------------------------------------------------------------------------- #
@@ -602,8 +664,11 @@ def _run_row(run_dir: Path) -> dict[str, Any]:
 
 def collect(output: Path) -> list[dict[str, Any]]:
     manifest = json.loads((output / MANIFEST_NAME).read_text(encoding="utf-8"))
+    current = manifest.get("current_runs")
     rows = []
     for run_id, e in sorted(manifest.get("runs", {}).items()):
+        if current is not None and run_id not in current:
+            continue  # left over from an earlier invocation of this sweep
         run_dir = Path(e["run_dir"])
         row: dict[str, Any] = {"run": run_id, "condition": e.get("condition"),
                                "seed": e.get("seed"), "status": e.get("status")}
@@ -757,12 +822,20 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("give a sweep file OR --scenario (not both)")
     if args.sweep_file:
         import yaml
-        raw = yaml.safe_load(Path(args.sweep_file).read_text(encoding="utf-8")) \
-            if Path(args.sweep_file).is_file() else None
-        if raw is None:
-            raise SweepError(f"sweep file not found or empty: {args.sweep_file}")
+        path = Path(args.sweep_file)
+        if not path.is_file():
+            raise SweepError(f"sweep file not found: {path}")
+        try:
+            raw = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except yaml.YAMLError as exc:
+            raise SweepError(f"{path} is not valid YAML:\n{exc}") from None
+        if not isinstance(raw, dict):
+            raise SweepError(f"{path} must be a non-empty YAML mapping")
         if args.vary:
-            raw.setdefault("vary", {}).update(_parse_vary(args.vary))
+            vary = raw.get("vary") or {}
+            if not isinstance(vary, dict):
+                raise SweepError(f"{path}: `vary:` must be a mapping")
+            raw["vary"] = {**vary, **_parse_vary(args.vary)}
     else:
         raw = {"scenario": args.scenario, "vary": _parse_vary(args.vary)}
         if args.name:

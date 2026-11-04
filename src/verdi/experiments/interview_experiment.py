@@ -286,11 +286,12 @@ def _audit_run(run_dir: Path, *, base_url: str, api_key: str, model: str,
         client = ModelClient(config)
         agent_context_by_id = _agent_context_map(scenario_path, run_dir)
     try:
-        summary = asyncio.run(audit_from_file(
+        # audit_from_file is synchronous (it runs its own event loop).
+        summary = audit_from_file(
             interviews_path, run_dir, base_url=base_url, api_key=api_key, model=model,
             constitution_rules=rules, concurrency=concurrency, probe_turns=probe_turns,
             client=client, agent_context_by_id=agent_context_by_id,
-        ))
+        )
     finally:
         if client is not None:
             with contextlib.suppress(Exception):
@@ -349,7 +350,12 @@ def main(argv: list[str] | None = None) -> int:
 
     # Run the separate post-pass audit only when it was NOT already done inline.
     if not args.no_audit and not inline_audit:
-        cfg = _endpoint()
+        if args.scenario is not None:
+            # Same endpoint the campaign used (scenario `model:` block first).
+            from verdi.society.live import resolve_endpoint_config
+            cfg = resolve_endpoint_config(load_scenario(args.scenario))
+        else:
+            cfg = _endpoint()
         _audit_run(args.run_dir, base_url=cfg.base_url, api_key=cfg.api_key,
                    model=cfg.model, concurrency=args.concurrency or 4,
                    probe_turns=args.probe_turns, scenario_path=args.scenario)

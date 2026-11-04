@@ -158,18 +158,19 @@ def _institution_rows(metrics: dict[str, Any]) -> list[str]:
         deltas = enactment.get("rule_deltas", {})
         delta_bits = []
         for key, added in (deltas.get("added") or {}).items():
-            delta_bits.append(f"+{key}={_esc(added)}")
+            delta_bits.append(f"+{_esc(key)}={_esc(added)}")
         for key, change in (deltas.get("changed") or {}).items():
-            delta_bits.append(f"~{key}:{_esc(change['from'])}→{_esc(change['to'])}")
+            delta_bits.append(f"~{_esc(key)}:{_esc(change['from'])}→{_esc(change['to'])}")
         for key in (deltas.get("removed") or {}):
-            delta_bits.append(f"-{key}")
+            delta_bits.append(f"-{_esc(key)}")
+        # One f-string, escaped once: a ``.format`` pass over already-inserted
+        # rule values would treat their braces (e.g. dict values) as fields.
         rows.append(
-            "<tr><td>Enacted amendment <code>{v}</code> @ tick {t}</td>"
+            f"<tr><td>Enacted amendment <code>{_esc(enactment['version'])}</code>"
+            f" @ tick {_esc(enactment['tick'])}</td>"
             f"<td>{len(delta_bits)} rule change(s)</td>"
-            f"<td>{_esc(' '.join(delta_bits))} "
-            f"<span class='ev'>constitution_history.jsonl</span></td></tr>".format(
-                v=_esc(enactment["version"]), t=enactment["tick"]
-            )
+            f"<td>{' '.join(delta_bits)} "
+            f"<span class='ev'>constitution_history.jsonl</span></td></tr>"
         )
     enacted_ids = mech.get("amendment_enacted_event_ids", [])
     rejected_ids = mech.get("amendment_rejected_event_ids", [])
@@ -207,6 +208,13 @@ def _recovery_row(summary: dict[str, Any], arm: str, seed: Any) -> str:
                 f"unavailable ({_esc(exc)})</p>")
     if rec["recovered"]:
         label = f"recovered at tick {rec['recovery_tick']}"
+    elif not rec["pre_shock_rate"]:
+        # No objective due in the preregistered baseline window (None), or a
+        # 0.0 baseline: the criterion is undefined -- not evidence of
+        # non-recovery (recovery_time still reports it censored).
+        label = ("not evaluable — no delivery objective is due in the "
+                 "preregistered baseline window" if rec["pre_shock_rate"] is None
+                 else "not evaluable — pre-shock baseline rate is 0")
     elif rec["censored"]:
         label = "CENSORED — never recovered by run end"
     else:

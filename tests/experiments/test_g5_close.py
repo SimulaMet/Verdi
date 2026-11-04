@@ -235,7 +235,12 @@ def test_b2_planted_key_material_fails_leakage(mini_run_root):
     res = audit_leakage(mini_run_root)
     assert res["passed"] is False
     assert len(res["key_material_findings"]) == 1
-    assert planted in res["key_material_findings"][0]
+    finding = res["key_material_findings"][0]
+    # The finding locates the leak and identifies it by prefix + length, but
+    # must not itself repeat the secret (findings are written into reports).
+    assert "pair_1 row seq=2" in finding and "sk-fak" in finding
+    assert f"({len(planted)} chars)" in finding
+    assert planted not in finding
 
 
 def test_b2_prompt_ordering_leak_fails_leakage(mini_run_root):

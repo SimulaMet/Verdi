@@ -47,6 +47,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import copy
+import hashlib
 import json
 import os
 import sys
@@ -58,6 +59,7 @@ from pathlib import Path
 from typing import Any
 
 from verdi.analysis.scenario import load_scenario
+from verdi.experiments.sweep import _set_aside_previous_attempt
 from verdi.society.campaign import SocietyCampaign
 
 ALLOWED_CONFIG_KEYS = frozenset({
@@ -302,6 +304,11 @@ async def _run_one_arm(*, arm: str, seed: int, scenario: dict[str, Any],
 # the public API
 # --------------------------------------------------------------------------- #
 
+def _scenario_sha256(scenario: dict[str, Any]) -> str:
+    blob = json.dumps(scenario, sort_keys=True, default=str, ensure_ascii=True)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()
+
+
 def run_pair(config: dict[str, Any],
              caller_factory: Callable[[dict[str, Any], Path], Any],
              *,
@@ -319,7 +326,10 @@ def run_pair(config: dict[str, Any],
     Never raises for a failed arm; returns a :class:`PairRunResult` whose
     ``exit_code`` is nonzero when any pair did not complete.
     """
-    root = Path(output_root if output_root is not None else config["output_root"])
+    chosen_root = output_root if output_root is not None else config.get("output_root")
+    if chosen_root is None:
+        _fail("no output folder: set output_root in the paired config or pass --output-root")
+    root = Path(chosen_root)
     root.mkdir(parents=True, exist_ok=True)
     manifest_path = root / MANIFEST_NAME
     manifest = _load_manifest(manifest_path)
@@ -351,17 +361,24 @@ def run_pair(config: dict[str, Any],
             for arm in config["arms"]:
                 run_dir = root / f"{arm}-seed{seed}"
                 prior = entries.get((seed, arm))
-                if prior is not None and prior.get("status") == "complete":
+                scenario_sha = _scenario_sha256(arm_scenarios[arm])
+                if (prior is not None and prior.get("status") == "complete"
+                        and prior.get("scenario_sha256", scenario_sha) == scenario_sha):
+                    # (entries from before hashes were recorded are trusted)
                     print(f"[skip] {arm}-seed{seed}: already complete (resume)")
                     continue
                 print(f"[run ] {arm}-seed{seed}: {run_dir}", flush=True)
                 try:
+                    # A failed/stale earlier attempt must not be appended to
+                    # (the ledger opens in append mode); keep it, renamed.
+                    _set_aside_previous_attempt(run_dir)
                     outcome = await _run_one_arm(
                         arm=arm, seed=seed, scenario=arm_scenarios[arm],
                         run_dir=run_dir, caller_factory=caller_factory,
                         concurrency=concurrency,
                     )
-                except BaseException as exc:  # noqa: BLE001 - record, don't abort the pair loop
+                except Exception as exc:  # noqa: BLE001 - record, don't abort the pair loop
+                    # (Exception, not BaseException: Ctrl-C / cancellation must stop the loop.)
                     outcome = {
                         "status": "failed",
                         "error": f"{type(exc).__name__}: {exc}",
@@ -372,6 +389,7 @@ def run_pair(config: dict[str, Any],
                     "seed": seed,
                     "arm": arm,
                     "run_dir": str(run_dir),
+                    "scenario_sha256": scenario_sha,
                     "updated_at_utc": _utc_now(),
                     **outcome,
                 }
@@ -453,10 +471,13 @@ def main(argv: list[str] | None = None) -> int:
         except ValueError:
             _fail(f"--seeds must be comma-separated integers, got: {args.seeds!r}")
 
-    # Endpoint resolution happens up front so a misconfigured environment fails
-    # BEFORE any arm is launched (and resume-skip decisions stay free).
+    # The factory resolves the endpoint lazily, per arm, from that arm's
+    # scenario (a misconfigured endpoint fails that arm, recorded as failed).
     caller_factory = _real_caller_factory()
-    concurrency = args.concurrency if args.concurrency is not None else 4
+    concurrency = (args.concurrency if args.concurrency is not None
+                   else int(os.environ.get("VERDI_MAX_CONCURRENCY", "4")))
+    if concurrency < 1:
+        _fail(f"concurrency must be >= 1, got {concurrency}")
 
     result = run_pair(config, caller_factory, seeds=seeds,
                       output_root=args.output_root, concurrency=concurrency)

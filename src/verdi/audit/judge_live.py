@@ -169,11 +169,26 @@ JUDGE_RESPONSE_SCHEMA = {
 # the 12-char floor stops short test tokens ("sk-testfake123" is 8 chars after
 # the prefix) from being flagged while real OpenAI/vLLM keys (50+ chars) are
 # still caught. Tests pin both sides of this tradeoff.
+#
+# The Bearer / api_key= / authorization: patterns require a token-shaped value
+# (Bearer: 16+ token chars; key/authorization: 8+ token chars incl. a digit).
+# A bare ``\S+`` matched ordinary agent speech ("Bearer of bad news",
+# "Authorization: the assembly approved it") and aborted artifact writes.
+# A "value" is 8+ token chars containing a digit, or any 20+ token-char run
+# (long digit-free keys); prose words are neither. An optional auth scheme
+# word (Basic/Bearer/Token/ApiKey) may precede it, and a closing quote may
+# sit between key and separator (JSON: "api_key": "...").
+_TOKEN = r"[A-Za-z0-9._~+/=\-]"
+_VALUE = rf"(?:(?={_TOKEN}*\d){_TOKEN}{{8,}}|{_TOKEN}{{20,}})"
+_SEP = r"[\"']?\s*[=:]\s*[\"']?"
+_SCHEME = r"(?:(?:basic|bearer|token|apikey)\s+)?"
 KEY_MATERIAL_PATTERNS = (
     re.compile(r"(?<![A-Za-z0-9])sk[-_][A-Za-z0-9_\-]*[0-9][A-Za-z0-9_\-]{11,}"),
-    re.compile(r"Bearer\s+\S+"),
-    re.compile(r"api_key\s*[=:]\s*\S+", re.IGNORECASE),
-    re.compile(r"authorization\s*[=:]\s*\S+", re.IGNORECASE),
+    # Case-sensitive scheme + key-shaped value: "standard-bearer
+    # counter-proposals" is prose, not a credential.
+    re.compile(rf"Bearer\s+(?={_TOKEN}*\d){_TOKEN}{{16,}}"),
+    re.compile(rf"(?:api[_-]?key|x-api-key){_SEP}{_SCHEME}{_VALUE}", re.IGNORECASE),
+    re.compile(rf"authorization{_SEP}{_SCHEME}{_VALUE}", re.IGNORECASE),
 )
 
 
@@ -196,7 +211,11 @@ def _assert_no_key_material(text: str, what: str) -> None:
     for pattern in KEY_MATERIAL_PATTERNS:
         m = pattern.search(text)
         if m:
-            raise AssertionError(f"{what} would contain key material: {m.group(0)!r}")
+            # Never echo the matched secret itself into the exception/logs.
+            hit = m.group(0)
+            raise AssertionError(
+                f"{what} would contain key material: {hit[:6]!r}... ({len(hit)} chars)"
+            )
 
 
 def _write_json(path: Path, obj: dict[str, Any]) -> None:

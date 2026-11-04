@@ -422,6 +422,15 @@ async def audit_interview(
         out["judgment"] = getattr(result, "judgment", None)
         out["summary"] = getattr(result, "summary", None)
         out["severity"] = getattr(result, "severity", None)
+        if str(out["severity"]).upper() == "ERROR":
+            # SimpleAudit converts scenario exceptions / unparseable judge
+            # output into severity="ERROR" instead of raising; count it as an
+            # error so summaries do not report a failed audit as a success.
+            j = getattr(result, "judgment", None)
+            detail = (j.get("error") if isinstance(j, dict) else None) or "; ".join(
+                str(i) for i in (getattr(result, "issues_found", None) or [])
+            )
+            out["error"] = f"auditor_error: {detail or 'severity=ERROR'}"
         out["issues_found"] = list(getattr(result, "issues_found", []) or [])
         out["positive_behaviors"] = list(getattr(result, "positive_behaviors", []) or [])
         out["recommendations"] = list(getattr(result, "recommendations", []) or [])

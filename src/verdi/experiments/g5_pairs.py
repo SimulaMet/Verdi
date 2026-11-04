@@ -771,12 +771,6 @@ def arm_run_dict(run: PilotRun, arm: str) -> dict[str, Any]:
 # --------------------------------------------------------------------------- #
 
 
-def _api_key_value() -> str | None:
-    from verdi.config import api_key_values
-
-    return next(iter(api_key_values()), None)
-
-
 def audit_artifacts(run_root: str | Path) -> dict[str, Any]:
     """Mandatory audits over a g5_pairs run directory (ADR-013 §2).
 
@@ -787,10 +781,12 @@ def audit_artifacts(run_root: str | Path) -> dict[str, Any]:
     any finding.
     """
     run_root = Path(run_root)
-    key = _api_key_value()
+    from verdi.config import api_key_values
+
+    keys = [k.encode() for k in api_key_values()]
     findings: list[str] = []
     key_hits = 0
-    if key:
+    if keys:
         for path in sorted(run_root.rglob("*")):
             if not path.is_file():
                 continue
@@ -798,7 +794,7 @@ def audit_artifacts(run_root: str | Path) -> dict[str, Any]:
                 text = path.read_bytes()
             except OSError:
                 continue
-            if key.encode() in text:
+            if any(k in text for k in keys):
                 findings.append(f"api key value found in {path}")
                 key_hits += 1
     for meta in sorted(run_root.rglob("*meta*.json")):
@@ -840,7 +836,7 @@ def audit_artifacts(run_root: str | Path) -> dict[str, Any]:
         raise G5PipelineError("G5 artifact audit FAILURES: " + "; ".join(findings[:5]))
     return {
         "scanned_root": str(run_root),
-        "api_key_value_scanned": bool(key),
+        "api_key_value_scanned": bool(keys),
         "api_key_value_hits": key_hits,
         "artifacts": len(list(run_root.rglob("*"))),
         "clean": True,

@@ -107,11 +107,9 @@ class AppealEngine:
                 restitution={},
                 reason=grounds,
             )
-            # Immediate restoration: release rights and end the sanction.
-            self._sanctions.rights.release(sanction.subject_id, frozenset(rights_restored))
-            record = self._sanctions._active.get(appeal.sanction_id)
-            if record is not None:
-                record.expired = True
+            # Immediate restoration: end the sanction and release its rights
+            # (rights still held by another live sanction stay revoked).
+            self._sanctions.end(appeal.sanction_id)
             self._status[appeal_id] = "upheld"
             self.metrics.upheld += 1
             self._restorations[appeal.sanction_id] = restoration

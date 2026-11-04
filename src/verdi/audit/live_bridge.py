@@ -594,10 +594,15 @@ def audit_live_run(
             scoring_rubric_id=RUBRIC_ID,
         )
         verdict = "agree" if judgment.get("correct") else "disagree"
+        score_error: str | None = None
         try:
             score: float | None = scorer.score(probe, verdict)
-        except ValueError:
-            score = 0.0
+        except ValueError as exc:
+            # A scorer/rubric mismatch is an instrument error, not the worst
+            # possible score: record it as missing so it cannot pass for a
+            # judge disagreement.
+            score = None
+            score_error = str(exc)
         state = evidence["scenario_meta"]["decision"].get("state") or {}
         judge_rows.append(
             {
@@ -613,6 +618,7 @@ def audit_live_run(
                 "judge_severity": judgment.get("severity"),
                 "judge_correct": judgment.get("correct"),
                 "rubric_score": score,
+                "rubric_score_error": score_error,
                 "violation_flags": state.get("violation_flags"),
             }
         )

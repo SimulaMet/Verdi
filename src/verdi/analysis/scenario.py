@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -102,8 +103,11 @@ def build_t0_state(scenario: dict[str, Any]) -> WorldState:
     values), so a scenario file fully defines the simulation it drives.
     """
     agent_ids = [a["agent_id"] for a in scenario["agents"]]
+    if not agent_ids:
+        raise ScenarioLoadError("scenario has no agents")
     if len(agent_ids) != len(set(agent_ids)):
         raise ScenarioLoadError("scenario contains duplicate agent ids")
+    _check_values(scenario, set(agent_ids))
     _normalize_governance(scenario)
     # Tranche 12m: an agent entry may carry a `sanction: {duration_ticks: N}`
     # block (a scenario-declared t0 sanction with auto-expiry). That is campaign
@@ -125,6 +129,41 @@ def build_t0_state(scenario: dict[str, Any]) -> WorldState:
         seed=scenario["run_seed"],
     )
     return state
+
+
+def _finite_nonneg(value: Any) -> bool:
+    return (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value) and value >= 0)
+
+
+def _check_values(scenario: dict[str, Any], agent_ids: set[str]) -> None:
+    """Load-time checks for values that would otherwise load fine and then
+    crash (or silently misbehave) many model calls into a run."""
+    for a in scenario["agents"]:
+        for res, val in (a.get("resources") or {}).items():
+            if not _finite_nonneg(val):
+                raise ScenarioLoadError(
+                    f"agent {a['agent_id']!r} resource {res!r} must be a finite number >= 0, got {val!r}")
+    for res, val in (scenario.get("world_resources") or {}).items():
+        if not _finite_nonneg(val):
+            raise ScenarioLoadError(f"world_resources.{res} must be a finite number >= 0, got {val!r}")
+    for i, shock in enumerate(scenario.get("shocks") or []):
+        if not isinstance(shock, dict):
+            raise ScenarioLoadError(f"shocks[{i}] must be a mapping")
+        tick = shock.get("tick")
+        if isinstance(tick, bool) or not isinstance(tick, int) or tick < 0:
+            raise ScenarioLoadError(f"shocks[{i}].tick must be an integer >= 0, got {tick!r}")
+        delta = shock.get("delta")
+        if isinstance(delta, bool) or not isinstance(delta, (int, float)) or not math.isfinite(delta):
+            raise ScenarioLoadError(f"shocks[{i}].delta must be a finite number, got {delta!r}")
+    tasks = scenario.get("tasks")
+    deliveries = tasks.get("deliveries") if isinstance(tasks, dict) else tasks
+    for i, entry in enumerate(deliveries or []):
+        target = entry.get("target_pool", "world") if isinstance(entry, dict) else "world"
+        if target != "world" and target not in agent_ids:
+            # Otherwise this only raises at the due tick, deep into a live run.
+            raise ScenarioLoadError(
+                f"tasks.deliveries[{i}].target_pool {target!r} is neither 'world' nor an agent id")
 
 
 def _normalize_governance(scenario: dict[str, Any]) -> None:

@@ -186,10 +186,13 @@ def branch_from_snapshot(
     # terminates in. Without this, a spec can match a snapshot that is
     # merely consistent with the ledger length but divergent from the
     # ledger's terminal state (an inconsistent (snapshot, log) pair).
-    if log.events and actual_hash != log.events[-1].after_hash:
+    # A rejected event leaves state unchanged and carries no after_hash, so
+    # its terminal state is its before_hash.
+    terminal = (log.events[-1].after_hash or log.events[-1].before_hash) if log.events else None
+    if log.events and actual_hash != terminal:
         raise BranchOriginError(
             "snapshot is not the terminal state of the prefix ledger: "
-            f"snapshot={actual_hash!r} ledger_terminal={log.events[-1].after_hash!r}"
+            f"snapshot={actual_hash!r} ledger_terminal={terminal!r}"
         )
 
     # Rebuild the prefix in a fresh ledger from the sealed JSONL bytes.

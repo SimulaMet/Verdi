@@ -50,17 +50,26 @@ class SnapshotStore:
         """Materialize the snapshot stored under ``digest``."""
         payload = self._find(digest)
         try:
-            return WorldState.model_validate_json(payload)
+            state = WorldState.model_validate_json(payload)
         except ValidationError as exc:
             raise SnapshotError(f"corrupt snapshot {digest!r}: {exc}") from exc
+        # Content addressing is only a guarantee if it is checked on read.
+        if canonical_sha256(state.model_dump(mode="json")) != digest:
+            raise SnapshotError(f"snapshot {digest!r} does not match its content hash")
+        return state
 
     def contains(self, digest: str) -> bool:
         """True if a snapshot with this digest is stored."""
+        if not _is_digest(digest):
+            return False
         if digest in self._memory:
             return True
         return self._dir is not None and (self._dir / f"{digest}.json").exists()
 
     def _find(self, digest: str) -> bytes:
+        if not _is_digest(digest):
+            # Digests become file names: refuse anything that could traverse.
+            raise SnapshotError(f"invalid snapshot digest: {digest!r}")
         if digest in self._memory:
             return self._memory[digest]
         if self._dir is not None:
@@ -70,3 +79,10 @@ class SnapshotStore:
                 self._memory[digest] = payload
                 return payload
         raise SnapshotError(f"unknown snapshot digest: {digest!r}")
+
+
+def _is_digest(value: str) -> bool:
+    return (
+        isinstance(value, str) and len(value) == 64
+        and all(c in "0123456789abcdef" for c in value)
+    )

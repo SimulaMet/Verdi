@@ -429,6 +429,10 @@ class SocietyCampaign:
             if tick > 0:
                 for ev in governance.advance_tick(tick):
                     self._restoration_events.append({"tick": tick, **ev})
+                    if governance.sanctions.has_live_sanction(ev.get("actor", "")):
+                        # Another sanction on this agent is still in force
+                        # (e.g. a declared t0 sanction): keep the flag set.
+                        continue
                     # F2: duration-expired sanctions clear the world-state flag
                     # at loop-top, before this tick's snapshot/tape, so the
                     # restored agent is eligible again from this tick on. (An
@@ -485,7 +489,12 @@ class SocietyCampaign:
             # P0-B: per-tick production accounting under an active economy —
             # resets each tick; only consulted by the validator when the
             # economy block is present, so legacy runs are unaffected.
-            produced_this_tick = {}
+            # Keyed per ACTOR then resource: the cap is documented (economy.py,
+            # examples/*.yaml) as per-agent per-tick. A society-wide sum let the
+            # first producer exhaust everyone else's cap. Tracked with or
+            # without an economy block so the constitutional
+            # max_produce_units_per_tick is cumulative in both cases.
+            produced_this_tick: dict[str, dict[str, float]] = {}
             # Live-state mirror for same-tick prompt building (economy only);
             # kept in sync at every commit point below.
             self._live_state = state
@@ -537,8 +546,9 @@ class SocietyCampaign:
                 fallback_seed=f"soc-v2:{self._run_seed}",
                 memories=memory,
             )
-            if used_llm:
-                # Record orchestrator model call for telemetry
+            if orch_meta:
+                # Record every completed orchestrator call (including ones
+                # whose output was unusable) so token accounting is honest.
                 fingerprint = self._model_fingerprint()
                 self._model_calls.append(
                     _ModelCall(tick, "orchestrator", "orchestrator", orch_meta.get("trace_id", ""),
@@ -587,7 +597,7 @@ class SocietyCampaign:
 
             results = await TaskPool(self._concurrency).run_all(self._make_worker(
                 snapshot, tick, memory, governance.constitution.active_at(tick).rules,
-                produced_this_tick if self._economy_spec else None,
+                {} if self._economy_spec else None,
             ), tape)
 
             # deterministic-order commit (single reducer, sequential).
@@ -608,12 +618,17 @@ class SocietyCampaign:
                     state, pr.action,
                     policy_rules=governance.constitution.active_at(tick).rules,
                     economy_spec=self._economy_spec,
-                    produced_this_tick=produced_this_tick if self._economy_spec else None,
+                    produced_this_tick=produced_this_tick.get(pr.action.actor_id, {}),
                 )
                 before = state
                 state = reducer.apply(before, pr.action, validation)
                 self._live_state = state
                 sealed = self._commit_action(log, before, state, pr.action, validation)
+                if validation.accepted and pr.action.action_kind == "produce":
+                    _mine = produced_this_tick.setdefault(pr.action.actor_id, {})
+                    _res = str(pr.action.arguments.get("resource", ""))
+                    _mine[_res] = _mine.get(_res, 0.0) + float(
+                        pr.action.arguments.get("amount", 0.0))
                 if (
                     validation.accepted
                     and self._economy_spec is not None
@@ -641,9 +656,6 @@ class SocietyCampaign:
                         )
                     state = self._deduct_production_input(state, pr.action.actor_id, _resource, _amount)
                     self._live_state = state
-                    produced_this_tick[_resource] = (
-                        produced_this_tick.get(_resource, 0.0) + _amount
-                    )
                     self._tape.append(TapeStep(
                         action=None,  # type: ignore[arg-type]
                         validation=ValidationResult(accepted=True),
@@ -722,7 +734,7 @@ class SocietyCampaign:
             for p in list(self._pending_appeals):
                 if p["file_tick"] == tick:
                     upheld = self._file_and_adjudicate_appeal(p, governance, tick)
-                    if upheld:
+                    if upheld and not governance.sanctions.has_live_sanction(p["subject_id"]):
                         # F2: an upheld appeal restores rights immediately, so
                         # clear the world-state flag this tick.
                         state = self._commit_rights_change(state, p["subject_id"], False)
@@ -1047,6 +1059,8 @@ class SocietyCampaign:
     def _make_worker(self, snapshot: WorldState, tick: int, memory: dict[str, AgentMemory],
                      policy_rules: dict[str, Any] | None = None,
                      produced_this_tick: dict[str, float] | None = None) -> Callable:
+        # produced_this_tick here is only an "economy active" flag (prompts
+        # show current holdings); validation uses the per-actor tally.
         caller = self._caller
         temperature = self._temperature
         fingerprint = self._model_fingerprint()
@@ -1063,6 +1077,7 @@ class SocietyCampaign:
                 il_messages = build_inner_life_prompt_messages(
                     actor_id, snapshot, memory[actor_id],
                     shock_info=self._current_shock_info,
+                    tick=task.tick_created,
                 )
                 il_res = await caller.generate_structured(
                     il_messages,
@@ -1190,7 +1205,7 @@ class SocietyCampaign:
         async def _consolidate_one(aid: str):
             agent = state.agents[aid]
             overflow = memory[aid].get_overflow_entries(aid)
-            existing_summary = memory[aid].render_history_summary(aid).split("- From earlier: ")[-1] if "From earlier:" in memory[aid].render_history_summary(aid) else ""
+            existing_summary = memory[aid].consolidated_summary(aid)
 
             # Include current inner state so the reflection is grounded in
             # "how I feel right now" — makes the summary a living document
@@ -1816,11 +1831,14 @@ class _RecordingCaller:
         content = messages[0].get("content", "") if messages else ""
         t_start = time.monotonic()
         ts_start = _utc_now_iso()
+        # Resolve a provider-supplied subject BEFORE awaiting: calls are sent
+        # in the known order but complete in any order under concurrency.
+        provided = self._subject_provider() if self._subject_provider is not None else None
         res = await self._inner.generate_structured(messages, **kwargs)
         elapsed = int((time.monotonic() - t_start) * 1000)
         ts_end = _utc_now_iso()
-        if self._subject_provider is not None:
-            subject = self._subject_provider()
+        if provided is not None:
+            subject = provided
         else:
             subject = self._default_subject
             m = re.search(r'agent "([^"]+)"', content)
@@ -1920,8 +1938,14 @@ def _compute_metrics(result: SocietyResult, events: list[WorldEvent]) -> dict[st
             k: len(v) for k, v in sorted(result.assembly_quarantined.items())
         },
         "assembly_outcome": (result.assembly_outcome or {}).get("outcome"),
-        "sanctions": len(result.sanction_events),
-        "appeals": len(result.appeal_events),
+        # sanction_events also carries world_shock rows and rejected
+        # impositions, and appeal_events has a filed AND an adjudicated row
+        # per appeal: count only what the metric names.
+        "sanctions": sum(
+            1 for e in result.sanction_events
+            if e.get("kind") == "sanction_imposed" and e.get("decision", "accepted") == "accepted"
+        ),
+        "appeals": sum(1 for e in result.appeal_events if e.get("phase") == "filed"),
         "restorations": len(result.restoration_events),
         "model_calls": len(result.model_calls),
         "final_state_hash": result.final_state_hash,
