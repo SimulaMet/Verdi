@@ -44,8 +44,8 @@ from typing import Any
 from verdi_agents.agents.policy import ModelCaller, PolicyResult, parse_and_validate_action
 from verdi_agents.agents.pool import TaskPool
 from verdi_agents.analysis.scenario import build_t0_state
-from verdi_agents.audit.judge_live import _assert_no_key_material
-from verdi_agents.governance.assembled import Assembly
+from verdi_agents.audit.judge import _assert_no_key_material
+from verdi_agents.governance.assembly import Assembly
 from verdi_agents.governance.engine import GovernanceEngine
 from verdi_agents.measurement.longitudinal import ProbeRecorder, channel_trajectories
 from verdi_agents.measurement.probes import ProbeBank

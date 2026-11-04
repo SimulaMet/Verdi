@@ -295,8 +295,8 @@ class PilotDriver:
         root = Path(repo_root) if repo_root else Path(__file__).resolve().parents[3]
         self.repo_root = root
         self.loader = ScenarioLoader(
-            root / "experiments" / "scenarios" / "pilot_v1.json",
-            root / "experiments" / "task_tape" / "pilot_v1.json",
+            root / "tests" / "fixtures" / "reference_run" / "scenarios" / "pilot_v1.json",
+            root / "tests" / "fixtures" / "reference_run" / "task_tape" / "pilot_v1.json",
         )
         self._model = model
         self._model_id = model_id

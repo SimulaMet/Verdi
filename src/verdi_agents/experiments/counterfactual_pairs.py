@@ -66,8 +66,8 @@ from verdi_agents.analysis.report import (
     write_g5_report,
 )
 from verdi_agents.config import ModelEndpointConfig, model_endpoint_from_env
-from verdi_agents.pilot.driver import PilotDriver, PilotRun
-from verdi_agents.pilot.live import LiveModelAdapter, TapeReplayCaller, _ClientFactory
+from verdi_agents.reference_run.driver import PilotDriver, PilotRun
+from verdi_agents.reference_run.live import LiveModelAdapter, TapeReplayCaller, _ClientFactory
 from verdi_agents.schemas.actions import ProposedAction, ValidationResult
 from verdi_agents.schemas.events import WorldEvent
 from verdi_agents.world.log import EventLog, LogIntegrityError
@@ -642,8 +642,8 @@ def _t0_state(repo_root: str | Path | None = None):
 
     root = Path(repo_root) if repo_root else Path(__file__).resolve().parents[3]
     loader = ScenarioLoader(
-        root / "experiments" / "scenarios" / "pilot_v1.json",
-        root / "experiments" / "task_tape" / "pilot_v1.json",
+        root / "tests" / "fixtures" / "reference_run" / "scenarios" / "pilot_v1.json",
+        root / "tests" / "fixtures" / "reference_run" / "task_tape" / "pilot_v1.json",
     )
     return loader.load().t0_state
 

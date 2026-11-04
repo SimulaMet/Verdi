@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from verdi_agents.audit.live_bridge import (
+from verdi_agents.audit.trace_audit import (
     LiveLedgerError,
     LiveTapeTraceSource,
     audit_live_run,
@@ -161,7 +161,7 @@ def test_source_fetch_uses_sealed_span_key(mini_tape) -> None:
 
 def test_orphan_span_reported_not_dropped(tmp_path) -> None:
     """A span whose sealed event id is absent from the ledger is reported."""
-    from verdi_agents.audit.live_bridge import report_correlation
+    from verdi_agents.audit.trace_audit import report_correlation
 
     events = [
         _event(2, actor_id="a-1", task_id="t1", tick=1),

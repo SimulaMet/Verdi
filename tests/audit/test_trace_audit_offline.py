@@ -31,7 +31,7 @@ from verdi_agents.audit.simpleaudit_bridge import (
     build_simpleaudit_trace_source,
 )
 from verdi_agents.measurement.scoring import JudgeProtocol, RubricScorer, score_probe
-from verdi_agents.pilot.driver import run_pilot
+from verdi_agents.reference_run.driver import run_pilot
 from verdi_agents.schemas import AuditRecord, ProbeItem, WorldEvent
 
 RUBRIC_ID = "rubric-g4-offline"

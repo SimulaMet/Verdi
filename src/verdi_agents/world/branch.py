@@ -78,8 +78,8 @@ def _governance_event(
     construction except for ``kind``/``payload``.
 
     Local copy of the pilot's ``build_governance_event`` so the world
-    engine has no dependency on ``verdi_agents.pilot``. Keep in sync with its
-    counterpart in ``verdi_agents.pilot.driver.build_governance_event``; the
+    engine has no dependency on ``verdi_agents.reference_run``. Keep in sync with its
+    counterpart in ``verdi_agents.reference_run.driver.build_governance_event``; the
     pilot-branch byte-identity test
     (``tests/world/test_branch.py::test_branch_replay_matches_live_ledger``)
     guards against drift between the two builders. ``event_id`` comes

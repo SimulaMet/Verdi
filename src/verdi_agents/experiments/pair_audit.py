@@ -46,7 +46,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from verdi_agents.audit.judge_live import _assert_no_key_material, wilson_ci_95
+from verdi_agents.audit.judge import _assert_no_key_material, wilson_ci_95
 
 #: ADR-014 §2: pair_0 contributes ALL rows; other pairs suffix-only.
 FULL_CONTEXT_PAIR = 0

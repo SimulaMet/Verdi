@@ -227,7 +227,7 @@ def write_value_trajectories(run_dir: Path, trajectories: dict[str, Any]) -> Pat
     path = Path(run_dir) / "value_trajectories.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     text = json.dumps(trajectories, sort_keys=True, ensure_ascii=True, indent=2, default=str)
-    from verdi_agents.audit.judge_live import _assert_no_key_material
+    from verdi_agents.audit.judge import _assert_no_key_material
     _assert_no_key_material(text, str(path))
     path.write_text(text + "\n", encoding="utf-8")
     return path

@@ -37,7 +37,7 @@ def test_initialized_sweep_validates_from_its_folder(tmp_path, monkeypatch, caps
 
 
 def test_dotenv_in_current_folder_is_loaded(tmp_path, monkeypatch):
-    from verdi_agents.experiments.g5_judge_live import _load_dotenv_into_environ
+    from verdi_agents.experiments.pair_judge import _load_dotenv_into_environ
 
     (tmp_path / ".env").write_text("VERDI_TEST_CWD_KEY=from-cwd\n")
     monkeypatch.chdir(tmp_path)

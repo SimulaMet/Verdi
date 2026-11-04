@@ -25,7 +25,7 @@ from verdi_agents.experiments.treatments import (
     placebo_treatment,
     rights_restoration_treatment,
 )
-from verdi_agents.pilot.driver import PilotDriver
+from verdi_agents.reference_run.driver import PilotDriver
 from verdi_agents.world.branch import BranchSpec, branch_from_snapshot, manifest_for_branch
 from verdi_agents.world.reducer import WorldReducer
 from verdi_agents.world.replay import replay_in_memory

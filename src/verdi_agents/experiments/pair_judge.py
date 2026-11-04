@@ -1,7 +1,7 @@
 """ADR-014 G5-close live judge pass (Qwen-only, advisor-only).
 
 Runs the frozen ADR-014 §3 judge design over the SEALED G5 paired tapes
-(:mod:`verdi_agents.experiments.g5_close`): exactly 1 pre-run smoke call (when
+(:mod:`verdi_agents.experiments.pair_audit`): exactly 1 pre-run smoke call (when
 ``smoke_first``) + one judge call per sealed sample row (504 in the
 production run root), temperature 0.1, ``max_tokens >= 1024`` (2048 here),
 concurrency 1, hard call cap 700 — exceeding the cap ABORTS the run and is
@@ -52,9 +52,9 @@ from pathlib import Path
 from typing import Any
 
 from verdi_agents.agents.client import ModelClient
-from verdi_agents.audit.judge_live import _assert_no_key_material
+from verdi_agents.audit.judge import _assert_no_key_material
 from verdi_agents.config import ModelEndpointConfig, model_endpoint_from_env
-from verdi_agents.experiments.g5_close import (
+from verdi_agents.experiments.pair_audit import (
     EXPECTED_SAMPLE_ROWS,
     build_judge_section,
     build_sample_manifest,

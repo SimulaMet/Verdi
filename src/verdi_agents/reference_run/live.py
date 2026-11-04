@@ -23,7 +23,7 @@ from pathlib import Path
 from verdi_agents.agents.client import ModelClient, ModelResult
 from verdi_agents.agents.policy import ModelCaller
 from verdi_agents.config import model_endpoint_from_env
-from verdi_agents.pilot.driver import PilotDriver, PilotRun
+from verdi_agents.reference_run.driver import PilotDriver, PilotRun
 
 
 class _ClientFactory:

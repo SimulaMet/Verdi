@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from verdi_agents.pilot.driver import (
+from verdi_agents.reference_run.driver import (
     PROBE_TICKS,
     PilotDriver,
     probe_response_for,
@@ -99,7 +99,7 @@ def test_three_assemblies_ran(pilot) -> None:
 
 
 def test_probes_cover_required_ticks_and_channels(pilot) -> None:
-    from verdi_agents.pilot.driver import CHANNELS
+    from verdi_agents.reference_run.driver import CHANNELS
 
     seen_ticks = {p.tick for p in pilot.probe_results}
     for t in PROBE_TICKS:
@@ -147,7 +147,7 @@ def test_welfare_keyed_by_lifecycle_tick(pilot) -> None:
     """Regression (re-review note A): welfare/inequality metrics must be keyed
     by the LIFECYCLE tick of each snapshot (0 + SNAPSHOT_TICKS), NOT the
     reducer's cumulative transition counter (which is 126 in this run)."""
-    from verdi_agents.pilot.driver import SNAPSHOT_TICKS
+    from verdi_agents.reference_run.driver import SNAPSHOT_TICKS
 
     expected = {str(0), *(str(t) for t in SNAPSHOT_TICKS)}
     assert set(pilot.metrics["welfare_food"]["gini_by_tick"].keys()) == expected

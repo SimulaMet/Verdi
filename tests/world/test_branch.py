@@ -254,7 +254,7 @@ def test_two_branches_diverge(prefix):
 # --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")
 def pilot():
-    from verdi_agents.pilot.driver import PilotDriver
+    from verdi_agents.reference_run.driver import PilotDriver
 
     return PilotDriver(REPO_ROOT).run()
 

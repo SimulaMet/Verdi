@@ -82,7 +82,7 @@ def test_interview_post_pass_audit_returns_summary(tmp_path, monkeypatch):
     # audit_from_file is synchronous; wrapping its dict in asyncio.run crashed
     # every post-pass audit with "a coroutine was expected".
     import verdi_agents.audit.interview_audit as ia
-    from verdi_agents.experiments.interview_experiment import _audit_run
+    from verdi_agents.experiments.interviews import _audit_run
 
     (tmp_path / "interviews.jsonl").write_text("{}\n")
     monkeypatch.setattr(ia, "audit_from_file", lambda *a, **k: {"provenance_rows": 1})
@@ -169,7 +169,7 @@ def test_paired_run_rerun_sets_previous_attempt_aside(tmp_path, monkeypatch):
 
 
 def test_causal_guard_ignores_verbatim_model_text():
-    from verdi_agents.experiments.g5_close import _without_model_text, causal_word_guard
+    from verdi_agents.experiments.pair_audit import _without_model_text, causal_word_guard
 
     report = {"judge": {"rows": [{"rationale": "The proposal is causally linked.",
                                   "raw": "causal causal causal"}]}}
@@ -206,7 +206,7 @@ def test_probe_parser_likert_answer_leads_over_trailing_reasoning(reply, choice)
 
 
 def test_causal_guard_ignores_model_stance_in_error_field():
-    from verdi_agents.experiments.g5_close import _without_model_text, causal_word_guard
+    from verdi_agents.experiments.pair_audit import _without_model_text, causal_word_guard
 
     causal_word_guard(_without_model_text(
         {"rows": [{"error": "invalid stance 'causally_compliant'"}]}))

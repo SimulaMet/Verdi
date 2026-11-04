@@ -1,4 +1,4 @@
-"""Offline tests for verdi_agents.experiments.g5_close (ADR-014 §2/§4/§5/§6).
+"""Offline tests for verdi_agents.experiments.pair_audit (ADR-014 §2/§4/§5/§6).
 
 No network, no .env reads. Real-run-root tests skip when the gitignored
 production run root is absent; a synthetic 2-pair mini-run carries the
@@ -18,8 +18,8 @@ from tests.experiments.conftest import (
     requires_real_run_root,
 )
 
-from verdi_agents.audit.judge_live import _assert_no_key_material
-from verdi_agents.experiments.g5_close import (
+from verdi_agents.audit.judge import _assert_no_key_material
+from verdi_agents.experiments.pair_audit import (
     ADR5_OVERSTATEMENT_LIMITATION,
     B1_SCOPE,
     DEVIATIONS_FROM_CONTRACT,
@@ -555,7 +555,7 @@ def test_no_key_material_in_tape_and_report(mini_run_root):
     with pytest.raises(AssertionError):
         _assert_no_key_material(f'"raw": "verdict {fake_key} end"', "fake tape")
     # ... but the clean artifacts of a mock judge run must NOT raise.
-    from verdi_agents.experiments.g5_judge_live import MockJudgeClient, run_g5_judge
+    from verdi_agents.experiments.pair_judge import MockJudgeClient, run_g5_judge
 
     run = run_g5_judge(
         mini_run_root,
@@ -570,7 +570,7 @@ def test_no_key_material_in_tape_and_report(mini_run_root):
     _assert_no_key_material(tape_text, "judge_tape.jsonl")
     _assert_no_key_material(meta_text, "g5judge_run_meta.json")
     # A report containing a fake key must fail the write guard.
-    from verdi_agents.experiments.g5_close import write_g5_close_report
+    from verdi_agents.experiments.pair_audit import write_g5_close_report
 
     inputs = _report_inputs(mini_run_root=mini_run_root)
     report = build_g5_close_report(
@@ -733,7 +733,7 @@ def test_judge_section_engine_outcome_n1_flag(tmp_path):
 def test_judge_section_engine_outcome_breakdown_real_run_root():
     # Reviewer F8: the real tape maps 503 accepted / 1 rejected
     # (pair_0 event 42); the n=1 rejected class carries the flag.
-    from verdi_agents.experiments.g5_judge_live import MockJudgeClient, run_g5_judge
+    from verdi_agents.experiments.pair_judge import MockJudgeClient, run_g5_judge
 
     root = REAL_G5_RUN_ROOT
     out_dir = root / "g5judge_test_section"

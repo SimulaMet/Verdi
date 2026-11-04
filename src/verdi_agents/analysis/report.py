@@ -287,7 +287,7 @@ def build_g5_report(
 ) -> dict[str, Any]:
     """Assemble the schema-free, JSON-serializable G5 report.
 
-    ``pilot`` is a :class:`~verdi_agents.pilot.driver.PilotRun` (or any object
+    ``pilot`` is a :class:`~verdi_agents.reference_run.driver.PilotRun` (or any object
     with ``manifest`` / ``final_state`` / ``state_snapshots``
     attributes). ``treatment_run`` / ``placebo_run`` are WS-2 run dicts
     (``arm``, ``applied``, ``reason``, ``manifest``, ``state_snapshots``,

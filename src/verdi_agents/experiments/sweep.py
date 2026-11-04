@@ -320,7 +320,7 @@ def validate_runs(runs: list[RunSpec]) -> list[str]:
     """Check every resolved scenario offline. Returns warnings; raises on errors."""
     from verdi_agents.analysis.scenario import build_t0_state
     from verdi_agents.config import API_KEY_ENV, model_endpoint_from_env
-    from verdi_agents.experiments.g5_judge_live import _load_dotenv_into_environ
+    from verdi_agents.experiments.pair_judge import _load_dotenv_into_environ
 
     _load_dotenv_into_environ()
     keyless: dict[str, set[str]] = {}

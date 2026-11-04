@@ -16,8 +16,8 @@ from verdi_agents.schemas import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-SCENARIO = REPO_ROOT / "experiments" / "scenarios" / "pilot_v1.json"
-TAPE = REPO_ROOT / "experiments" / "task_tape" / "pilot_v1.json"
+SCENARIO = REPO_ROOT / "tests" / "fixtures" / "reference_run" / "scenarios" / "pilot_v1.json"
+TAPE = REPO_ROOT / "tests" / "fixtures" / "reference_run" / "task_tape" / "pilot_v1.json"
 
 
 def probe(agent: str, tick: int, channel: str, vector: dict[str, float], pid: str | None = None) -> ProbeResult:

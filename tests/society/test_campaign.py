@@ -886,7 +886,7 @@ def test_parallel_assembly_does_not_change_outcomes(scenario, tmp_path, monkeypa
     asserts the parallel path actually overlaps model calls."""
     import copy
 
-    from verdi_agents.governance.assembled import _run_sequential
+    from verdi_agents.governance.assembly import _run_sequential
     from verdi_agents.society import campaign as campaign_module
 
     class ConcurrencyProbeCaller(ScriptedCaller):

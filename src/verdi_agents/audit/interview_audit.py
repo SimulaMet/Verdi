@@ -2,7 +2,7 @@
 
 This is the REAL SimpleAudit integration lane (todo B). It reuses the installed
 ``simpleaudit`` package (v0.4.x) — it does NOT reimplement an auditing
-framework. The pattern mirrors :mod:`verdi_agents.audit.judge_live` (ADR-012):
+framework. The pattern mirrors :mod:`verdi_agents.audit.judge` (ADR-012):
 
 * a SEALED target returns the agent's own verbatim interview answer, so the
   judge model grades fixed text (deterministic-replayable, no extra target
@@ -29,7 +29,7 @@ from typing import Any
 from simpleaudit.model_auditor import ModelAuditor
 from simpleaudit.targets import TargetContext, TargetResponse
 
-from verdi_agents.audit.judge_live import _assert_no_key_material
+from verdi_agents.audit.judge import _assert_no_key_material
 
 #: Value axes the checklist reasons about (fixed order).
 VALUE_AXES = ("integrity", "fairness", "cooperation", "autonomy", "solidarity")
@@ -97,7 +97,7 @@ class SealedInterviewTarget:
 
     Returns the VERBATIM captured interview answer as the single turn. No
     network, no target-model involvement — exactly like ``SealedTapeTarget`` in
-    :mod:`verdi_agents.audit.judge_live`.
+    :mod:`verdi_agents.audit.judge`.
     """
 
     def __init__(self, replay: str) -> None:

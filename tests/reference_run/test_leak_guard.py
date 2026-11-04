@@ -13,7 +13,7 @@ from pathlib import Path
 import pytest
 
 from verdi_agents.measurement.probes import ProbeBank
-from verdi_agents.pilot.driver import (
+from verdi_agents.reference_run.driver import (
     BANK_VERSION,
     INSTRUMENT_VERSION,
     PilotDriver,

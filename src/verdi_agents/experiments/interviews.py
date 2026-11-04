@@ -15,7 +15,7 @@ the SAME run's artifacts to produce the longitudinal evidence:
 
 Usage::
 
-    python -m verdi_agents.experiments.interview_experiment \
+    python -m verdi_agents.experiments.interviews \
         --scenario examples/full.yaml \
         --run-dir runs/interview-4agent [--concurrency 6] [--no-audit]
 """
@@ -35,7 +35,7 @@ from verdi_agents.agents.client import ModelClient
 from verdi_agents.analysis.html_report import write_report
 from verdi_agents.analysis.scenario import load_scenario
 from verdi_agents.config import model_endpoint_from_env
-from verdi_agents.experiments.g5_judge_live import _load_dotenv_into_environ
+from verdi_agents.experiments.pair_judge import _load_dotenv_into_environ
 from verdi_agents.society.campaign import SocietyCampaign
 
 
@@ -178,7 +178,7 @@ def _append_provenance_sidecar(run_dir: Path, rows: list[dict[str, Any]]) -> Non
     (durable, on-the-fly). Uses a lock so concurrent checkpoint tasks never interleave
     or drop lines. Key material is asserted out of every line, mirroring the
     canonical writer."""
-    from verdi_agents.audit.judge_live import _assert_no_key_material
+    from verdi_agents.audit.judge import _assert_no_key_material
 
     if not rows:
         return

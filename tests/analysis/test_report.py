@@ -19,7 +19,7 @@ from verdi_agents.experiments.treatments import (
     placebo_treatment,
     rights_restoration_treatment,
 )
-from verdi_agents.pilot.driver import PilotDriver, SeededScheduler, _precompute_dispatch
+from verdi_agents.reference_run.driver import PilotDriver, SeededScheduler, _precompute_dispatch
 from verdi_agents.schemas import ExperimentManifest
 from verdi_agents.world.branch import (
     BranchSpec,
@@ -109,7 +109,7 @@ def test_roundtrip_via_jsonl_parse():
 # --------------------------------------------------------------------------- #
 
 # SF4: derive the repo root from THIS test file's location — the
-# checkout (worktree or main) that contains src/verdi_agents/pilot/driver.py —
+# checkout (worktree or main) that contains src/verdi_agents/reference_run/driver.py —
 # instead of a hardcoded absolute path. Optional override via the
 # VERDI_REPO_ROOT env var: use it only when the pilot's recorded assets
 # live in a different checkout than the code under test.
@@ -122,12 +122,12 @@ def _pilot():
     """Run the pilot with the derived repo root.
 
     ``PilotDriver`` itself would already default to
-    ``Path(__file__).parents[3]`` of ``src/verdi_agents/pilot/driver.py``; we
+    ``Path(__file__).parents[3]`` of ``src/verdi_agents/reference_run/driver.py``; we
     pass the explicitly-derived root so the derivation lives in one,
     testable place and an env-var override can redirect it.
     """
-    assert (G5_REPO_ROOT / "src" / "verdi_agents" / "pilot" / "driver.py").is_file(), (
-        f"G5_REPO_ROOT {G5_REPO_ROOT} does not contain src/verdi_agents/pilot/driver.py"
+    assert (G5_REPO_ROOT / "src" / "verdi_agents" / "reference_run" / "driver.py").is_file(), (
+        f"G5_REPO_ROOT {G5_REPO_ROOT} does not contain src/verdi_agents/reference_run/driver.py"
     )
     return PilotDriver(G5_REPO_ROOT).run()
 
@@ -497,7 +497,7 @@ def test_build_g5_report_raw_source_satisfies_estimates():
 def test_repo_root_derivation_contains_driver():
     # SF4: the root is derived from this test file's own location, not a
     # frozen hardcoded absolute path — so it points at the checkout
-    # containing src/verdi_agents/pilot/driver.py and the pilot assets.
+    # containing src/verdi_agents/reference_run/driver.py and the pilot assets.
     assert G5_REPO_ROOT.is_absolute()
     # derived from __file__ (or the VERDI_REPO_ROOT override), not frozen
     expected = (
@@ -506,5 +506,5 @@ def test_repo_root_derivation_contains_driver():
         else Path(__file__).resolve().parents[2]
     )
     assert expected.resolve() == G5_REPO_ROOT
-    assert (G5_REPO_ROOT / "src" / "verdi_agents" / "pilot" / "driver.py").is_file()
-    assert (G5_REPO_ROOT / "experiments" / "scenarios" / "pilot_v1.json").is_file()
+    assert (G5_REPO_ROOT / "src" / "verdi_agents" / "reference_run" / "driver.py").is_file()
+    assert (G5_REPO_ROOT / "tests" / "fixtures" / "reference_run" / "scenarios" / "pilot_v1.json").is_file()

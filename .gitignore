@@ -13,3 +13,6 @@ artifacts/
 
 # GitHub Pages build output (site/build.py)
 _site/
+
+# Local working notes (not published)
+notes/

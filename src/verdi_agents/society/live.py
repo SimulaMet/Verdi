@@ -33,9 +33,9 @@ from pathlib import Path
 
 from verdi_agents.agents.client import _BACKOFF_CAP, _CONNECT_TIMEOUT, _POOL_TIMEOUT, ModelClient
 from verdi_agents.analysis.scenario import load_scenario
-from verdi_agents.audit.judge_live import _assert_no_key_material
+from verdi_agents.audit.judge import _assert_no_key_material
 from verdi_agents.config import ModelEndpointConfig, api_key_values, model_endpoint_from_env
-from verdi_agents.experiments.g5_judge_live import _load_dotenv_into_environ
+from verdi_agents.experiments.pair_judge import _load_dotenv_into_environ
 from verdi_agents.society.campaign import PROTOCOL_VERSION, SocietyCampaign
 
 DEFAULT_CONCURRENCY = 4

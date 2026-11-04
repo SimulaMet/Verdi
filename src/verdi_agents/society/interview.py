@@ -10,7 +10,7 @@ them (``render_history_summary`` is a pure render; no ``append_*`` call is made)
 
 Records are appended to ``run_dir/interviews.jsonl`` (one JSON object per line)
 and guarded against key material before writing (mirrors the existing artifact
-safety in :mod:`verdi_agents.audit.judge_live`).
+safety in :mod:`verdi_agents.audit.judge`).
 """
 from __future__ import annotations
 
@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from verdi_agents.audit.judge_live import _assert_no_key_material
+from verdi_agents.audit.judge import _assert_no_key_material
 from verdi_agents.schemas.world import AgentState
 from verdi_agents.society.memory import AgentMemory
 

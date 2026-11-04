@@ -4,7 +4,7 @@ Adds the missing G4 piece from the L2 bridge (``live_bridge.py``): a judge
 **model** verdict per sampled dispatch row, reported against the
 deterministic code-level judgment (SimpleAudit ``grade_choice_match``) and
 the engine decision. Correlation reuses
-:func:`~verdi_agents.audit.live_bridge.correlate_tape_to_ledger` — sealed
+:func:`~verdi_agents.audit.trace_audit.correlate_tape_to_ledger` — sealed
 ``event_id`` only, never positional.
 
 SimpleAudit usage (recorded in the report's ``simpleaudit_usage`` section):
@@ -57,7 +57,7 @@ from typing import Any
 from simpleaudit.model_auditor import ModelAuditor
 from simpleaudit.targets import TargetContext, TargetResponse
 
-from verdi_agents.audit.live_bridge import (
+from verdi_agents.audit.trace_audit import (
     LiveLedgerError,
     _import_simpleaudit,
     _model_choice,

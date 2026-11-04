@@ -11,7 +11,7 @@ live Qwen endpoint. These tests pin the live path of PilotDriver:
 * live_run_meta.json never contains key material.
 
 The REAL live run is a script-style invocation outside pytest; CI must
-never make network calls (see src/verdi_agents/pilot/live.py docstring).
+never make network calls (see src/verdi_agents/reference_run/live.py docstring).
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from pathlib import Path
 import pytest
 
 from verdi_agents.agents.client import ModelResult
-from verdi_agents.pilot.driver import (
+from verdi_agents.reference_run.driver import (
     PilotDriver,
     _precompute_dispatch,
     model_output_for,
@@ -297,7 +297,7 @@ def test_live_run_stamps_simpleaudit_version_on_manifest(tmp_path, monkeypatch) 
 
 
 def test_live_adapter_counts_calls_and_delegates(tmp_path) -> None:
-    from verdi_agents.pilot.live import LiveModelAdapter
+    from verdi_agents.reference_run.live import LiveModelAdapter
 
     tape = _tape_in_dispatch_order()
     fake = _make_fake(tape)
@@ -341,7 +341,7 @@ def test_tape_replay_reproduces_live_ledger_byte_for_byte(tmp_path) -> None:
     event_log.jsonl — not just the scaffold-invariant state hash.
     """
     _require_l1_artifacts()
-    from verdi_agents.pilot.live import run_pilot_from_live_tape
+    from verdi_agents.reference_run.live import run_pilot_from_live_tape
 
     pilot = run_pilot_from_live_tape(L1_TAPE, repo_root=MAIN_CHECKOUT, out_dir=tmp_path)
 
@@ -384,7 +384,7 @@ def test_tape_replay_caller_reconstructs_model_result() -> None:
     """
     import asyncio
 
-    from verdi_agents.pilot.live import TapeReplayCaller
+    from verdi_agents.reference_run.live import TapeReplayCaller
 
     rows = [
         {"seq": 0, "response_raw": '{"a": 1}', "model": "Qwen3.8-27B",

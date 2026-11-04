@@ -11,7 +11,7 @@ import hashlib
 import json
 import re
 
-from verdi_agents.governance.assembled import Assembly
+from verdi_agents.governance.assembly import Assembly
 from verdi_agents.schemas import AgentState, ValueProfile, WorldState
 
 from .conftest import ELIGIBLE, make_engine
@@ -239,7 +239,7 @@ def test_parallel_batch_runner_matches_sequential_outcomes():
     proposals, votes, quarantine records, abstentions and outcome as the
     default sequential runner for identical model outputs — only call
     wall-clock/telemetry order may differ."""
-    from verdi_agents.governance.assembled import _run_sequential
+    from verdi_agents.governance.assembly import _run_sequential
     from verdi_agents.society.campaign import _run_bounded
 
     def handler(phase, voter, proposal):
