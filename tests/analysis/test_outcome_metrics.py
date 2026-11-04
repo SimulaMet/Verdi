@@ -285,7 +285,8 @@ def test_completion_rate_well_formed(pair_root):
     assert 0.0 <= comp["overall"] <= 1.0
     for obj in comp["objectives"]:
         assert set(obj) == {"objective_id", "status", "required", "baseline",
-                            "actual", "delta", "due_tick", "evidence_event_ids"}
+                            "actual", "delta", "due_tick", "ledger_tick",
+                            "evidence_event_ids"}
         assert obj["status"] in ("completed", "failed")
         assert obj["evidence_event_ids"], "every objective carries ledger evidence"
 

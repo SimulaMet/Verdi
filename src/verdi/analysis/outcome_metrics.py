@@ -38,6 +38,7 @@ import argparse
 import json
 import math
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -141,6 +142,27 @@ def gini(values: list[float]) -> float | None:
 # 1. completion rate (objective task success)
 # --------------------------------------------------------------------------- #
 
+_TASK_TICK = re.compile(r"-t(\d+)-")
+
+
+def _declared_due_by_objective(run_dir: Path) -> dict[str, int]:
+    """objective_id -> declared due tick from ``scenario_resolved.yaml``
+    ({} when absent or malformed)."""
+    try:
+        import yaml
+
+        from verdi.world.economy import parse_task_objectives
+
+        resolved = yaml.safe_load(
+            (run_dir / "scenario_resolved.yaml").read_text(encoding="utf-8"))
+        if not isinstance(resolved, dict):
+            return {}
+        return {o["objective_id"]: int(o["due_tick"])
+                for o in parse_task_objectives(resolved.get("tasks"))}
+    except (OSError, ValueError, yaml.YAMLError):
+        return {}
+
+
 def completion_rate(run_dir: Path) -> dict[str, Any]:
     """Verified delivery-objective outcomes, straight off the event ledger.
 
@@ -158,25 +180,49 @@ def completion_rate(run_dir: Path) -> dict[str, Any]:
     Returns::
 
         {"objectives": [{objective_id, status, required, baseline, actual,
-                          delta, due_tick, evidence_event_ids}],
+                          delta, due_tick, ledger_tick, evidence_event_ids}],
          "overall": float | None,
          "completed": int, "failed": int, "evaluated": int}
     """
     run_dir = _require_run_dir(run_dir)
     events = _read_jsonl(run_dir, "events")
+    declared_due = _declared_due_by_objective(run_dir)
     objectives: list[dict[str, Any]] = []
+    # Lifecycle tick of each outcome: under an economy there is exactly one
+    # end-of-tick ``consumption`` event per lifecycle tick, written just
+    # before objectives are evaluated, so (consumption events so far) - 1 is
+    # exact even when a whole tick's actions were quarantined. Otherwise the
+    # tick is carried forward from task ids (soc-tNN-..).
+    has_consumption = any(e.get("kind") == "consumption" for e in events)
+    lifecycle = 0
+    consumed = 0
     for ev in events:
+        if has_consumption:
+            if ev.get("kind") == "consumption":
+                consumed += 1
+                lifecycle = consumed - 1
+        else:
+            m = _TASK_TICK.search(str((ev.get("payload") or {}).get("task_id") or ""))
+            if m:
+                lifecycle = int(m.group(1))
         if ev.get("kind") not in ("task_completed", "task_failed"):
             continue
         payload = ev.get("payload") or {}
+        oid = str(payload.get("objective_id", ""))
+        ledger_tick = int(ev.get("tick", -1))
         objectives.append({
-            "objective_id": str(payload.get("objective_id", "")),
+            "objective_id": oid,
             "status": "completed" if ev["kind"] == "task_completed" else "failed",
             "required": payload.get("required"),
             "baseline": payload.get("baseline"),
             "actual": payload.get("actual"),
             "delta": payload.get("delta"),
-            "due_tick": int(ev.get("tick", -1)),
+            # Lifecycle due tick: declared in the frozen scenario when present,
+            # else the lifecycle tick of the actions just before the outcome
+            # (objectives are evaluated after that tick's actions). The
+            # event's own ``tick`` is the ledger transition counter.
+            "due_tick": declared_due.get(oid, lifecycle),
+            "ledger_tick": ledger_tick,
             "evidence_event_ids": [int(ev["event_id"])],
         })
     objectives.sort(key=lambda o: (o["due_tick"], o["objective_id"]))
@@ -325,7 +371,16 @@ def exclusion_episodes(run_dir: Path) -> dict[str, Any]:
     run_dir = _require_run_dir(run_dir)
     sanctions = _read_jsonl(run_dir, "sanctions")
     events = _read_jsonl(run_dir, "events")
-    last_ledger_tick = max((int(e.get("tick", -1)) for e in events), default=-1)
+    # Sanction ticks are LIFECYCLE ticks; events.jsonl ``tick`` is the
+    # reducer's transition counter (often 5x larger). The run's last lifecycle
+    # tick comes from resources.jsonl (one row per lifecycle tick); the
+    # ledger tick is only a fallback for runs without it.
+    resource_ticks = [r.get("tick") for r in _read_jsonl(run_dir, "resources")]
+    resource_ticks = [int(t) for t in resource_ticks if isinstance(t, (int, float))]
+    # Open episodes count up to (not including) the last observed tick --
+    # the convention pinned by test_exclusion_repeat_episode_flag_synthetic.
+    run_end_tick = (max(resource_ticks) if resource_ticks
+                    else max((int(e.get("tick", -1)) for e in events), default=-1))
 
     agents: dict[str, dict[str, Any]] = {}
     totals = {"sanctions_imposed": 0, "appeals_filed": 0,
@@ -360,9 +415,6 @@ def exclusion_episodes(run_dir: Path) -> dict[str, Any]:
                 continue
             subject, episode = hit
             episode["restored_tick"] = int(rec.get("tick"))
-            entry = _agent(subject)
-            lo, hi = episode["effective_tick"], episode["restored_tick"]
-            entry["excluded_ticks"] += max(0, hi - lo)
         elif rtype == "appeal":
             # sanctions.jsonl appeal records: kind appeal_filed (phase "filed")
             # and adjudication events with kind appeal_upheld / appeal_dismissed
@@ -373,19 +425,24 @@ def exclusion_episodes(run_dir: Path) -> dict[str, Any]:
             elif kind == "appeal_upheld":
                 totals["appeals_upheld"] += 1
 
-    # Open episodes: excluded until the last ledger tick (inclusive count).
-    for subject, episode in open_episodes.values():
-        entry = _agent(subject)
-        hi = max(episode["effective_tick"], last_ledger_tick)
-        entry["excluded_ticks"] += max(0, hi - episode["effective_tick"])
     del open_episodes
 
     out_agents: dict[str, Any] = {}
     for aid in sorted(agents):
         entry = agents[aid]
         entry["episodes"].sort(key=lambda e: (e["effective_tick"], e["sanction_id"]))
-        closed = [e for e in entry["episodes"] if e["restored_tick"] is not None]
-        entry["repeat_episode"] = len(closed) > 1 or len(entry["episodes"]) > 1
+        # Overlapping sanctions are ONE exclusion: merge intervals before
+        # counting (open episodes run to the last lifecycle tick).
+        merged: list[list[int]] = []
+        for e in entry["episodes"]:
+            lo = e["effective_tick"]
+            hi = e["restored_tick"] if e["restored_tick"] is not None else max(lo, run_end_tick)
+            if merged and lo <= merged[-1][1]:
+                merged[-1][1] = max(merged[-1][1], hi)
+            else:
+                merged.append([lo, hi])
+        entry["excluded_ticks"] = sum(max(0, hi - lo) for lo, hi in merged)
+        entry["repeat_episode"] = len(merged) > 1
         out_agents[aid] = entry
     return {"agents": out_agents, "totals": totals}
 
@@ -457,7 +514,11 @@ def recovery_time(
     scenario = manifest.get("scenario") if isinstance(manifest.get("scenario"), dict) else {}
     for delivery in (scenario.get("tasks") or {}).get("deliveries", []) or []:
         if isinstance(delivery, dict) and delivery.get("due_tick") is not None:
-            due_ticks.append(int(delivery["due_tick"]))
+            try:
+                due_ticks.append(int(delivery["due_tick"]))
+            except (TypeError, ValueError):
+                due_ticks = []  # malformed: degrade to raw ledger ticks
+                break
     # The campaign writes the frozen scenario it actually ran next to the
     # artifacts; that is the authoritative source of declared due ticks.
     try:
@@ -465,11 +526,22 @@ def recovery_time(
 
         resolved = yaml.safe_load(
             (run_dir / "scenario_resolved.yaml").read_text(encoding="utf-8"))
-        for delivery in (resolved.get("tasks") or {}).get("deliveries", []) or []:
-            if isinstance(delivery, dict) and delivery.get("due_tick") is not None:
-                due_ticks.append(int(delivery["due_tick"]))
-    except (OSError, ValueError):
-        due_ticks = []
+    except (OSError, ValueError, yaml.YAMLError):
+        resolved = None
+    if isinstance(resolved, dict):
+        # Authoritative: replaces (never appends to) manifest-derived ticks.
+        try:
+            due_ticks = [
+                int(delivery["due_tick"])
+                for delivery in (resolved.get("tasks") or {}).get("deliveries", []) or []
+                if isinstance(delivery, dict) and delivery.get("due_tick") is not None
+            ]
+        except (AttributeError, TypeError, ValueError):
+            due_ticks = []  # malformed declaration: degrade to raw ledger ticks
+    # The campaign evaluates objectives in due-tick order (declaration order
+    # within a tick), so the declared list must be put in that order before
+    # zipping; a YAML listing like [12, 30, 46, 30] would otherwise mislabel.
+    due_ticks.sort()
 
     outcomes = [
         ev for ev in events if ev.get("kind") in ("task_completed", "task_failed")
@@ -509,7 +581,10 @@ def recovery_time(
         if r is not None:
             rates[tick] = r
 
-    threshold = (target_fraction * pre_shock_rate) if pre_shock_rate is not None else None
+    # A zero baseline gives a zero threshold that any rate (even 0.0) meets,
+    # i.e. "recovery" with nothing recovered; treat it like an undefined
+    # baseline (criterion not evaluable -> censored).
+    threshold = (target_fraction * pre_shock_rate) if pre_shock_rate else None
     recovered = False
     recovery_tick: int | None = None
     if threshold is not None:

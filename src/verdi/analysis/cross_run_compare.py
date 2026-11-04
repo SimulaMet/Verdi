@@ -126,7 +126,10 @@ def compare_runs(run_dirs: list[Path]) -> dict[str, Any]:
                 round(sum(1 for c in consistent if not c) / len(consistent), 3)
                 if consistent else None
             ),
-            "ticks_audited": sorted({int(r.get("tick", -1)) for r in prov}),
+            "ticks_audited": sorted({
+                int(r["tick"]) for r in prov
+                if isinstance(r.get("tick"), (int, float)) and not isinstance(r.get("tick"), bool)
+            }),
         }
         runs.append({
             "run_dir": str(rd),

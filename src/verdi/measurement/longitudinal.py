@@ -132,9 +132,24 @@ def _parse_choice(content: str, options: list[str]) -> tuple[str, bool]:
             if opt.lower() == r:
                 return opt, False
         if all(opt.isdigit() for opt in canonical):
-            m = re.search(r"\d", r)
-            if m:
-                return m.group(0), False
+            # Drop scale descriptions ("0 to 5", "0-5") and denominators
+            # ("4/5", "4 out of 5" -> 4), then take the FIRST standalone
+            # in-range integer: the answer leads, trailing reasoning ("2
+            # factors") must not override it. A trailing "." or ".0" is fine;
+            # "3.5", "10" and "7 out of 10" never yield an in-range digit.
+            r = re.sub(r"\b\d+\s*(?:-|–|to)\s*\d+\b", " ", r)
+            r = re.sub(r"(\d+)\s*(?:/|out of)\s*\d+", r"\1", r)
+            for num in re.findall(r"(?<![\d.])(\d+)(?:\.0+)?(?!\d|\.\d)", r):
+                if num in canonical:
+                    return num, False
+            return low, True
+        # Word options (yes/no): tolerate punctuation, quotes and a trailing
+        # sentence ("Yes.", '"no"', "Yes, I would.") by matching the first word.
+        m = re.match(r"^\W*([a-z]+)\b", r)
+        if m:
+            for opt in canonical:
+                if opt.lower() == m.group(1):
+                    return opt, False
         return low, True
 
     if text.startswith("{"):
@@ -142,8 +157,12 @@ def _parse_choice(content: str, options: list[str]) -> tuple[str, bool]:
             payload = json.loads(text)
         except json.JSONDecodeError:
             payload = None
-        if isinstance(payload, dict) and isinstance(payload.get("choice"), str):
-            return _resolve(payload["choice"])
+        if isinstance(payload, dict):
+            choice = payload.get("choice")
+            if isinstance(choice, str):
+                return _resolve(choice)
+            if isinstance(choice, int) and not isinstance(choice, bool):
+                return _resolve(str(choice))  # {"choice": 4, ...}
     return _resolve(text)
 
 
