@@ -176,7 +176,7 @@ hosted APIs).</p>
 cd my-study                             # add your key to .env, endpoint to examples/starter.yaml
 uvx verdi-agents run examples/starter.yaml
 open runs/starter/report.html</code></pre>
-<p>Or <code>pip install verdi-agents</code>, then use the <code>verdi</code> command.</p>
+<p>Or <code>pip install verdi-agents</code>, then run <code>verdi-agents</code> directly.</p>
 </section>
 
 <section><h2>What Verdi measures</h2>
@@ -189,10 +189,10 @@ LLM systems.</p>
 <div class="card"><h3>Describe a society</h3><p>One YAML file: the model endpoint,
 agents with roles and declared values, resources, laws, constitution, shocks and
 when to interview them. See the <a href="scenarios.html">scenario reference</a>.</p></div>
-<div class="card"><h3>Run it</h3><p><code>verdi run scenario.yaml</code> drives every
+<div class="card"><h3>Run it</h3><p><code>verdi-agents run scenario.yaml</code> drives every
 agent through every tick, validates each action against the law, and writes the
 full event ledger.</p></div>
-<div class="card"><h3>Compare</h3><p><code>verdi sweep</code> reruns the scenario
+<div class="card"><h3>Compare</h3><p><code>verdi-agents sweep</code> reruns the scenario
 across models and settings and summarizes the outcomes per condition.
 See <a href="sweeps.html">sweeps</a>.</p></div>
 </div></section>
