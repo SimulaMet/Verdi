@@ -1,6 +1,6 @@
 # Verdi STARTER: the smallest useful scenario (4 agents, 20 ticks, 1 meeting).
 #
-#   python -m verdi.society.live --scenario examples/starter.yaml --run-dir runs/starter
+#   python -m verdi_agents.society.live --scenario examples/starter.yaml --run-dir runs/starter
 #   open runs/starter/report.html
 #
 # Every run records this file's `model:` block, so the YAML is the frozen input.

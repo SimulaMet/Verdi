@@ -5,8 +5,8 @@ import asyncio
 import json
 from types import SimpleNamespace
 
-from verdi.society.memory import AgentMemory
-from verdi.society.tasks import _parse_orchestrator_response, generate_llm_tape
+from verdi_agents.society.memory import AgentMemory
+from verdi_agents.society.tasks import _parse_orchestrator_response, generate_llm_tape
 
 from .test_tasks import make_agent, make_state
 
@@ -63,7 +63,7 @@ def test_consolidated_summary_excludes_recent_entries():
 def test_watchdog_counts_in_process_calls_during_long_batches(tmp_path, monkeypatch):
     # Reflection/consolidation batches write model_calls.jsonl only at the
     # end; completed calls must still reset the stall deadline.
-    import verdi.society.live as live_module
+    import verdi_agents.society.live as live_module
 
     (tmp_path / "events.jsonl").write_text("")
     monkeypatch.setattr(live_module, "_HEARTBEAT_INTERVAL_SECONDS", 0.05)
@@ -85,8 +85,8 @@ def test_watchdog_counts_in_process_calls_during_long_batches(tmp_path, monkeypa
 
 
 def test_prompt_shows_lifecycle_tick_not_ledger_counter():
-    from verdi.schemas import Task
-    from verdi.society.prompting import build_social_prompt_messages
+    from verdi_agents.schemas import Task
+    from verdi_agents.society.prompting import build_social_prompt_messages
 
     state = make_state({"a1": make_agent("a1")}, tick=104)
     task = Task(task_id="soc-t07-00", actor_id="a1", action_type="produce",
@@ -98,7 +98,7 @@ def test_prompt_shows_lifecycle_tick_not_ledger_counter():
 
 
 def test_metrics_count_only_accepted_sanctions_and_filed_appeals():
-    from verdi.society.campaign import _compute_metrics
+    from verdi_agents.society.campaign import _compute_metrics
 
     result = SimpleNamespace(
         probes=[], constitution_versions=[], quarantined=[], assembly_quarantined={},
@@ -118,7 +118,7 @@ def test_metrics_count_only_accepted_sanctions_and_filed_appeals():
 
 
 def test_inner_life_prompt_uses_lifecycle_tick():
-    from verdi.society.inner_life import build_inner_life_prompt_messages
+    from verdi_agents.society.inner_life import build_inner_life_prompt_messages
 
     state = make_state({"a1": make_agent("a1")}, tick=104)
     user = build_inner_life_prompt_messages("a1", state, AgentMemory(), tick=7)[1]["content"]
@@ -126,7 +126,7 @@ def test_inner_life_prompt_uses_lifecycle_tick():
 
 
 def test_probe_subjects_follow_send_order_not_completion_order():
-    from verdi.society.campaign import _RecordingCaller
+    from verdi_agents.society.campaign import _RecordingCaller
 
     class _Slow:
         async def generate_structured(self, messages, **kw):

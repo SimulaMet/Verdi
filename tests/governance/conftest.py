@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from verdi.governance import GovernanceEngine
-from verdi.schemas import (
+from verdi_agents.governance import GovernanceEngine
+from verdi_agents.schemas import (
     Appeal,
     ConstitutionVersion,
     EvidenceReference,

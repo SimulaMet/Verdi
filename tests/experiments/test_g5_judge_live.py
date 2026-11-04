@@ -1,4 +1,4 @@
-"""Offline tests for verdi.experiments.g5_judge_live (ADR-014 §3/§6).
+"""Offline tests for verdi_agents.experiments.g5_judge_live (ADR-014 §3/§6).
 
 All network is mocked via :class:`MockJudgeClient` (ADR-012
 ``_RecordingJudgeClient`` pattern). No network, no .env reads.
@@ -12,8 +12,8 @@ from pathlib import Path
 import pytest
 from tests.experiments.conftest import make_mini_run_root
 
-from verdi.experiments.g5_close import build_sample_manifest
-from verdi.experiments.g5_judge_live import (
+from verdi_agents.experiments.g5_close import build_sample_manifest
+from verdi_agents.experiments.g5_judge_live import (
     JUDGE_SYSTEM_PROMPT,
     MockJudgeClient,
     engine_outcome_for_row,
@@ -226,8 +226,8 @@ def test_mock_client_max_calls_enforced():
 def test_endpoint_config_zero_retries(monkeypatch):
     # Reviewer HIGH-1: the effective endpoint config MUST carry
     # max_retries=0 so client-internal retries cannot blow the hard cap.
-    from verdi.config import ModelEndpointConfig
-    from verdi.experiments.g5_judge_live import _resolve_endpoint_config
+    from verdi_agents.config import ModelEndpointConfig
+    from verdi_agents.experiments.g5_judge_live import _resolve_endpoint_config
 
     monkeypatch.setenv("VERDI_DOTENV_PATH", "/nonexistent/.env")
     monkeypatch.setenv("VERDI_VLLM_BASE_URL", "http://localhost:9999/v1")
@@ -244,7 +244,7 @@ def test_run_g5_judge_sample_count_assertion(mini_run_root):
     # The mini run has 4 sample rows, not the frozen production 504: the
     # default assert fires with a clear message (run_g5_judge is built for
     # the sealed production sample).
-    from verdi.experiments.g5_judge_live import G5JudgeError
+    from verdi_agents.experiments.g5_judge_live import G5JudgeError
 
     with pytest.raises(G5JudgeError, match="expected 504"):
         run_g5_judge(
@@ -267,7 +267,7 @@ def test_load_dotenv_handles_export_prefix(tmp_path, monkeypatch):
     )
     monkeypatch.delenv("VERDI_TEST_BASE_URL", raising=False)
     monkeypatch.setenv("VERDI_DOTENV_PATH", str(env_file))
-    from verdi.experiments.g5_judge_live import _load_dotenv_into_environ
+    from verdi_agents.experiments.g5_judge_live import _load_dotenv_into_environ
 
     _load_dotenv_into_environ()
     assert os.environ["VERDI_TEST_BASE_URL"] == "https://example/api/v1"

@@ -10,8 +10,8 @@ from __future__ import annotations
 
 import pytest
 
-from verdi.schemas import AgentState, ProposedAction, ValueProfile, WorldState
-from verdi.world.economy import (
+from verdi_agents.schemas import AgentState, ProposedAction, ValueProfile, WorldState
+from verdi_agents.world.economy import (
     apply_consumption,
     apply_production_deduction,
     check_delivery,
@@ -21,8 +21,8 @@ from verdi.world.economy import (
     parse_task_objectives,
     production_input_cost,
 )
-from verdi.world.policy import ENFORCEABLE_KEYS, policy_block, validate_enforceable_rules
-from verdi.world.validate import validate_action
+from verdi_agents.world.policy import ENFORCEABLE_KEYS, policy_block, validate_enforceable_rules
+from verdi_agents.world.validate import validate_action
 
 _VALUES = ValueProfile(
     integrity=0.8, fairness=0.9, cooperation=0.7, autonomy=0.5, solidarity=0.85

@@ -6,9 +6,9 @@ import asyncio
 import httpx
 import pytest
 
-from verdi import config as cfg_mod
-from verdi.agents import ModelClient
-from verdi.agents.client import ModelError
+from verdi_agents import config as cfg_mod
+from verdi_agents.agents import ModelClient
+from verdi_agents.agents.client import ModelError
 
 from .fakes import completion_body, make_config
 

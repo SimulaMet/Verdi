@@ -16,8 +16,8 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-from verdi.analysis.scenario import load_scenario
-from verdi.experiments.paired_run import build_arm_scenarios, load_paired_config
+from verdi_agents.analysis.scenario import load_scenario
+from verdi_agents.experiments.paired_run import build_arm_scenarios, load_paired_config
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PAIRED_CONFIG = REPO_ROOT / "examples" / "paired_institutional_recovery.yaml"
@@ -25,7 +25,7 @@ GUIDE = REPO_ROOT / "docs" / "RESEARCHER_GUIDE.md"
 
 #: The exact one-line command the guide must teach researchers.
 CLI_COMMAND = (
-    "python -m verdi.experiments.paired_run --config "
+    "python -m verdi_agents.experiments.paired_run --config "
     "examples/paired_institutional_recovery.yaml"
 )
 

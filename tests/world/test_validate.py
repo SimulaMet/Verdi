@@ -9,9 +9,9 @@ passed validation and the reducer's final non-negative assertion failed.
 """
 from __future__ import annotations
 
-from verdi.schemas import AgentState, ProposedAction, ValueProfile, WorldState
-from verdi.world.reducer import WorldReducer
-from verdi.world.validate import validate_action
+from verdi_agents.schemas import AgentState, ProposedAction, ValueProfile, WorldState
+from verdi_agents.world.reducer import WorldReducer
+from verdi_agents.world.validate import validate_action
 
 _VALUES = ValueProfile(
     integrity=0.8, fairness=0.9, cooperation=0.7, autonomy=0.5, solidarity=0.85

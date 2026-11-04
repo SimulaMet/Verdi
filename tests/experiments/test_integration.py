@@ -9,9 +9,9 @@ sealed snapshot at the pilot's governance branch point, and validates:
 * the rights-restoration treatment's honest ``applied`` flag on this tape
   (the pilot appeal is DISMISSED, so no sealed ``rights_restored`` event
   exists to re-record -> ``applied=False``, tape returned unmodified);
-* a :class:`~verdi.experiments.MatchedPair` built from both arms'
+* a :class:`~verdi_agents.experiments.MatchedPair` built from both arms'
   manifests (``branch_origin`` / ``treatment_seed`` carried through via
-  :func:`verdi.world.branch.manifest_for_branch`) validates because both
+  :func:`verdi_agents.world.branch.manifest_for_branch`) validates because both
   arms share ``origin_state_hash`` and the tape hash.
 """
 from __future__ import annotations
@@ -19,16 +19,16 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from verdi.experiments.pairs import MatchedPair, make_matched_pair, tape_hash
-from verdi.experiments.treatments import (
+from verdi_agents.experiments.pairs import MatchedPair, make_matched_pair, tape_hash
+from verdi_agents.experiments.treatments import (
     TreatmentOutcome,
     placebo_treatment,
     rights_restoration_treatment,
 )
-from verdi.pilot.driver import PilotDriver
-from verdi.world.branch import BranchSpec, branch_from_snapshot, manifest_for_branch
-from verdi.world.reducer import WorldReducer
-from verdi.world.replay import replay_in_memory
+from verdi_agents.pilot.driver import PilotDriver
+from verdi_agents.world.branch import BranchSpec, branch_from_snapshot, manifest_for_branch
+from verdi_agents.world.reducer import WorldReducer
+from verdi_agents.world.replay import replay_in_memory
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

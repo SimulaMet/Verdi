@@ -6,16 +6,16 @@ from pathlib import Path
 import pytest
 from tests.world.helpers import accepted, action, initial_world, rejected_double_spend
 
-from verdi.schemas import ProposedAction, ValidationResult
-from verdi.world.branch import (
+from verdi_agents.schemas import ProposedAction, ValidationResult
+from verdi_agents.world.branch import (
     BranchOriginError,
     BranchSpec,
     branch_from_snapshot,
     manifest_for_branch,
 )
-from verdi.world.log import EventLog
-from verdi.world.reducer import WorldReducer
-from verdi.world.replay import TapeStep, replay
+from verdi_agents.world.log import EventLog
+from verdi_agents.world.reducer import WorldReducer
+from verdi_agents.world.replay import TapeStep, replay
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -254,7 +254,7 @@ def test_two_branches_diverge(prefix):
 # --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")
 def pilot():
-    from verdi.pilot.driver import PilotDriver
+    from verdi_agents.pilot.driver import PilotDriver
 
     return PilotDriver(REPO_ROOT).run()
 

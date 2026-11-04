@@ -14,8 +14,8 @@ import uuid as uuid_module
 import httpx
 import pytest
 
-from verdi.agents import ModelClient
-from verdi.agents.client import _BACKOFF_BASE, _BACKOFF_CAP, ModelError, ModelResult
+from verdi_agents.agents import ModelClient
+from verdi_agents.agents.client import _BACKOFF_BASE, _BACKOFF_CAP, ModelError, ModelResult
 
 from .fakes import chat_transport, completion_body, make_config
 
@@ -49,7 +49,7 @@ def recording_uuid4(monkeypatch: pytest.MonkeyPatch) -> list[str]:
         counter += 1
         return uuid_module.UUID(value)
 
-    monkeypatch.setattr("verdi.agents.client.uuid.uuid4", fake_uuid4)
+    monkeypatch.setattr("verdi_agents.agents.client.uuid.uuid4", fake_uuid4)
     return generated
 
 

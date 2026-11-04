@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from tests.world.helpers import accepted, action, initial_world, rejected_double_spend
 
-from verdi.world import (
+from verdi_agents.world import (
     EventLog,
     SnapshotStore,
     TapeStep,
@@ -92,7 +92,7 @@ def test_snapshot_roundtrip_byte_identical(tmp_path):
     loaded = store.load(digest)
     assert loaded == ws
     # byte-identical canonical encoding
-    from verdi.world.canonical import canonical_json
+    from verdi_agents.world.canonical import canonical_json
 
     assert canonical_json(loaded.model_dump(mode="json")) == canonical_json(ws.model_dump(mode="json"))
 

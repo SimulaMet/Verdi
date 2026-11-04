@@ -12,9 +12,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from verdi.agents.client import ModelResult
-from verdi.society.campaign import SocietyCampaign
-from verdi.world.log import EventLog
+from verdi_agents.agents.client import ModelResult
+from verdi_agents.society.campaign import SocietyCampaign
+from verdi_agents.world.log import EventLog
 
 SCENARIO_PATH = Path(__file__).resolve().parents[2] / "tests/fixtures/scenarios/society_v2_stageB.json"
 AGENTS = tuple(f"b{i:02d}" for i in range(1, 13))

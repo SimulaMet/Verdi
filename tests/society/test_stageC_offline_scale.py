@@ -27,9 +27,9 @@ from typing import Any
 
 import pytest
 
-from verdi.agents.client import ModelResult
-from verdi.society.campaign import SocietyCampaign
-from verdi.world.log import EventLog
+from verdi_agents.agents.client import ModelResult
+from verdi_agents.society.campaign import SocietyCampaign
+from verdi_agents.world.log import EventLog
 
 SCENARIOS_DIR = Path(__file__).resolve().parents[2] / "tests/fixtures/scenarios"
 

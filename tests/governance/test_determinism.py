@@ -9,9 +9,9 @@ from pathlib import Path
 
 def _imported_modules() -> dict[str, list[str]]:
     """Map each governance module to the module names it imports (via AST)."""
-    package = importlib.import_module("verdi.governance")
+    package = importlib.import_module("verdi_agents.governance")
     result: dict[str, list[str]] = {}
-    for mod in pkgutil.walk_packages(package.__path__, prefix="verdi.governance."):
+    for mod in pkgutil.walk_packages(package.__path__, prefix="verdi_agents.governance."):
         module = importlib.import_module(mod.name)
         source_file = Path(module.__file__)
         tree = ast.parse(source_file.read_text(encoding="utf-8"))
@@ -39,8 +39,8 @@ def test_no_llm_or_nondeterministic_imports():
 def test_engine_source_has_no_llm_markers():
     """Source must contain no model/LLM invocation markers."""
     markers = ("chat.completions", "vllm", "model.infer", "openai")
-    package = importlib.import_module("verdi.governance")
-    for mod in pkgutil.walk_packages(package.__path__, prefix="verdi.governance."):
+    package = importlib.import_module("verdi_agents.governance")
+    for mod in pkgutil.walk_packages(package.__path__, prefix="verdi_agents.governance."):
         module = importlib.import_module(mod.name)
         text = Path(module.__file__).read_text(encoding="utf-8").lower()
         hits = [m for m in markers if m in text]

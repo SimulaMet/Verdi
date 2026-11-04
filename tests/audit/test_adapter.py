@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from verdi.audit import AuditAdapter, InMemoryTraceSource
-from verdi.schemas import AuditRecord, WorldEvent
+from verdi_agents.audit import AuditAdapter, InMemoryTraceSource
+from verdi_agents.schemas import AuditRecord, WorldEvent
 
 RUBRIC = "rubric-1"
 SCORER = "option-rubric/v1.0"
@@ -129,6 +129,6 @@ def test_inmemory_fetch_is_isolated_per_trace_and_stable() -> None:
 
 
 def test_trace_source_protocol_runtime_checkable() -> None:
-    from verdi.audit.adapter import TraceSource
+    from verdi_agents.audit.adapter import TraceSource
 
     assert isinstance(InMemoryTraceSource(), TraceSource)

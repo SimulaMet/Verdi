@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from verdi.analysis.html_report import load_run, safe_json, write_report
+from verdi_agents.analysis.html_report import load_run, safe_json, write_report
 
 
 def test_partial_tail_and_missing_streams(tmp_path):
@@ -64,7 +64,7 @@ def test_javascript_long_window_filters_and_point_budget(tmp_path):
     import shutil
     import subprocess
 
-    from verdi.analysis.html_report import TEMPLATE
+    from verdi_agents.analysis.html_report import TEMPLATE
 
     node = shutil.which('node')
     if not node:

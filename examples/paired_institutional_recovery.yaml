@@ -1,7 +1,7 @@
 # P0-C paired experiment: fixed vs revisable institutional condition.
 #
 # Run with (no Python editing needed):
-#   python -m verdi.experiments.paired_run --config examples/paired_institutional_recovery.yaml
+#   python -m verdi_agents.experiments.paired_run --config examples/paired_institutional_recovery.yaml
 #
 # The runner loads base_scenario ONCE and builds the SAME scenario for each
 # arm, changing ONLY `institutional_condition`. Everything else (agents,

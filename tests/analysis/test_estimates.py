@@ -18,12 +18,12 @@ from tests.analysis.conftest import (  # noqa: F401  (builders)
     world_state,
 )
 
-from verdi.analysis.estimates import (
+from verdi_agents.analysis.estimates import (
     ESTIMANDS,
     paired_estimates,
     run_estimand_values,
 )
-from verdi.analysis.statistics import PairedResult
+from verdi_agents.analysis.statistics import PairedResult
 
 # --------------------------------------------------------------------------- #
 # synthetic ledger: 4 action events (1 rejected), 1 sanction, 1 upheld appeal
@@ -72,7 +72,7 @@ def test_run_estimand_values_maps_all_six():
     assert values["false_punishment_rate"] == pytest.approx(1.0)
     # terminal snapshot tick 6: mean(3, 7), gini of [3, 7]
     assert values["welfare_mean_food"] == pytest.approx(5.0)
-    from verdi.analysis.metrics import gini
+    from verdi_agents.analysis.metrics import gini
 
     assert values["inequality_gini_food"] == pytest.approx(gini([3.0, 7.0]))
     # restriction end = tick 4 (rights_restored); post ticks 5, 6 both meet

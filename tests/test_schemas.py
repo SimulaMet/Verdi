@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from verdi import schemas
-from verdi.schemas import (
+from verdi_agents import schemas
+from verdi_agents.schemas import (
     Appeal,
     ConstitutionVersion,
     ExperimentManifest,

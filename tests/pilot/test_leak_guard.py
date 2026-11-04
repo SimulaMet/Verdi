@@ -12,8 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from verdi.measurement.probes import ProbeBank
-from verdi.pilot.driver import (
+from verdi_agents.measurement.probes import ProbeBank
+from verdi_agents.pilot.driver import (
     BANK_VERSION,
     INSTRUMENT_VERSION,
     PilotDriver,

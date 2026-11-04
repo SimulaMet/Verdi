@@ -1,7 +1,7 @@
 """GovernanceEngine facade: event emission, lifecycle, determinism (G3)."""
 from __future__ import annotations
 
-from verdi.governance.engine import GOVERNANCE_EVENT_KINDS
+from verdi_agents.governance.engine import GOVERNANCE_EVENT_KINDS
 
 from .conftest import (
     ELIGIBLE,
@@ -104,7 +104,7 @@ def test_sanction_imposed_event_and_evidence_recorded():
 
 def test_sanction_without_evidence_emits_rejected_event():
     engine = make_engine()
-    from verdi.schemas import Sanction
+    from verdi_agents.schemas import Sanction
 
     # Bypass schema validation so the engine-level refusal is exercised.
     bare = Sanction.model_construct(

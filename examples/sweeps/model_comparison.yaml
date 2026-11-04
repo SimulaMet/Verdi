@@ -1,8 +1,8 @@
 # Does the underlying LLM change how the society behaves?
 # Reruns the FULL scenario once per model; nothing else changes.
 #
-#   python -m verdi.sweep examples/sweeps/model_comparison.yaml --dry-run   # plan + cost only
-#   python -m verdi.sweep examples/sweeps/model_comparison.yaml             # run (asks first)
+#   python -m verdi_agents.sweep examples/sweeps/model_comparison.yaml --dry-run   # plan + cost only
+#   python -m verdi_agents.sweep examples/sweeps/model_comparison.yaml             # run (asks first)
 #
 # Results: runs/sweeps/model_comparison/comparison.html and summary.csv.
 # Stopped or some runs failed? Run the same command again: it resumes.

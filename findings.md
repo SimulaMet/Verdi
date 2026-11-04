@@ -25,7 +25,7 @@ Scores measure *observable expression* of value (what an agent says or chooses o
 - Non-determinism: model sampling is stochastic; identical seed reproduces the *schedule* (task tape, probe rotation, interview order) but not verbatim model text. Compare runs on schedule + aggregate statistics, not exact strings.
 
 ## Limitations (stated plainly)
-- n=4, single run, 30 ticks: adequate to demonstrate the pipeline produces real, inspectable longitudinal signal; **not** adequate to claim statistically significant drift. Bootstrap CIs exist in `verdi.measurement.value_drift` but a single run cannot support them.
+- n=4, single run, 30 ticks: adequate to demonstrate the pipeline produces real, inspectable longitudinal signal; **not** adequate to claim statistically significant drift. Bootstrap CIs exist in `verdi_agents.measurement.value_drift` but a single run cannot support them.
 - The interview "now" self-assessment is anchored to the agent's *starting* declared profile shown in the prompt; part of any observed change may be instrument/response effects rather than genuine value change.
 - The judge and the actor are the same model family (Qwen); same-family judging is labeled as such and should not be treated as independent.
 
@@ -68,7 +68,7 @@ Observed behavior (the ground-truth channel):
 
 ## Artifacts
 - `runs/interview-4agent/`, `runs/interview-12agent-seed7/`, `-seed9/`, and `-control-seed11/`: `report.html` (open first), `interviews.jsonl`, `audit_provenance.jsonl`, `value_trajectories.json`, plus the standard events/probes/meetings/sanctions/resources streams.
-- Driver: `python -m verdi.experiments.interview_experiment --scenario <scen> --run-dir <dir> --concurrency N`.
+- Driver: `python -m verdi_agents.experiments.interview_experiment --scenario <scen> --run-dir <dir> --concurrency N`.
 
 ---
 

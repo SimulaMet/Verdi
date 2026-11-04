@@ -16,11 +16,11 @@ from typing import Any
 
 import pytest
 
-from verdi.agents.client import ModelResult
-from verdi.schemas import ProposedAction
-from verdi.society.campaign import SocietyCampaign
-from verdi.world.log import EventLog
-from verdi.world.validate import validate_action
+from verdi_agents.agents.client import ModelResult
+from verdi_agents.schemas import ProposedAction
+from verdi_agents.society.campaign import SocietyCampaign
+from verdi_agents.world.log import EventLog
+from verdi_agents.world.validate import validate_action
 
 
 # --------------------------------------------------------------------------- #
@@ -143,7 +143,7 @@ def test_single_file_scenario_defines_governance(tmp_path):
     """Tranche 12k: the scenario JSON is the complete definition — a custom
     constitution/law block in the file drives the run, and a file WITHOUT
     those blocks gets defaults identical to the historical hardcoded values."""
-    from verdi.analysis.scenario import build_t0_state
+    from verdi_agents.analysis.scenario import build_t0_state
 
     base = {
         "scenario_id": "t", "world_id": "t", "run_seed": 1,
@@ -187,7 +187,7 @@ def test_minimal_yaml_scenario_runs_end_to_end_offline(tmp_path):
     confirm the engine derives governance + probe schedule from defaults.
     Uses a caller that proposes+votes for any amendment so the assembly
     enacts (quorum 0.5 / threshold 0.67 are met with 3 voters)."""
-    from verdi.analysis.scenario import build_t0_state, load_scenario
+    from verdi_agents.analysis.scenario import build_t0_state, load_scenario
 
     scenario = load_scenario("tests/fixtures/scenarios/minimal.yaml")
     # the minimal file intentionally omits the derivable governance/lifecycle
@@ -295,7 +295,7 @@ def test_load_scenario_yaml_and_json_parity(tmp_path):
     """Tranche 12l: load_scenario reads .json and .yml identically (YAML is a
     JSON superset), and a scenario that omits the lifecycle block gets an
     auto-derived probe schedule (baseline@0, pre/post assembly, final)."""
-    from verdi.analysis.scenario import load_scenario
+    from verdi_agents.analysis.scenario import load_scenario
 
     # JSON path unchanged
     json_path = Path("tests/fixtures/scenarios/society_v2_quick_5x50.json")
@@ -708,8 +708,8 @@ def test_two_same_tick_withdraws_do_not_double_spend():
     against the start-of-tick snapshot (5.0 available, 4.0 each), but the
     second is re-validated after the first is committed (1.0 left).
     """
-    from verdi.analysis.scenario import build_t0_state
-    from verdi.world.reducer import WorldReducer
+    from verdi_agents.analysis.scenario import build_t0_state
+    from verdi_agents.world.reducer import WorldReducer
 
     sc = {
         "scenario_id": "t", "world_id": "t", "run_seed": 1,
@@ -756,8 +756,8 @@ def test_rights_change_flips_world_state_and_blocks_sanctioned_agent():
     event_cursor advance, but it DOES change the canonical hash) and the
     validator + task-tape eligibility actually see it.
     """
-    from verdi.analysis.scenario import build_t0_state
-    from verdi.world.reducer import WorldReducer
+    from verdi_agents.analysis.scenario import build_t0_state
+    from verdi_agents.world.reducer import WorldReducer
 
     sc = {
         "scenario_id": "t", "world_id": "t", "run_seed": 1,
@@ -830,9 +830,9 @@ def test_no_probe_leak_into_agent_surfaces(scenario, tmp_path):
     surface the agents can see (here: pre-seeded into an agent memory)."""
     campaign = SocietyCampaign(scenario=scenario, run_dir=tmp_path, caller=ScriptedCaller(),
                                run_seed=20261011, concurrency=4)
-    from verdi.analysis.scenario import build_t0_state
-    from verdi.measurement.probes import ProbeBank
-    from verdi.society.memory import AgentMemory
+    from verdi_agents.analysis.scenario import build_t0_state
+    from verdi_agents.measurement.probes import ProbeBank
+    from verdi_agents.society.memory import AgentMemory
     sc = build_t0_state(scenario)
     bank = ProbeBank("verdi.probe-bank/1", "verdi.social-instrument/1", rubric_id="verdi.social", pool_size=4)
     item = bank.draw("s01", 0, "declared", rng_seed=20261011)
@@ -846,8 +846,8 @@ def test_deterministic_tape_and_validation(scenario, tmp_path):
     """Same seed + snapshot -> identical tape; validator rejects overdraft."""
     import random
 
-    from verdi.analysis.scenario import build_t0_state
-    from verdi.society.tasks import generate_tick_tape
+    from verdi_agents.analysis.scenario import build_t0_state
+    from verdi_agents.society.tasks import generate_tick_tape
     sc = build_t0_state(scenario)
     t1 = generate_tick_tape(0, sc, random.Random(), tape_seed="soc-v2:1")
     t2 = generate_tick_tape(0, sc, random.Random(), tape_seed="soc-v2:1")
@@ -886,8 +886,8 @@ def test_parallel_assembly_does_not_change_outcomes(scenario, tmp_path, monkeypa
     asserts the parallel path actually overlaps model calls."""
     import copy
 
-    from verdi.governance.assembled import _run_sequential
-    from verdi.society import campaign as campaign_module
+    from verdi_agents.governance.assembled import _run_sequential
+    from verdi_agents.society import campaign as campaign_module
 
     class ConcurrencyProbeCaller(ScriptedCaller):
         def __init__(self, *a, **kw) -> None:

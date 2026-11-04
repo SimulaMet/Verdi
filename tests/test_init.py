@@ -1,9 +1,9 @@
-"""`verdi init` copies the shipped examples into a working folder."""
+"""`verdi-agents init` copies the shipped examples into a working folder."""
 from __future__ import annotations
 
 import pytest
 
-from verdi.cli import init, main
+from verdi_agents.cli import init, main
 
 
 def test_init_creates_examples_and_env(tmp_path, capsys):
@@ -26,7 +26,7 @@ def test_init_refuses_to_overwrite_and_keeps_env(tmp_path):
 
 
 def test_initialized_sweep_validates_from_its_folder(tmp_path, monkeypatch, capsys):
-    from verdi.experiments import sweep as sw
+    from verdi_agents.experiments import sweep as sw
 
     init(tmp_path)
     monkeypatch.chdir(tmp_path)
@@ -37,7 +37,7 @@ def test_initialized_sweep_validates_from_its_folder(tmp_path, monkeypatch, caps
 
 
 def test_dotenv_in_current_folder_is_loaded(tmp_path, monkeypatch):
-    from verdi.experiments.g5_judge_live import _load_dotenv_into_environ
+    from verdi_agents.experiments.g5_judge_live import _load_dotenv_into_environ
 
     (tmp_path / ".env").write_text("VERDI_TEST_CWD_KEY=from-cwd\n")
     monkeypatch.chdir(tmp_path)
@@ -50,8 +50,8 @@ def test_dotenv_in_current_folder_is_loaded(tmp_path, monkeypatch):
 
 
 def test_verdi_run_defaults_run_dir(monkeypatch):
-    import verdi.society.live as live
-    from verdi.cli import main as cli_main
+    import verdi_agents.society.live as live
+    from verdi_agents.cli import main as cli_main
 
     seen = {}
     monkeypatch.setattr(live, "main", lambda argv: seen.setdefault("argv", argv) and 0)

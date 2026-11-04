@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from verdi.agents import AgentPolicy, TaskPool, make_task
+from verdi_agents.agents import AgentPolicy, TaskPool, make_task
 
 
 class CannedModel:
@@ -14,7 +14,7 @@ class CannedModel:
         import asyncio as _a
 
         await _a.sleep(0.001)
-        from verdi.agents.client import ModelResult
+        from verdi_agents.agents.client import ModelResult
 
         return ModelResult(content=self.content, request_id="r", model="c", trace_id="t")
 
@@ -61,7 +61,7 @@ def test_pool_enforces_bound_with_counting_fixture():
 
             await _a.sleep(0.002)
             current -= 1
-            from verdi.agents import PolicyResult
+            from verdi_agents.agents import PolicyResult
 
             return PolicyResult(action=None, quarantine_reason="counting only")
 

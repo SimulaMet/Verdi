@@ -4,8 +4,8 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from verdi.measurement import ProbeBank
-from verdi.schemas import ProbeItem
+from verdi_agents.measurement import ProbeBank
+from verdi_agents.schemas import ProbeItem
 
 
 def _bank() -> ProbeBank:

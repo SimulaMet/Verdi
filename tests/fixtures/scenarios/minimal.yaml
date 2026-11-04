@@ -5,7 +5,7 @@
 # few numbers, run the command below, then open the results folder.
 #
 #   source .venv/bin/activate
-#   python -m verdi.society.live \
+#   python -m verdi_agents.society.live \
 #     --scenario tests/fixtures/scenarios/minimal.yaml \
 #     --run-dir runs/my-run \
 #     --concurrency 4

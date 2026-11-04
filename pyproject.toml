@@ -43,24 +43,22 @@ Source = "https://github.com/SimulaMet/Verdi"
 Issues = "https://github.com/SimulaMet/Verdi/issues"
 
 [project.scripts]
-verdi = "verdi.cli:main"
-# Same name as the package so `uvx verdi-agents ...` works with no --from.
-verdi-agents = "verdi.cli:main"
+verdi-agents = "verdi_agents.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/verdi"]
+packages = ["src/verdi_agents"]
 
-# Ship the researcher examples inside the package so `verdi init` works
-# after `pip install verdi` (the repo copy under examples/ stays canonical).
+# Ship the researcher examples inside the package so `verdi-agents init` works
+# after `pip install verdi-agents` (the repo copy under examples/ stays canonical).
 [tool.hatch.build.targets.wheel.force-include]
-"examples/starter.yaml" = "verdi/examples/starter.yaml"
-"examples/full.yaml" = "verdi/examples/full.yaml"
-"examples/institutional_recovery_constrained.yaml" = "verdi/examples/institutional_recovery_constrained.yaml"
-"examples/paired_institutional_recovery.yaml" = "verdi/examples/paired_institutional_recovery.yaml"
-"examples/sweeps" = "verdi/examples/sweeps"
+"examples/starter.yaml" = "verdi_agents/examples/starter.yaml"
+"examples/full.yaml" = "verdi_agents/examples/full.yaml"
+"examples/institutional_recovery_constrained.yaml" = "verdi_agents/examples/institutional_recovery_constrained.yaml"
+"examples/paired_institutional_recovery.yaml" = "verdi_agents/examples/paired_institutional_recovery.yaml"
+"examples/sweeps" = "verdi_agents/examples/sweeps"
 
 [tool.hatch.build.targets.sdist]
-include = ["src/verdi", "examples/*.yaml", "examples/sweeps", "tests", "docs", "README.md", "LICENSE"]
+include = ["src/verdi_agents", "examples/*.yaml", "examples/sweeps", "tests", "docs", "README.md", "LICENSE"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,4 +1,4 @@
-"""Tests for verdi.analysis.statistics (P2 WS-3, G5 statistical sanity).
+"""Tests for verdi_agents.analysis.statistics (P2 WS-3, G5 statistical sanity).
 
 All tests are deterministic: fixed seeds and fixed synthetic data only.
 No LLM, no network, stdlib only.
@@ -10,7 +10,7 @@ import statistics
 
 import pytest
 
-from verdi.analysis.statistics import (
+from verdi_agents.analysis.statistics import (
     PairedResult,
     bootstrap_ci,
     null_control_passes,
@@ -205,7 +205,7 @@ def test_bootstrap_coverage_sanity_true_shift_one():
 
 def test_module_imports_are_stdlib_only():
     """Guard ADR-009: WS-3 must not import numpy/scipy or verdi internals."""
-    import verdi.analysis.statistics as mod
+    import verdi_agents.analysis.statistics as mod
 
     for value in vars(mod).values():
         module = str(getattr(value, "__module__", ""))
@@ -217,5 +217,5 @@ def test_module_imports_are_stdlib_only():
     source = inspect.getsource(mod)
     assert "import numpy" not in source
     assert "import scipy" not in source
-    assert "verdi.experiments" not in source
+    assert "verdi_agents.experiments" not in source
     assert math.isfinite(bootstrap_ci([1.0, 2.0], seed=0)[0])

@@ -1,4 +1,4 @@
-from verdi.scheduler import SeededScheduler
+from verdi_agents.scheduler import SeededScheduler
 
 from .conftest import make_agent, make_task
 

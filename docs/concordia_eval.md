@@ -28,7 +28,7 @@ endpoint into a Concordia `LanguageModel`.
 
 ## What was built (thin, off-by-default, lazy)
 
-`src/verdi/adapters/concordia.py` (+ `__init__.py`):
+`src/verdi_agents/adapters/concordia.py` (+ `__init__.py`):
 
 - `OpenAICompatibleLanguageModel` — implements Concordia's `LanguageModel` ABC
   (`sample_text`, `sample_choice`) over a single POST to Verdi's existing
@@ -63,7 +63,7 @@ questionnaire framework. Everything imports cleanly without heavy deps. Findings
 | `Memory` component | NO | Requires a bound `Entity` + phase lifecycle (`get_entity().get_phase()`); not usable standalone. Verdi's `AgentMemory.render_history_summary` already covers this more simply. |
 | `GameClock` subclasses | NO | Non-trivial constructors tied to the scene runner; Verdi's tick counter already schedules checkpoints. |
 
-Built from the reusable pieces: `src/verdi/adapters/concordia_reuse.py`
+Built from the reusable pieces: `src/verdi_agents/adapters/concordia_reuse.py`
 (`make_value_questionnaire`, `score_response`, `concordia_cross_check`). The
 cross-check is wired into the interview writer as an **opt-in, additive, lazy**
 field: when the scenario's `interviews.concordia_cross_check` flag is true (and

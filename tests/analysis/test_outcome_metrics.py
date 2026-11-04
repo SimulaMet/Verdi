@@ -17,9 +17,9 @@ from typing import Any
 import pytest
 import yaml
 
-from verdi.agents.client import ModelResult
-from verdi.analysis.comparative_report import write_comparison_html
-from verdi.analysis.outcome_metrics import (
+from verdi_agents.agents.client import ModelResult
+from verdi_agents.analysis.comparative_report import write_comparison_html
+from verdi_agents.analysis.outcome_metrics import (
     RunArtifactError,
     completion_rate,
     exclusion_episodes,
@@ -31,7 +31,7 @@ from verdi.analysis.outcome_metrics import (
     write_metrics_csv,
     write_metrics_json,
 )
-from verdi.experiments.paired_run import load_paired_config, run_pair
+from verdi_agents.experiments.paired_run import load_paired_config, run_pair
 
 AGENTS = ("alice", "bob", "chen", "dave")
 
@@ -393,7 +393,7 @@ def test_exclusion_repeat_episode_flag_synthetic(tmp_path):
 def test_exclusion_blocks_transfer_deposit_in_ledger(pair_root):
     """While dave is under sanction his deposit attempts are rejected with
     law:under_sanction — the metric's 'excluded from' definition is real."""
-    from verdi.analysis.outcome_metrics import _read_jsonl
+    from verdi_agents.analysis.outcome_metrics import _read_jsonl
 
     events = _read_jsonl(_arm_dir(pair_root, "fixed"), "events")
     under_sanction_rejects = [
@@ -609,7 +609,7 @@ def test_missing_run_dir_raises_friendly_error(tmp_path):
 
 
 def test_main_cli_writes_three_files(tmp_path, pair_root):
-    from verdi.analysis import outcome_metrics
+    from verdi_agents.analysis import outcome_metrics
 
     exit_code = outcome_metrics.main(["--pair-root", str(pair_root)])
     assert exit_code == 0

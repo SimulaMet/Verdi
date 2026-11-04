@@ -11,14 +11,14 @@ import asyncio
 from dataclasses import dataclass, field
 from typing import Any
 
-from verdi.measurement.longitudinal import (
+from verdi_agents.measurement.longitudinal import (
     ProbePoint,
     ProbeRecorder,
     channel_trajectories,
 )
-from verdi.measurement.probes import CHANNELS, ProbeBank
-from verdi.measurement.scoring import score_probe
-from verdi.schemas import AgentState, ValueProfile, WorldState
+from verdi_agents.measurement.probes import CHANNELS, ProbeBank
+from verdi_agents.measurement.scoring import score_probe
+from verdi_agents.schemas import AgentState, ValueProfile, WorldState
 
 
 @dataclass(frozen=True)

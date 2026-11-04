@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import time
 
-from verdi.scheduler import SeededScheduler
+from verdi_agents.scheduler import SeededScheduler
 
 from .conftest import make_agent, make_task
 from .fixtures_stress import (

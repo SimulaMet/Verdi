@@ -5,8 +5,8 @@ import pytest
 from pydantic import ValidationError
 from tests.world.helpers import accepted, action, initial_world, rejected_double_spend
 
-from verdi.world import InvariantViolationError, WorldReducer
-from verdi.world.canonical import canonical_sha256
+from verdi_agents.world import InvariantViolationError, WorldReducer
+from verdi_agents.world.canonical import canonical_sha256
 
 
 def test_canonical_hash_is_stable_and_sorted():

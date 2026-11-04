@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from verdi.schemas import AgentState, Task, ValueProfile, WorldState
+from verdi_agents.schemas import AgentState, Task, ValueProfile, WorldState
 
 
 def make_agent(agent_id: str, *, idle_ticks: int = 0, under_sanction: bool = False) -> AgentState:

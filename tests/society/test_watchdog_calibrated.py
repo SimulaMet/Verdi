@@ -34,8 +34,8 @@ from typing import Any
 
 import pytest
 
-from verdi.agents.client import ModelResult
-from verdi.society import live as live_module
+from verdi_agents.agents.client import ModelResult
+from verdi_agents.society import live as live_module
 
 SCEN = Path(__file__).resolve().parents[2] / "tests/fixtures/scenarios/society_v2_stageC1.json"
 
@@ -83,7 +83,7 @@ def test_watchdog_threshold_covers_worst_case_stuck_call(monkeypatch: pytest.Mon
     monkeypatch.setenv("VERDI_VLLM_API_KEY", "test-key-not-real")
     monkeypatch.setenv("VERDI_REQUEST_TIMEOUT", "180")
     monkeypatch.setenv("VERDI_MAX_RETRIES", "5")
-    from verdi.config import model_endpoint_from_env
+    from verdi_agents.config import model_endpoint_from_env
     cfg = model_endpoint_from_env()
     # httpx total timeout bounds a normally-timed-out stuck call, but the
     # Tranche 12a bug is a held-open-never-read socket that httpx's timeout

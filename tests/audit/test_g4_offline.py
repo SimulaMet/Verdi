@@ -25,14 +25,14 @@ from typing import Any
 import pytest
 from pydantic_core import ValidationError
 
-from verdi.audit import AuditAdapter, InMemoryTraceSource
-from verdi.audit.simpleaudit_bridge import (
+from verdi_agents.audit import AuditAdapter, InMemoryTraceSource
+from verdi_agents.audit.simpleaudit_bridge import (
     SimpleAuditNotInstalledError,
     build_simpleaudit_trace_source,
 )
-from verdi.measurement.scoring import JudgeProtocol, RubricScorer, score_probe
-from verdi.pilot.driver import run_pilot
-from verdi.schemas import AuditRecord, ProbeItem, WorldEvent
+from verdi_agents.measurement.scoring import JudgeProtocol, RubricScorer, score_probe
+from verdi_agents.pilot.driver import run_pilot
+from verdi_agents.schemas import AuditRecord, ProbeItem, WorldEvent
 
 RUBRIC_ID = "rubric-g4-offline"
 SCORER_ID = f"{RUBRIC_ID}/v1.0"

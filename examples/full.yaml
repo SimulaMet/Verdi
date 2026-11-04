@@ -2,7 +2,7 @@
 # institutional_recovery_constrained.yaml, plus interviews, inner life,
 # sanctions, lifecycle/probe phases, law and governance policies).
 #
-#   python -m verdi.society.live --scenario examples/full.yaml --run-dir runs/full
+#   python -m verdi_agents.society.live --scenario examples/full.yaml --run-dir runs/full
 #
 # This is a documented REFERENCE, not a validated study. A test loads it and
 # runs it offline so it cannot drift from the engine. Delete blocks you do not

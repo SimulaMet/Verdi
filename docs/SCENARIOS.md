@@ -3,7 +3,7 @@
 A scenario is one YAML (or JSON) file. It is the **frozen input** of a run: the
 engine reads nothing else about the experiment, and each run records the model
 it used. Run with
-`python -m verdi.society.live --scenario <file> --run-dir runs/<name>`.
+`python -m verdi_agents.society.live --scenario <file> --run-dir runs/<name>`.
 
 ## Files
 
@@ -12,7 +12,7 @@ it used. Run with
 | [`examples/starter.yaml`](../examples/starter.yaml) | Smallest working scenario: 4 agents, 20 ticks, 1 meeting. |
 | [`examples/full.yaml`](../examples/full.yaml) | Every knob, commented: model, shocks, law, constitution, economy, delivery tasks, interviews, lifecycle, sanctions, rights. |
 | [`examples/institutional_recovery_constrained.yaml`](../examples/institutional_recovery_constrained.yaml) | Constrained-economy base for the fixed-vs-revisable study. |
-| [`examples/paired_institutional_recovery.yaml`](../examples/paired_institutional_recovery.yaml) | Not a scenario: drives both arms of the paired study via `python -m verdi.experiments.paired_run`. See [RESEARCHER_GUIDE.md](RESEARCHER_GUIDE.md). |
+| [`examples/paired_institutional_recovery.yaml`](../examples/paired_institutional_recovery.yaml) | Not a scenario: drives both arms of the paired study via `python -m verdi_agents.experiments.paired_run`. See [RESEARCHER_GUIDE.md](RESEARCHER_GUIDE.md). |
 | [`examples/sweeps/`](../examples/sweeps/) | Sweep files: rerun a scenario across models, seeds and settings. See [SWEEPS.md](SWEEPS.md). |
 | `experiments/scenarios/pilot_v1.json` | Frozen t0-t11 pilot slice used by the pilot driver and G5 pipeline. |
 | `tests/fixtures/scenarios/` | Test inputs only (Society V2 stage fixtures, a 50-tick minimal, the institutional smoke). Not user-facing examples. |

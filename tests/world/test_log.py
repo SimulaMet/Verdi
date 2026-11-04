@@ -6,9 +6,9 @@ import json
 import pytest
 from tests.world.helpers import accepted, action, initial_world, rejected_double_spend
 
-from verdi.schemas import WorldEvent
-from verdi.world import EventLog, LogIntegrityError
-from verdi.world.reducer import WorldReducer
+from verdi_agents.schemas import WorldEvent
+from verdi_agents.world import EventLog, LogIntegrityError
+from verdi_agents.world.reducer import WorldReducer
 
 
 def _first_events():

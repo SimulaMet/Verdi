@@ -7,27 +7,27 @@ from pathlib import Path
 
 import pytest
 
-from verdi.analysis import RunReport, RunReportError
-from verdi.analysis.estimates import ESTIMANDS, paired_estimates, run_estimand_values
-from verdi.analysis.report import (
+from verdi_agents.analysis import RunReport, RunReportError
+from verdi_agents.analysis.estimates import ESTIMANDS, paired_estimates, run_estimand_values
+from verdi_agents.analysis.report import (
     G5_ESTIMANDS,
     G5_LIMITATIONS,
     build_g5_report,
     write_g5_report,
 )
-from verdi.experiments.treatments import (
+from verdi_agents.experiments.treatments import (
     placebo_treatment,
     rights_restoration_treatment,
 )
-from verdi.pilot.driver import PilotDriver, SeededScheduler, _precompute_dispatch
-from verdi.schemas import ExperimentManifest
-from verdi.world.branch import (
+from verdi_agents.pilot.driver import PilotDriver, SeededScheduler, _precompute_dispatch
+from verdi_agents.schemas import ExperimentManifest
+from verdi_agents.world.branch import (
     BranchSpec,
     branch_from_snapshot,
     manifest_for_branch,
 )
-from verdi.world.reducer import WorldReducer
-from verdi.world.replay import replay_in_memory
+from verdi_agents.world.reducer import WorldReducer
+from verdi_agents.world.replay import replay_in_memory
 
 
 def _manifest() -> ExperimentManifest:
@@ -109,7 +109,7 @@ def test_roundtrip_via_jsonl_parse():
 # --------------------------------------------------------------------------- #
 
 # SF4: derive the repo root from THIS test file's location — the
-# checkout (worktree or main) that contains src/verdi/pilot/driver.py —
+# checkout (worktree or main) that contains src/verdi_agents/pilot/driver.py —
 # instead of a hardcoded absolute path. Optional override via the
 # VERDI_REPO_ROOT env var: use it only when the pilot's recorded assets
 # live in a different checkout than the code under test.
@@ -122,12 +122,12 @@ def _pilot():
     """Run the pilot with the derived repo root.
 
     ``PilotDriver`` itself would already default to
-    ``Path(__file__).parents[3]`` of ``src/verdi/pilot/driver.py``; we
+    ``Path(__file__).parents[3]`` of ``src/verdi_agents/pilot/driver.py``; we
     pass the explicitly-derived root so the derivation lives in one,
     testable place and an env-var override can redirect it.
     """
-    assert (G5_REPO_ROOT / "src" / "verdi" / "pilot" / "driver.py").is_file(), (
-        f"G5_REPO_ROOT {G5_REPO_ROOT} does not contain src/verdi/pilot/driver.py"
+    assert (G5_REPO_ROOT / "src" / "verdi_agents" / "pilot" / "driver.py").is_file(), (
+        f"G5_REPO_ROOT {G5_REPO_ROOT} does not contain src/verdi_agents/pilot/driver.py"
     )
     return PilotDriver(G5_REPO_ROOT).run()
 
@@ -353,7 +353,7 @@ def test_g5_report_pilot_v1(tmp_path):
 # --------------------------------------------------------------------------- #
 
 def _single_result(estimate):
-    from verdi.analysis.statistics import PairedResult
+    from verdi_agents.analysis.statistics import PairedResult
 
     return PairedResult(
         estimate=estimate, ci_low=None, ci_high=None, n_pairs=1, sufficient=False
@@ -366,7 +366,7 @@ def test_null_control_nonzero_differences_fail_ci_leg():
     # zeros: the bootstrap CI of the mean over [5.0]*6 is [5, 5], which
     # does NOT contain 0, so the CI leg must FAIL. The old code computed
     # over [0,0,0,0] and would have reported passed=True here.
-    from verdi.analysis.report import _null_control
+    from verdi_agents.analysis.report import _null_control
 
     pairs = {name: _single_result(5.0) for name in G5_ESTIMANDS}
     control = _null_control(pairs)
@@ -382,7 +382,7 @@ def test_null_control_nonzero_differences_fail_ci_leg():
 def test_null_control_zero_differences_ci_is_over_real_zeros():
     # SF3b: all-zero differences -> CI trivially [0,0], contains 0,
     # passes truthfully (this is the inert-arm wiring check).
-    from verdi.analysis.report import _null_control
+    from verdi_agents.analysis.report import _null_control
 
     pairs = {name: _single_result(0.0) for name in G5_ESTIMANDS}
     control = _null_control(pairs)
@@ -396,7 +396,7 @@ def test_null_control_insufficient_pairs_marks_null():
     # SF3b: fewer than two difference values -> CI cannot be computed;
     # the field is null with an explicit marker, not computed over
     # constant zeros.
-    from verdi.analysis.report import _null_control
+    from verdi_agents.analysis.report import _null_control
 
     pairs = {G5_ESTIMANDS[0]: _single_result(0.0)}
     control = _null_control(pairs)
@@ -497,7 +497,7 @@ def test_build_g5_report_raw_source_satisfies_estimates():
 def test_repo_root_derivation_contains_driver():
     # SF4: the root is derived from this test file's own location, not a
     # frozen hardcoded absolute path — so it points at the checkout
-    # containing src/verdi/pilot/driver.py and the pilot assets.
+    # containing src/verdi_agents/pilot/driver.py and the pilot assets.
     assert G5_REPO_ROOT.is_absolute()
     # derived from __file__ (or the VERDI_REPO_ROOT override), not frozen
     expected = (
@@ -506,5 +506,5 @@ def test_repo_root_derivation_contains_driver():
         else Path(__file__).resolve().parents[2]
     )
     assert expected.resolve() == G5_REPO_ROOT
-    assert (G5_REPO_ROOT / "src" / "verdi" / "pilot" / "driver.py").is_file()
+    assert (G5_REPO_ROOT / "src" / "verdi_agents" / "pilot" / "driver.py").is_file()
     assert (G5_REPO_ROOT / "experiments" / "scenarios" / "pilot_v1.json").is_file()

@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from verdi.governance import SanctionEngine
-from verdi.governance.sanctions import SanctionError
+from verdi_agents.governance import SanctionEngine
+from verdi_agents.governance.sanctions import SanctionError
 
 from .conftest import make_evidence, make_sanction
 
@@ -44,7 +44,7 @@ def test_sanction_without_evidence_refused():
     engine = SanctionEngine()
     from pydantic import ValidationError
 
-    from verdi.schemas import Sanction
+    from verdi_agents.schemas import Sanction
 
     # Schema itself refuses empty evidence (frozen contract).
     with pytest.raises(ValidationError):
@@ -68,7 +68,7 @@ def test_sanction_evidence_without_event_ids_refused():
     engine = SanctionEngine()
     # A reference with no cited event ids is evidence in name only -> refused.
     empty_ev = make_evidence("ev-0", [])
-    from verdi.schemas import Sanction
+    from verdi_agents.schemas import Sanction
 
     bare = Sanction(
         sanction_id="s-1", subject_id="a2", evidence=[empty_ev],

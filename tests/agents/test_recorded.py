@@ -3,11 +3,11 @@ import json
 
 import pytest
 
-from verdi.agents import AgentPolicy, RecordedModel, TapeExhausted
+from verdi_agents.agents import AgentPolicy, RecordedModel, TapeExhausted
 
 
 def make_task(task_id: str, actor_id: str = "a1"):
-    from verdi.agents import make_task as _mt
+    from verdi_agents.agents import make_task as _mt
 
     return _mt(task_id, actor_id)
 

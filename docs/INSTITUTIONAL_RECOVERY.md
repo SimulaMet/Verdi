@@ -11,8 +11,8 @@ Configure an OpenAI-compatible endpoint as described in the
 [README](../README.md), then run:
 
 ```bash
-python -m verdi.experiments.paired_run --config examples/paired_institutional_recovery.yaml
-python -m verdi.analysis.outcome_metrics --pair-root runs/paired-institutional-recovery
+python -m verdi_agents.experiments.paired_run --config examples/paired_institutional_recovery.yaml
+python -m verdi_agents.analysis.outcome_metrics --pair-root runs/paired-institutional-recovery
 ```
 
 The paired runner copies a common base scenario into fixed and revisable

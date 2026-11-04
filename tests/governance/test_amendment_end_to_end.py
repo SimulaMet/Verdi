@@ -22,10 +22,10 @@ import asyncio
 import json
 from typing import Any
 
-from verdi.agents.client import ModelResult
-from verdi.governance import ConstitutionStore, UniversalLaw
-from verdi.schemas import ConstitutionVersion, LawVersion
-from verdi.society.campaign import SocietyCampaign
+from verdi_agents.agents.client import ModelResult
+from verdi_agents.governance import ConstitutionStore, UniversalLaw
+from verdi_agents.schemas import ConstitutionVersion, LawVersion
+from verdi_agents.society.campaign import SocietyCampaign
 
 ASSEMBLY_TICK = 15
 AGENTS = ("alice", "bob", "chen", "dave")
@@ -179,8 +179,8 @@ def test_enacted_amendment_flips_subsequent_validation_decision(tmp_path):
     # 4) the rule is enforced EXACTLY at the cap: a 5-unit transfer under the
     #    enacted rules is still accepted (the campaign passes exactly these
     #    active-version rules to validate_action each tick).
-    from verdi.schemas import ProposedAction
-    from verdi.world.validate import validate_action
+    from verdi_agents.schemas import ProposedAction
+    from verdi_agents.world.validate import validate_action
 
     # constitution_texts: one full model_dump per registered version
     entry = next(t for t in res.constitution_texts

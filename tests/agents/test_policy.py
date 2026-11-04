@@ -3,9 +3,9 @@ import json
 
 import pytest
 
-from verdi.agents import PROMPT_VERSION, AgentPolicy
-from verdi.agents.client import ModelResult
-from verdi.schemas import Task
+from verdi_agents.agents import PROMPT_VERSION, AgentPolicy
+from verdi_agents.agents.client import ModelResult
+from verdi_agents.schemas import Task
 
 
 class CannedModel:

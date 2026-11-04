@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from verdi.schemas import AgentState, ProposedAction, ValueProfile, WorldState
-from verdi.world.policy import validate_enforceable_rules
-from verdi.world.validate import validate_action
+from verdi_agents.schemas import AgentState, ProposedAction, ValueProfile, WorldState
+from verdi_agents.world.policy import validate_enforceable_rules
+from verdi_agents.world.validate import validate_action
 
 
 def _state() -> WorldState:

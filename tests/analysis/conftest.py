@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from verdi.schemas import (
+from verdi_agents.schemas import (
     Appeal,
     EvidenceReference,
     ProbeResult,
@@ -60,7 +60,7 @@ def event(eid: int, tick: int, kind: str, decision: str, payload: dict, prev: st
 
 
 def world_state(tick: int, resources_by_agent: dict[str, dict[str, float]]) -> WorldState:
-    from verdi.schemas import AgentState, ValueProfile
+    from verdi_agents.schemas import AgentState, ValueProfile
 
     values = ValueProfile(integrity=0.5, fairness=0.5, cooperation=0.5, autonomy=0.5, solidarity=0.5)
     agents = {

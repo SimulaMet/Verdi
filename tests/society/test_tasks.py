@@ -1,11 +1,11 @@
-"""Tests for src/verdi/society/tasks.py."""
+"""Tests for src/verdi_agents/society/tasks.py."""
 from __future__ import annotations
 
 import random
 
-from verdi.schemas import AgentState, ValueProfile, WorldState
-from verdi.society import MUTATING_KINDS, generate_tick_tape
-from verdi.society.memory import ADVERSARY_MARKER
+from verdi_agents.schemas import AgentState, ValueProfile, WorldState
+from verdi_agents.society import MUTATING_KINDS, generate_tick_tape
+from verdi_agents.society.memory import ADVERSARY_MARKER
 
 _BASE_PERSONA = "a cooperative citizen"
 

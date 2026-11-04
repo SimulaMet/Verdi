@@ -41,8 +41,8 @@ uvx verdi-agents sweep examples/sweeps/model_comparison.yaml --dry-run
 ```
 
 Prefer a permanent command? Run `uv tool install verdi-agents` or
-`pip install verdi-agents`, then use `verdi init`, `verdi run` and `verdi sweep`.
-The package is `verdi-agents` on PyPI; the command and `import verdi` are `verdi`.
+`pip install verdi-agents`, then use `verdi-agents init`, `verdi-agents run` and `verdi-agents sweep`.
+One name everywhere: install `verdi-agents`, run `verdi-agents`, `import verdi_agents` (Python imports cannot contain hyphens).
 
 To work on Verdi itself, clone the repo instead (next section).
 
@@ -65,7 +65,7 @@ cp .env.example .env
 
 # 3. Run the starter society (4 agents, 20 ticks, 1 constitutional meeting)
 source .env
-python -m verdi.society.live \
+python -m verdi_agents.society.live \
   --scenario examples/starter.yaml \
   --run-dir runs/my-run \
   --concurrency 4
@@ -136,8 +136,8 @@ combination on several seeds. The result is one spreadsheet and one
 comparison page:
 
 ```bash
-python -m verdi.sweep examples/sweeps/model_comparison.yaml --dry-run   # plan + cost
-python -m verdi.sweep examples/sweeps/model_comparison.yaml             # run (asks first, resumes)
+python -m verdi_agents.sweep examples/sweeps/model_comparison.yaml --dry-run   # plan + cost
+python -m verdi_agents.sweep examples/sweeps/model_comparison.yaml             # run (asks first, resumes)
 ```
 
 Guide: [docs/SWEEPS.md](https://github.com/SimulaMet/Verdi/blob/main/docs/SWEEPS.md).
@@ -175,8 +175,8 @@ Both conditions use the same scenario, model, shock schedule, and meeting
 opportunities; the fixed condition cannot enact amendments.
 
 ```bash
-python -m verdi.experiments.paired_run --config examples/paired_institutional_recovery.yaml
-python -m verdi.analysis.outcome_metrics --pair-root runs/paired-institutional-recovery
+python -m verdi_agents.experiments.paired_run --config examples/paired_institutional_recovery.yaml
+python -m verdi_agents.analysis.outcome_metrics --pair-root runs/paired-institutional-recovery
 ```
 
 The first command runs the two conditions and saves a resumable manifest.
@@ -189,7 +189,7 @@ alongside the individual run reports. See the [researcher guide](https://github.
 
 ## Releasing
 
-1. Bump `version` in `pyproject.toml` and `__version__` in `src/verdi/__init__.py`, and merge.
+1. Bump `version` in `pyproject.toml` and `__version__` in `src/verdi_agents/__init__.py`, and merge.
 2. Publish a GitHub Release tagged `v<version>` (for example `v0.1.1`).
 
 The [Publish to PyPI](https://github.com/SimulaMet/Verdi/blob/main/.github/workflows/pypi.yml) workflow runs only on a

@@ -18,9 +18,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from verdi.agents.client import ModelResult
-from verdi.analysis.scenario import load_scenario
-from verdi.society.campaign import SocietyCampaign
+from verdi_agents.agents.client import ModelResult
+from verdi_agents.analysis.scenario import load_scenario
+from verdi_agents.society.campaign import SocietyCampaign
 
 
 # --------------------------------------------------------------------------- #

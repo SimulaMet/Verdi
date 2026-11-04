@@ -11,7 +11,7 @@ import pytest
 
 pytest.importorskip("concordia")
 
-from verdi.adapters import concordia_reuse as cr  # noqa: E402
+from verdi_agents.adapters import concordia_reuse as cr  # noqa: E402
 
 
 def test_value_axes_constant():

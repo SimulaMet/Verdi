@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from verdi.agents import ModelClient
-from verdi.agents.client import ModelError
+from verdi_agents.agents import ModelClient
+from verdi_agents.agents.client import ModelError
 
 from .fakes import chat_transport, completion_body, make_config
 

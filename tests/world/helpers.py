@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from verdi.schemas import AgentState, ProposedAction, ValidationResult, WorldState
+from verdi_agents.schemas import AgentState, ProposedAction, ValidationResult, WorldState
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures"
 

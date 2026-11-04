@@ -76,7 +76,7 @@ source .env
 ### Run the paired experiment — ONE command
 
 ```bash
-python -m verdi.experiments.paired_run --config examples/paired_institutional_recovery.yaml
+python -m verdi_agents.experiments.paired_run --config examples/paired_institutional_recovery.yaml
 ```
 
 That's the whole workflow. The runner:
@@ -113,7 +113,7 @@ you which pairs are trustworthy.
 Optional CLI overrides (no config edit needed):
 
 ```bash
-python -m verdi.experiments.paired_run \
+python -m verdi_agents.experiments.paired_run \
   --config examples/paired_institutional_recovery.yaml \
   --seeds 42,7,99 \
   --output-root runs/my-experiment \
@@ -222,7 +222,7 @@ After the paired run completes, generate the comparison report and
 machine-readable metrics with:
 
 ```bash
-python -m verdi.analysis.outcome_metrics --pair-root runs/paired-institutional-recovery
+python -m verdi_agents.analysis.outcome_metrics --pair-root runs/paired-institutional-recovery
 ```
 
 This writes `comparison.html`, `metrics.json`, and `metrics.csv`

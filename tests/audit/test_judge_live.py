@@ -20,8 +20,8 @@ from pathlib import Path
 
 import pytest
 
-import verdi.audit.judge_live as jl
-from verdi.audit.judge_live import (
+import verdi_agents.audit.judge_live as jl
+from verdi_agents.audit.judge_live import (
     JUDGE_SYSTEM_PROMPT,
     SAMPLE_SEED,
     JudgeTapeCapture,
@@ -35,12 +35,12 @@ from verdi.audit.judge_live import (
     wilson_ci_95,
     write_judge_report,
 )
-from verdi.audit.live_bridge import (
+from verdi_agents.audit.live_bridge import (
     LiveLedgerError,
     correlate_tape_to_ledger,
     load_ledger_events,
 )
-from verdi.schemas import WorldEvent
+from verdi_agents.schemas import WorldEvent
 
 FAKE_KEY = "sk-abc1234567890testkey"
 FAKE_URL = "https://judge.example.invalid/api/v1"
@@ -892,7 +892,7 @@ def test_judge_path_oracle_fixture(judge_tape_ledger, tmp_path, monkeypatch) -> 
     events = load_ledger_events(ledger_path)
     sample = build_judge_sample(tape_path, ledger_path)
     code_rows = build_judge_rows(sample, tape, events)
-    from verdi.audit.live_bridge import correlate_tape_to_ledger, report_correlation
+    from verdi_agents.audit.live_bridge import correlate_tape_to_ledger, report_correlation
     corr = report_correlation(tape, events, correlate_tape_to_ledger(tape, events))
     report = build_judge_report(sample, code_rows, run["verdicts"], run["meta"], corr)
     by_event = {r["event_id"]: r for r in report["rows"]}

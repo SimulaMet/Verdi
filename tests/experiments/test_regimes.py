@@ -6,14 +6,14 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from verdi.experiments.regimes import (
+from verdi_agents.experiments.regimes import (
     REGIME_LABELS,
     RegimeConfig,
     load_regime,
     manifest_metadata,
 )
 
-REGIMES_DIR = Path(__file__).resolve().parents[2] / "src" / "verdi" / "experiments" / "regimes"
+REGIMES_DIR = Path(__file__).resolve().parents[2] / "src" / "verdi_agents" / "experiments" / "regimes"
 REGIME_FILES = ("g0_baseline.json", "g1_single_adversary.json", "g3_detection_on.json")
 
 

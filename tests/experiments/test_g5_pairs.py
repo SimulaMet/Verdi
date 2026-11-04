@@ -26,9 +26,9 @@ from pathlib import Path
 
 import pytest
 
-from verdi.analysis.estimates import ESTIMANDS, paired_estimates
-from verdi.analysis.report import _validate_arm_run_dict
-from verdi.experiments.g5_pairs import (
+from verdi_agents.analysis.estimates import ESTIMANDS, paired_estimates
+from verdi_agents.analysis.report import _validate_arm_run_dict
+from verdi_agents.experiments.g5_pairs import (
     EXPECTED_SUFFIX_CALLS,
     HARD_CALL_CAP,
     L1_EVENT_LOG_PATH,
@@ -47,8 +47,8 @@ from verdi.experiments.g5_pairs import (
     prefix_event_log,
     run_arm,
 )
-from verdi.experiments.pairs import make_matched_pair, tape_hash
-from verdi.world.reducer import WorldReducer
+from verdi_agents.experiments.pairs import make_matched_pair, tape_hash
+from verdi_agents.world.reducer import WorldReducer
 
 # Repo root of the checkout this test file belongs to (works in the main
 # checkout and in any worktree; the null control only needs a git repo).
@@ -127,7 +127,7 @@ def test_arm_manifests_and_matched_pair(l1, context):
 
 def test_matching_context_fold_is_pure(l1, context):
     # Re-folding reproduces the identical terminal hash (determinism).
-    from verdi.experiments.g5_pairs import _fold_prefix_state
+    from verdi_agents.experiments.g5_pairs import _fold_prefix_state
 
     # repo_root=None resolves package-relative (the worktree src layout).
     h1 = WorldReducer.canonical_state_hash(_fold_prefix_state(l1))
@@ -184,7 +184,7 @@ def test_null_control_catches_divergence(l1, monkeypatch):
     post-branch event whose payload no longer matches the placebo fold,
     which invariant (b) (aligned suffix, non-bookkeeping fields) detects.
     """
-    from verdi.experiments import g5_pairs
+    from verdi_agents.experiments import g5_pairs
 
     real_run_arm = g5_pairs.run_arm
 
@@ -229,7 +229,7 @@ def test_null_control_symmetric_input_corruption_is_not_divergence(l1):
 
 def test_null_control_catches_state_divergence(l1, monkeypatch):
     """Invariant (c): a fold that changes the final state hash must fail."""
-    from verdi.experiments import g5_pairs
+    from verdi_agents.experiments import g5_pairs
 
     real_run_arm = g5_pairs.run_arm
 
