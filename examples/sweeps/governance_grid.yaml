@@ -1,7 +1,7 @@
 # Which institutional design keeps the society stable, and does it depend on
 # the shock? Every combination below is run (2 x 2 x 2 = 8 conditions).
 #
-#   python -m verdi_agents.sweep examples/sweeps/governance_grid.yaml --dry-run
+#   verdi-agents sweep examples/sweeps/governance_grid.yaml --dry-run
 name: governance_grid
 scenario: examples/full.yaml
 

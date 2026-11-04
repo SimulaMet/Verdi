@@ -11,8 +11,8 @@ Configure an OpenAI-compatible endpoint as described in the
 [README](../README.md), then run:
 
 ```bash
-python -m verdi_agents.experiments.paired_run --config examples/paired_institutional_recovery.yaml
-python -m verdi_agents.analysis.outcome_metrics --pair-root runs/paired-institutional-recovery
+verdi-agents pair examples/paired_institutional_recovery.yaml
+verdi-agents compare runs/paired-institutional-recovery
 ```
 
 The paired runner copies a common base scenario into fixed and revisable
@@ -56,7 +56,7 @@ constitution:
 ```
 
 These restrictions complement immutable resource invariants. Policy
-violations appear in the event ledger with a `constitution:<rule>` reason.
+violations appear in the event log (`events.jsonl`) with a `constitution:<rule>` reason.
 An action blocked by a policy is not automatically a punitive sanction.
 
 Other amendment keys can be recorded as governance or narrative rules but
@@ -79,7 +79,7 @@ demonstrate the relevant scenario settings.
 The outcome analysis includes verified objective completion, attempted and
 committed resource flows, reserve levels, inequality, exclusion episodes,
 institutional decisions, and recovery observations. Aggregates include
-references to the underlying event ledger where applicable; runs without
+references to the underlying event log where applicable; runs without
 adequate evidence should not be interpreted as zeros.
 
 A passed amendment is a governance outcome, not proof of improved recovery.

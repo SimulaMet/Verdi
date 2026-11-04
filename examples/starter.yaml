@@ -1,13 +1,13 @@
 # Verdi STARTER: the smallest useful scenario (4 agents, 20 ticks, 1 meeting).
 #
-#   python -m verdi_agents.society.live --scenario examples/starter.yaml --run-dir runs/starter
+#   verdi-agents run examples/starter.yaml        # results in runs/starter/
 #   open runs/starter/report.html
 #
 # Every run records this file's `model:` block, so the YAML is the frozen input.
 # For every available knob see examples/full.yaml.
 
 model:
-  base_url: https://simulachat.sushant.pp.ua/api/v1   # any OpenAI-compatible endpoint
+  base_url: http://localhost:8000/v1   # any OpenAI-compatible endpoint
   name: default
   # key: MODEL_API_KEY from .env
 

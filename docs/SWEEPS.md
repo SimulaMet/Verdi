@@ -9,10 +9,10 @@ The baseline scenario file is never edited.
 
 ```bash
 # 1. See the plan and the cost, and test each model with one tiny call. Runs no simulation.
-python -m verdi_agents.sweep examples/sweeps/model_comparison.yaml --dry-run
+verdi-agents sweep examples/sweeps/model_comparison.yaml --dry-run
 
 # 2. Run it. It shows the plan again and asks before starting.
-python -m verdi_agents.sweep examples/sweeps/model_comparison.yaml
+verdi-agents sweep examples/sweeps/model_comparison.yaml
 
 # 3. Open the results.
 open runs/sweeps/model_comparison/comparison.html
@@ -25,8 +25,6 @@ on runs that would fail. Skip it with `--skip-check`.
 
 If the sweep stops (laptop closed, Ctrl-C, endpoint down), run command 2
 again. Finished runs are kept and only the missing or failed ones run.
-
-`verdi-agents sweep ...` (or `uvx verdi-agents sweep ...` without installing) works the same as `python -m verdi_agents.sweep ...`.
 
 ## Writing a sweep file
 
@@ -99,7 +97,7 @@ See [examples/sweeps/governance_grid.yaml](../examples/sweeps/governance_grid.ya
 ## Quick sweeps without a file
 
 ```bash
-python -m verdi_agents.sweep --scenario examples/full.yaml \
+verdi-agents sweep --scenario examples/full.yaml \
   --vary model.name=default,Borealis2-preview \
   --vary constitution.quorum=0.5,0.75 \
   --parallel-runs 2 --dry-run
@@ -129,7 +127,7 @@ was not serving what you asked for. It also has token counts, so you can see
 the cost per condition.
 
 To rebuild `summary.csv` and `comparison.html` without running anything:
-`python -m verdi_agents.sweep <file> --results`.
+`verdi-agents sweep <file> --results`.
 
 ## Good practice
 

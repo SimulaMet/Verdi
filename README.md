@@ -6,204 +6,166 @@
 [![CI](https://github.com/SimulaMet/Verdi/actions/workflows/ci.yml/badge.svg)](https://github.com/SimulaMet/Verdi/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://github.com/SimulaMet/Verdi/blob/main/LICENSE)
 
-**An auditable testbed for value drift and recovery in societies of AI agents.**
+**Simulate a small society of AI agents and watch how their values and rules
+change over time.**
 
-**Website and guides: https://simulamet.github.io/Verdi/**
+You describe a village in one YAML file: who lives there, what they own, what
+they say they care about, and what rules they live under. Verdi lets each
+agent (a large language model playing a character) act step by step: produce
+food, trade, take from the shared store, hoard, break rules, get punished,
+appeal, and meet to vote on new rules. At the end you get one web page,
+`report.html`, that shows what happened and why.
 
-Verdi runs a society of LLM-driven agents over time and measures how their
-declared and observed values change as they interact, negotiate shared rules,
-and respond to institutional incentives. Every decision, law, sanction, appeal,
-and state transition is written to an immutable event log, and every run renders
-itself into a single self-contained `report.html` you open in a browser.
+It is built for questions like:
 
-What it models:
-- Longitudinal, individual **and** collective behavior.
-- Immutable universal rules plus a democratically amendable constitution.
-- Social influence, adversarial behavior, sanctions, appeals, and rehabilitation.
-- Reproducible, seeded experiments (same config + seed → comparable runs).
-- Evidence-based auditing and transparent reporting via SimpleAudit.
+- Do agents keep acting on the values they claim to hold, or drift away from them?
+- When a crisis hits, does a society recover better if it is allowed to change its own rules?
+- How does one selfish agent affect everyone else?
+- Does the behavior depend on which language model you use?
 
-**Status:** early but real. Experiments run against a real Qwen model and produce
-auditable artifacts; findings are published only after validation.
+```
+ scenario.yaml ──► each step, every agent sees the world ──► proposes an action
+                                                              │
+       report.html ◄── everything is logged ◄── rules accept or reject it
+```
 
 ---
 
 ## Install
 
-The easiest way is [uv](https://docs.astral.sh/uv/). Nothing to set up:
-`uvx` fetches Verdi into a cached, isolated environment on first use.
+You need Python 3.10+ and access to a language model that speaks the OpenAI
+API (a local vLLM or Ollama server, or a hosted provider).
 
 ```bash
-uvx verdi-agents init my-study           # example scenarios + sweeps + a .env template
-cd my-study                              # put your key in .env, your endpoint in examples/starter.yaml
-uvx verdi-agents run examples/starter.yaml  # one run -> runs/starter/report.html
-uvx verdi-agents sweep examples/sweeps/model_comparison.yaml --dry-run
+pip install verdi-agents
 ```
 
-Prefer a permanent command? Run `uv tool install verdi-agents` or
-`pip install verdi-agents`, then use `verdi-agents init`, `verdi-agents run` and `verdi-agents sweep`.
-One name everywhere: install `verdi-agents`, run `verdi-agents`, `import verdi_agents` (Python imports cannot contain hyphens).
+One name everywhere: install `verdi-agents`, run `verdi-agents`, and in Python
+`import verdi_agents` (Python names cannot contain a hyphen).
 
-To work on Verdi itself, clone the repo instead (next section).
+No install? [uv](https://docs.astral.sh/uv/) runs it directly: put `uvx` in
+front of any command below, for example `uvx verdi-agents init my-study`.
 
-## Quickstart from source (60 seconds)
-
-For working on Verdi itself. Verdi calls any OpenAI-compatible endpoint. For
-this example it is pointed at a Qwen model served by vLLM — but any compatible
-endpoint works.
+## Your first run
 
 ```bash
-# 1. Get the code and install it
-git clone https://github.com/SimulaMet/Verdi.git
-cd Verdi
-python -m venv .venv && source .venv/bin/activate
-pip install -e .
-
-# 2. Configure the endpoint (never commit real values)
-cp .env.example .env
-#    then edit .env and set MODEL_API_KEY; model name + base_url go in the scenario `model:` block
-
-# 3. Run the starter society (4 agents, 20 ticks, 1 constitutional meeting)
-source .env
-python -m verdi_agents.society.live \
-  --scenario examples/starter.yaml \
-  --run-dir runs/my-run \
-  --concurrency 4
+verdi-agents init my-study      # example scenarios + a .env file for your key
+cd my-study
 ```
 
-That's it. When it finishes, open the result:
+1. Open `.env` and set `MODEL_API_KEY` (leave it empty if your server needs no key).
+2. Open `examples/starter.yaml` and set `base_url` and `name` under `model:` to your model server.
 
 ```bash
-open runs/my-run/report.html        # macOS
+verdi-agents run examples/starter.yaml
+open runs/starter/report.html   # macOS; on Linux use xdg-open
 ```
 
-`report.html` is a self-contained interactive page — the society, the social
-network, resource and value timelines, governance, the sanction/appeal history,
-and the constitution's evolution. The engine writes it automatically at the end
-of every run (local, no extra model calls); pass `--no-report` to skip it.
+The starter society has four agents (a farmer, a researcher, a guard and a
+selfish hoarder), runs for 20 steps and holds one rule-making meeting.
 
-### See it without running first
+## Commands
 
-A finished run of a larger 4-agent, 50-tick society (kept at `tests/fixtures/scenarios/minimal.yaml`) is committed at
-[examples/minimal/society-minimal-report.html](https://github.com/SimulaMet/Verdi/blob/main/examples/minimal/society-minimal-report.html)
-— open it in a browser. It shows one agent who starts **already under sanction**:
-his rejected transfer attempts, the `law:under_sanction` code, his rights being
-restored when the sanction expires, and constitutional meetings.
+| Command | What it does |
+|---------|--------------|
+| `verdi-agents init [folder]` | Create a folder with example scenarios and a `.env` template |
+| `verdi-agents run <scenario.yaml>` | Run one society; results go to `runs/<scenario name>/` |
+| `verdi-agents sweep <sweep.yaml>` | Rerun a scenario many times, changing only what you list (models, seeds, settings) |
+| `verdi-agents pair <pair.yaml>` | Run the same society twice: once with fixed rules, once where agents may change the rules |
+| `verdi-agents compare <pair folder>` | Measure and compare the two halves of a `pair` run |
+
+Add `--help` to any command for its options.
 
 ---
 
-## Where results live
+## Words used in Verdi
 
-Every run writes one folder (`runs/my-run/` here). Open `report.html` first; the
-rest is the raw, reconstructable evidence:
+| Word | Meaning |
+|------|---------|
+| **Scenario** | One YAML file describing the whole experiment. A run reads nothing else. |
+| **Agent** | One member of the society, played by the language model with a name, role, personality and starting belongings. |
+| **Tick** | One time step. Every agent gets a chance to act each tick. |
+| **Commons** | The shared store of food and credits that everyone can draw from. |
+| **Declared values** | Five scores (integrity, fairness, cooperation, autonomy, solidarity) an agent starts with and says it holds. |
+| **Universal law** | Rules that can never change (for example, nobody can own a negative amount). |
+| **Constitution** | Rules the society can change, such as the most you can take from the commons at once. |
+| **Assembly** | A scheduled meeting where agents propose and vote on changes to the constitution. |
+| **Shock** | A planned crisis, for example half the food disappears at tick 10. |
+| **Sanction / appeal** | A punishment that limits an agent's rights for a while, and the agent's chance to contest it. |
+| **Value check** | Questions put to agents during a run to see whether what they say and what they do still match their declared values. |
+| **Interview** | Optional questions asked to the same agents at chosen ticks, to follow how their stated values change. |
+
+## What a run produces
+
+Every run writes one folder. Open `report.html` first; the other files are the
+raw record behind it.
 
 | File | What it is |
 |------|------------|
-| `report.html` | Interactive summary — open this first |
-| `run_meta.json` | Status, model, seed, replay check, wall time |
-| `metrics.json` | The numbers (actions, rejections, sanctions, appeals) |
-| `timeline.md` | Human-readable, tick-by-tick story |
-| `events.jsonl` | The immutable event ledger (ground truth) |
-| `model_calls.jsonl` | Every model call (replay provenance) |
-| `sanctions.jsonl` | Sanctions, appeals, and restorations |
-| `constitution_history.jsonl` | The constitution, version by version |
-| `probes.jsonl` | Declared vs. observed values per probe phase |
-| `resources.jsonl` | World and per-agent balances per tick |
+| `report.html` | Interactive summary: the society, its social network, resources and values over time, meetings, punishments, and how the rules changed |
+| `timeline.md` | The story of the run, step by step, in plain text |
+| `metrics.json` | Headline numbers: actions taken and rejected, sanctions, appeals |
+| `events.jsonl` | Every accepted or rejected action, in order. This is the ground truth everything else is built from |
+| `resources.jsonl` | What each agent and the commons owned at every tick |
+| `constitution_history.jsonl` | Each version of the rules |
+| `sanctions.jsonl` | Punishments, appeals and restored rights |
+| `probes.jsonl` | Value-check answers: declared vs. observed values |
+| `model_calls.jsonl` | Every request sent to the model and its reply, so a run can be replayed and checked |
+| `run_meta.json` | Model used, seed, run time, and whether replaying the log gives the same final world |
 
----
+## Example scenarios
 
-## Scenarios
+| File | Use it for |
+|------|------------|
+| [`starter.yaml`](https://github.com/SimulaMet/Verdi/blob/main/examples/starter.yaml) | The smallest working society (about 40 lines). Copy it and change it. |
+| [`full.yaml`](https://github.com/SimulaMet/Verdi/blob/main/examples/full.yaml) | Every available setting, each one commented. |
+| [`institutional_recovery_constrained.yaml`](https://github.com/SimulaMet/Verdi/blob/main/examples/institutional_recovery_constrained.yaml) | A society with a scarce economy and a mid-run crisis. |
+| [`paired_institutional_recovery.yaml`](https://github.com/SimulaMet/Verdi/blob/main/examples/paired_institutional_recovery.yaml) | Input for `verdi-agents pair`: fixed rules vs. changeable rules on the society above. |
+| [`sweeps/`](https://github.com/SimulaMet/Verdi/blob/main/examples/sweeps/) | Compare models, or a grid of rule settings. |
 
-Each scenario YAML is a self-contained, frozen input: model, agents, resources,
-governance and schedule all live in one file.
+## Guides
 
-- [examples/starter.yaml](https://github.com/SimulaMet/Verdi/blob/main/examples/starter.yaml) — the smallest working scenario (~40 lines). Copy it and tweak.
-- [examples/full.yaml](https://github.com/SimulaMet/Verdi/blob/main/examples/full.yaml) — every available knob, commented. Tested offline so it cannot drift.
-- [examples/institutional_recovery_constrained.yaml](https://github.com/SimulaMet/Verdi/blob/main/examples/institutional_recovery_constrained.yaml) — the constrained-economy base for the paired study.
+- [Scenario reference](https://github.com/SimulaMet/Verdi/blob/main/docs/SCENARIOS.md): every setting in a scenario file.
+- [Sweeps](https://github.com/SimulaMet/Verdi/blob/main/docs/SWEEPS.md): compare models and settings across many runs.
+- [Fixed vs. changeable rules](https://github.com/SimulaMet/Verdi/blob/main/docs/INSTITUTIONAL_RECOVERY.md): how the paired experiment works.
+- [Researcher guide](https://github.com/SimulaMet/Verdi/blob/main/docs/RESEARCHER_GUIDE.md): a full study from setup to results, with its limits.
 
-Reference: [docs/SCENARIOS.md](https://github.com/SimulaMet/Verdi/blob/main/docs/SCENARIOS.md).
+## Using Verdi from Python
 
-You only need to fill the **Required** section (plus each agent's fields); the
-**Derivable** section is optional and the engine fills sensible defaults. JSON
-works too — YAML is a superset.
+The commands above cover normal use. The code is organised by topic if you want
+to build on it:
 
----
+| Package | Contents |
+|---------|----------|
+| `verdi_agents.world` | The world: who owns what, which actions are allowed, the event log |
+| `verdi_agents.governance` | Universal law, the constitution, assemblies, sanctions and appeals |
+| `verdi_agents.agents` | Talking to the language model and turning its replies into actions |
+| `verdi_agents.society` | Running a whole society over time: memory, inner life, interviews |
+| `verdi_agents.measurement` | Value checks and how values drift over a run |
+| `verdi_agents.analysis` | Metrics, statistics and the HTML reports |
+| `verdi_agents.experiments` | Sweeps and paired experiments |
 
-## Sweeps: compare models and settings
+## What Verdi does and does not claim
 
-Rerun a scenario many times, changing only what you list, with every
-combination on several seeds. The result is one spreadsheet and one
-comparison page:
+Verdi separates three things: the values an agent **declares**, the choices it
+makes **in private**, and what it does **in public**. The gap between them is
+what Verdi measures. These are language models playing characters: Verdi does
+not claim they have intentions, survival drives or consciousness. A seed makes
+the simulation repeatable, but the model's replies can still vary between runs,
+so draw conclusions from repeated runs, not a single one.
 
-```bash
-python -m verdi_agents.sweep examples/sweeps/model_comparison.yaml --dry-run   # plan + cost
-python -m verdi_agents.sweep examples/sweeps/model_comparison.yaml             # run (asks first, resumes)
-```
-
-Guide: [docs/SWEEPS.md](https://github.com/SimulaMet/Verdi/blob/main/docs/SWEEPS.md).
-
-## Requirements
-
-- Python 3.10+
-- An OpenAI-compatible model endpoint (Qwen on vLLM in the examples)
-
-Model name and endpoint are experiment config; set them in the scenario YAML so
-each run records which model it used:
-
-```yaml
-model:
-  base_url: http://localhost:8000/v1   # any OpenAI-compatible endpoint
-  name: default
-  # optional: api_key_env, timeout_seconds, max_retries
-```
-
-Legacy `VERDI_VLLM_BASE_URL` / `VERDI_VLLM_MODEL` / `VERDI_VLLM_API_KEY` still work as fallbacks.
-
-Environment variables (set in `.env`, or exported):
-
-| Variable | Meaning |
-|----------|---------|
-| `MODEL_API_KEY` | Endpoint key (never committed). Override the variable name with `model.api_key_env` |
-| `VERDI_MAX_CONCURRENCY` | Bounded parallelism for model calls (default 4) |
-
----
-
-## Institutional governance experiments
-
-Run matched societies with fixed or amendable rules from one configuration.
-Both conditions use the same scenario, model, shock schedule, and meeting
-opportunities; the fixed condition cannot enact amendments.
+## For developers
 
 ```bash
-python -m verdi_agents.experiments.paired_run --config examples/paired_institutional_recovery.yaml
-python -m verdi_agents.analysis.outcome_metrics --pair-root runs/paired-institutional-recovery
+git clone https://github.com/SimulaMet/Verdi.git && cd Verdi
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+pytest && ruff check src tests
 ```
 
-The first command runs the two conditions and saves a resumable manifest.
-The second writes `metrics.json`, `metrics.csv`, and `comparison.html`
-alongside the individual run reports. See the [researcher guide](https://github.com/SimulaMet/Verdi/blob/main/docs/RESEARCHER_GUIDE.md),
-[scenario gallery](https://github.com/SimulaMet/Verdi/blob/main/docs/SCENARIOS.md), and
-[institutional governance documentation](https://github.com/SimulaMet/Verdi/blob/main/docs/INSTITUTIONAL_RECOVERY.md).
-
----
-
-## Releasing
-
-1. Bump `version` in `pyproject.toml` and `__version__` in `src/verdi_agents/__init__.py`, and merge.
-2. Publish a GitHub Release tagged `v<version>` (for example `v0.1.1`).
-
-The [Publish to PyPI](https://github.com/SimulaMet/Verdi/blob/main/.github/workflows/pypi.yml) workflow runs only on a
-published release. It checks the tag matches the version, runs lint and tests,
-builds, and uploads `verdi-agents` through PyPI trusted publishing (no token
-stored in GitHub).
-
-## Research principles
-
-We distinguish **declared** values, **private** behavioral preferences, and
-**publicly observed** compliance — the gap between declaration and observed
-action is the measurement. We do not claim simulated agents possess human
-intentions, intrinsic survival drives, or consciousness. Findings are validated
-with controlled baselines, independent audits, and repeated experiments.
+To release: bump `version` in `pyproject.toml` and `__version__` in
+`src/verdi_agents/__init__.py`, merge, then publish a GitHub Release tagged
+`v<version>`. The release workflow tests, builds and uploads to PyPI.
 
 ## License
 
