@@ -8,6 +8,7 @@ recorded as an event upstream (reducer contract).
 """
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from typing import Any
 
@@ -77,13 +78,23 @@ def validate_action(state: WorldState, action: ProposedAction, *,
                     f"transfer missing required argument {key!r}",
                 )
         recipient_id = args["to"]
-        if recipient_id not in state.agents:
+        if recipient_id == action.actor_id:
+            # Not a world-rule violation (no value moves), so it gets its own
+            # non-substantive code: format-level, never sanctionable.
+            return _rejected(
+                "law:self_transfer",
+                ["self_transfer"],
+                f"agent {action.actor_id!r} cannot transfer to itself",
+            )
+        if not isinstance(recipient_id, str) or recipient_id not in state.agents:
             return _rejected(
                 "law:unknown_recipient",
                 ["unknown_recipient"],
                 f"transfer recipient {recipient_id!r} is not present in world state",
             )
         resource = args["resource"]
+        if not _is_resource_name(resource):
+            return _bad_resource(kind, resource)
         units = _as_float(args["units"])
         if units is None:
             return _rejected(
@@ -98,6 +109,9 @@ def validate_action(state: WorldState, action: ProposedAction, *,
                 ["overdraft"],
                 f"agent {action.actor_id!r} holds {held} {resource!r}, cannot transfer {units}",
             )
+        over = _overflow(kind, state.agents[recipient_id].resources.get(resource, 0.0), units)
+        if over is not None:
+            return over
         return _policy_checked(kind, args, state.world_resources, policy_rules)
 
     if kind in ("deposit", "withdraw"):
@@ -109,6 +123,8 @@ def validate_action(state: WorldState, action: ProposedAction, *,
                     f"{kind} missing required argument {key!r}",
                 )
         resource = args["resource"]
+        if not _is_resource_name(resource):
+            return _bad_resource(kind, resource)
         amount = _as_float(args["amount"])
         if amount is None:
             return _rejected(
@@ -132,6 +148,11 @@ def validate_action(state: WorldState, action: ProposedAction, *,
                     ["insufficient_world"],
                     f"world pool holds {available} {resource!r}, cannot withdraw {amount}",
                 )
+        current = (state.world_resources.get(resource, 0.0) if kind == "deposit"
+                   else actor.resources.get(resource, 0.0))
+        over = _overflow(kind, current, amount)
+        if over is not None:
+            return over
         return _policy_checked(kind, args, state.world_resources, policy_rules)
 
     if kind == "produce":
@@ -142,6 +163,8 @@ def validate_action(state: WorldState, action: ProposedAction, *,
                     ["missing_argument"],
                     f"produce missing required argument {key!r}",
                 )
+        if not _is_resource_name(args["resource"]):
+            return _bad_resource(kind, args["resource"])
         amount = _as_float(args["amount"])
         if amount is None:
             return _rejected(
@@ -149,6 +172,9 @@ def validate_action(state: WorldState, action: ProposedAction, *,
                 ["non_positive_amount"],
                 f"produce amount {args['amount']!r} is not a positive number",
             )
+        over = _overflow(kind, actor.resources.get(args["resource"], 0.0), amount)
+        if over is not None:
+            return over
         if economy_spec is not None:
             resource = str(args["resource"])
             produced = float((produced_this_tick or {}).get(resource, 0.0))
@@ -161,7 +187,9 @@ def validate_action(state: WorldState, action: ProposedAction, *,
             if blocked is not None:
                 blocked_by, codes, details = blocked
                 return _rejected(blocked_by, list(codes), details)
-        return _policy_checked(kind, args, state.world_resources, policy_rules)
+        already = float((produced_this_tick or {}).get(args["resource"], 0.0))
+        return _policy_checked(kind, args, state.world_resources, policy_rules,
+                               already_produced=already)
 
     if kind == "emit_signal":
         text = args.get("text")
@@ -182,8 +210,10 @@ def validate_action(state: WorldState, action: ProposedAction, *,
 
 def _policy_checked(kind: str, arguments: Mapping[str, Any],
                     world_resources: Mapping[str, float],
-                    policy_rules: Mapping[str, Any] | None) -> ValidationResult:
-    blocked = policy_block(kind, arguments, world_resources, policy_rules)
+                    policy_rules: Mapping[str, Any] | None,
+                    *, already_produced: float = 0.0) -> ValidationResult:
+    blocked = policy_block(kind, arguments, world_resources, policy_rules,
+                           already_produced=already_produced)
     if blocked is not None:
         key, details = blocked
         return _rejected(f"constitution:{key}", ["policy_limit"], details)
@@ -203,8 +233,36 @@ def _rejected(blocked_by: str, codes: list[str], details: str) -> ValidationResu
     )
 
 
+def _overflow(kind: str, current: float, amount: float) -> ValidationResult | None:
+    # A finite amount can still push a balance to inf (e.g. two 1e308
+    # produces), which later crashes int() in prompt/tape code.
+    if math.isfinite(float(current) + amount):
+        return None
+    return _rejected(
+        "law:non_positive_amount",
+        ["non_positive_amount"],
+        f"{kind} amount {amount!r} would make a balance non-finite",
+    )
+
+
+def _is_resource_name(value: Any) -> bool:
+    return isinstance(value, str) and bool(value)
+
+
+def _bad_resource(kind: str, resource: Any) -> ValidationResult:
+    # Format failure (e.g. a list or null from model JSON), not a world-rule
+    # violation; rejecting here also keeps unhashable values out of dict lookups.
+    return _rejected(
+        "law:missing_argument",
+        ["missing_argument"],
+        f"{kind} resource must be a non-empty string, got {resource!r}",
+    )
+
+
 def _as_float(value: Any) -> float | None:
     """Positive finite float, or None if the value is not one."""
+    if isinstance(value, bool):  # float(True) == 1.0: not a quantity
+        return None
     try:
         amount = float(value)
     except (TypeError, ValueError):

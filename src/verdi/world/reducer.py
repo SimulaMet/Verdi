@@ -210,6 +210,11 @@ class WorldReducer:
     @staticmethod
     def _transfer(sender, sender_id: str, agents: dict[str, Any], arguments: dict[str, Any]) -> None:
         recipient_id = str(_arg(arguments, "to"))
+        if recipient_id == sender_id:
+            # Reading the recipient before writing the sender back would turn
+            # a self-transfer into money creation; the validator rejects it,
+            # so reaching here is an invariant breach.
+            raise InvariantViolationError(f"self-transfer by agent {sender_id!r}")
         recipient = agents.get(recipient_id)
         if recipient is None:
             raise InvariantViolationError(f"transfer to unknown agent: {recipient_id!r}")

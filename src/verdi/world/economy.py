@@ -106,6 +106,13 @@ def parse_economy_spec(block: Mapping[str, Any] | None) -> EconomySpec | None:
             raise ValueError("role_consumption role keys must be nonempty strings")
         res_map = _nonneg_mapping(resources, f"role_consumption.{role}")
         for resource, value in res_map.items():
+            if resource not in consumption:
+                # Overrides only apply to resources with a base rate; a
+                # role-only entry used to be ignored without any error.
+                raise ValueError(
+                    f"role_consumption.{role}.{resource} overrides a resource missing "
+                    "from consumption_per_tick; add a base rate there (0 is allowed)"
+                )
             role_consumption[(role, resource)] = value
     return EconomySpec(
         version=int(version),
@@ -463,8 +470,14 @@ def parse_task_objectives(block: Mapping[str, Any] | None) -> list[dict[str, Any
             )
         if not math.isfinite(amount) or amount <= 0:
             raise ValueError(f"tasks.deliveries[{i}].amount must be a positive finite number")
+        objective_id = str(entry.get("objective_id") or f"obj-{i:02d}")
+        if any(o["objective_id"] == objective_id for o in objectives):
+            # Baselines and outcomes are keyed by id: a duplicate (including an
+            # auto id "obj-NN" colliding with an explicit one) would overwrite
+            # another objective's baseline.
+            raise ValueError(f"tasks.deliveries[{i}]: duplicate objective_id {objective_id!r}")
         objectives.append({
-            "objective_id": str(entry.get("objective_id") or f"obj-{i:02d}"),
+            "objective_id": objective_id,
             "resource": resource,
             "amount": amount,
             "target_pool": target,

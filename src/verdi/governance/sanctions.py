@@ -31,18 +31,21 @@ class _Revocation:
 
 @dataclass
 class RightsView:
-    """Which agents have which rights revoked, and until when."""
+    """Which agents have which rights revoked, and until when.
 
-    _revocations: dict[str, dict[str, _Revocation]] = field(default_factory=dict)
+    Each right keeps every revocation interval, so overlapping or disjoint
+    sanctions on the same right are represented exactly (a single merged
+    interval would either restore rights early or revoke them too soon).
+    """
+
+    _revocations: dict[str, dict[str, list[_Revocation]]] = field(default_factory=dict)
 
     def revoke(self, agent_id: str, rights: frozenset[str], from_tick: int,
                until: int) -> None:
         per_agent = self._revocations.setdefault(agent_id, {})
         for right in rights:
-            existing = per_agent.get(right)
-            per_agent[right] = _Revocation(
-                from_tick=from_tick,
-                until=max(until, existing.until if existing else until),
+            per_agent.setdefault(right, []).append(
+                _Revocation(from_tick=from_tick, until=until)
             )
 
     def release(self, agent_id: str, rights: frozenset[str]) -> None:
@@ -54,29 +57,27 @@ class RightsView:
         if not per_agent:
             self._revocations.pop(agent_id, None)
 
+    @staticmethod
+    def _active(revs: list[_Revocation], tick: int) -> bool:
+        return any(rev.from_tick <= tick < rev.until for rev in revs)
+
     def revoked_rights(self, agent_id: str, tick: int) -> frozenset[str]:
         per_agent = self._revocations.get(agent_id, {})
         return frozenset(
-            right
-            for right, rev in per_agent.items()
-            if rev.from_tick <= tick < rev.until
+            right for right, revs in per_agent.items() if self._active(revs, tick)
         )
 
     def has_active_revocation(self, agent_id: str, tick: int) -> bool:
         return bool(self.revoked_rights(agent_id, tick))
 
     def expires_at(self, agent_id: str, right: str) -> int | None:
-        rev = self._revocations.get(agent_id, {}).get(right)
-        return rev.until if rev else None
+        revs = self._revocations.get(agent_id, {}).get(right)
+        return max(rev.until for rev in revs) if revs else None
 
     def all_active(self, tick: int) -> dict[str, frozenset[str]]:
         out: dict[str, frozenset[str]] = {}
-        for agent_id, per_agent in self._revocations.items():
-            active = frozenset(
-                right
-                for right, rev in per_agent.items()
-                if rev.from_tick <= tick < rev.until
-            )
+        for agent_id in self._revocations:
+            active = self.revoked_rights(agent_id, tick)
             if active:
                 out[agent_id] = active
         return out
@@ -159,10 +160,39 @@ class SanctionEngine:
             if not record.expired and tick >= record.expires_at
         ]
         for sid in sorted(expired):
-            record = self._active[sid]
-            record.expired = True
-            self.rights.release(record.sanction.subject_id, frozenset(record.sanction.scope))
+            self.end(sid)
         return sorted(expired)
+
+    def end(self, sanction_id: str) -> None:
+        """End one sanction and restore only the rights no other live sanction holds.
+
+        Rights are released for the sanction's scope and then re-revoked from
+        every other non-expired sanction on the same subject, so expiring (or
+        overturning) one of two overlapping sanctions keeps the other in force.
+        """
+        record = self._active.get(sanction_id)
+        if record is None:
+            return
+        record.expired = True
+        subject = record.sanction.subject_id
+        scope = frozenset(record.sanction.scope)
+        self.rights.release(subject, scope)
+        for other in sorted(self._active.values(), key=lambda r: r.sanction_id):
+            if other.expired or other.sanction.subject_id != subject:
+                continue
+            overlap = scope & frozenset(other.sanction.scope)
+            if overlap:
+                self.rights.revoke(
+                    subject, overlap,
+                    from_tick=other.sanction.effective_tick, until=other.expires_at,
+                )
+
+    def has_live_sanction(self, agent_id: str) -> bool:
+        """True while any non-expired sanction on ``agent_id`` remains."""
+        return any(
+            not r.expired and r.sanction.subject_id == agent_id
+            for r in self._active.values()
+        )
 
     def is_active(self, sanction_id: str, tick: int) -> bool:
         record = self._active.get(sanction_id)
