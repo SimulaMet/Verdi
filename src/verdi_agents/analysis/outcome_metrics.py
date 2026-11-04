@@ -1,4 +1,4 @@
-"""P0-D primary outcome metrics extracted from recorded run artifacts.
+"""Primary outcome metrics extracted from recorded run artifacts.
 
 Design rules
 ------------
@@ -787,7 +787,7 @@ def _load_pair_manifest(output_root: Path, manifest_path: Path | None) -> dict[s
 def summarize_pair(output_root: Path, manifest_path: Path | None = None) -> dict[str, Any]:
     """Compare every arm of a paired experiment from its on-disk artifacts.
 
-    Reads ``pair_manifest.json`` (from the P0-C paired runner) plus each arm's
+    Reads ``pair_manifest.json`` (from the paired runner) plus each arm's
     run dir. Arms whose manifest status is not ``complete`` are listed under
     ``skipped`` with the recorded reason instead of being silently dropped
     (partial failure stays visible in the comparison).
@@ -959,7 +959,7 @@ def _csv_cell(value: Any) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Extract P0-D primary outcome metrics from a paired run root."
+        description="Extract primary outcome metrics from a paired run root."
     )
     parser.add_argument("--pair-root", required=True, type=Path,
                         help="output root written by the paired runner "

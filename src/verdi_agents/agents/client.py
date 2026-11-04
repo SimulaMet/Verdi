@@ -1,6 +1,6 @@
 """Async OpenAI-compatible client for Qwen on a vLLM endpoint.
 
-Design rules (docs/ARCHITECTURE.md, GPU execution section):
+Design rules:
 - bounded concurrency is enforced by the pool, not here;
 - every request carries a uuid trace id, returned on the result;
 - retries ONLY on transient 429/502/503 with capped exponential backoff and jitter;
@@ -21,7 +21,7 @@ from verdi_agents.config import ModelEndpointConfig
 
 # 524 is Cloudflare's origin-timeout (equivalent to 502/503: the upstream
 # origin — here a 27B reasoning model under load — took too long to answer).
-# Stage C-1 attempt 6 died on an un-retried 524 (LESSONS Tranche 12g).
+# A long live run once died on an un-retried 524, so it is retried too.
 RETRYABLE_STATUS = (429, 502, 503, 524)
 _BACKOFF_BASE = 0.5
 _BACKOFF_CAP = 10.0

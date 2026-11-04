@@ -1,4 +1,4 @@
-"""Deterministic metric definitions for Verdi runs (P1-E).
+"""Deterministic metric definitions for Verdi runs.
 
 Design rules
 ------------
@@ -8,7 +8,7 @@ Design rules
   that has no evidence must not look like a metric that measured nothing.
 * Every docstring states the estimand and whether it is *descriptive*
   (a property of the observed run) or *interventional* (it only becomes a
-  causal contrast when run under matched experimental arms G0-G4).
+  causal contrast when run under matched experimental arms).
 
 The declared/private/public probe channels are always kept separate:
 combining them would conflate self-report with observed behavior, which

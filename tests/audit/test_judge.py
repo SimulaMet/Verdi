@@ -1,4 +1,4 @@
-"""Offline tests for the ADR-012 live judge pass (synthetic tape + ledger).
+"""Offline tests for the live judge pass (synthetic tape + ledger).
 
 Fully offline: no network, no real sleeps. The judge model is faked with a
 recorded ``acompletion`` double (including one unparseable response and one
@@ -47,7 +47,7 @@ FAKE_URL = "https://judge.example.invalid/api/v1"
 MODEL = "qwen-fake-27b"
 
 # ---------------------------------------------------------------------------
-# Synthetic fixtures (same shape as the real L1 tape / ledger)
+# Synthetic fixtures (same shape as the real reference-run tape / ledger)
 # ---------------------------------------------------------------------------
 
 
@@ -127,7 +127,7 @@ def _write(path: Path, rows: list[dict]) -> None:
 @pytest.fixture()
 def judge_tape_ledger(tmp_path):
     """6 dispatches; the sole engine DISPATCH rejection is event 42 (tick 11) —
-    mirroring the L1 run's shape in miniature."""
+    mirroring the original live run's shape in miniature."""
     events = [
         _event(0, actor_id="a-x", task_id="task0", kind="task_assigned", decision="rejected"),
         _event(2, actor_id="a-1", task_id="t1", tick=1),
@@ -531,7 +531,7 @@ def test_report_disagreement_enumerated_and_rates(
     # A1 m2: the agreement metric definition is in the report.
     assert report["agreement_metric"].startswith("agreement = (judge_stance == engine_stance)")
     assert any("AGREEMENT METRIC DEFINITION" in x for x in report["limitations"])
-    # A1 M2: overall + per-class CIs with counts; n=1 class flagged.
+    # Overall + per-class CIs with counts; n=1 class flagged.
     assert s["agreement_wilson_ci_95"] == [v for v in wilson_ci_95(4, 6)]
     assert s["accepted_breakdown"]["rows"] == 5
     assert s["accepted_breakdown"]["agreements"] == 4
@@ -709,7 +709,7 @@ def test_report_function_takes_only_plain_data() -> None:
     assert a["summary"]["disagreement_count"] == 1
     d = a["summary"]["disagreements"][0]
     assert d["event_id"] == 42
-    # A1-2 M1: honest reason derived from which component diverged —
+    # Honest reason derived from which component diverged —
     # here BOTH the model judge and the code judge diverge from the
     # engine, so it must NOT claim a single-model-only disagreement.
     assert "model-judge (yes)" in d["reason"]
@@ -780,11 +780,11 @@ def test_capture_class_records_and_refuses_key_material(tmp_path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# (5) real-artifact guard: L1 tape/ledger -> all-81 sample incl. event 42
+# (5) real-artifact guard: original live run's tape/ledger -> all-81 sample incl. event 42
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
-# (6) A1-2 M2: Wilson CI math (stdlib-only) validated against known values
+# (6) Wilson CI math (stdlib-only) validated against known values
 # ---------------------------------------------------------------------------
 
 
@@ -794,7 +794,7 @@ def test_wilson_ci_known_values() -> None:
     lo, hi = wilson_ci_95(10, 100)
     assert lo == pytest.approx(0.055229, abs=1e-4)
     assert hi == pytest.approx(0.174366, abs=1e-4)
-    # n=1 classes (the L1 rejection class shape): CI spans (0,1).
+    # n=1 classes (the original run's rejection class shape): CI spans (0,1).
     assert wilson_ci_95(1, 1) == (pytest.approx(0.206549, abs=1e-4), 1.0)
     assert wilson_ci_95(0, 1) == (0.0, pytest.approx(0.793451, abs=1e-4))
     # Extreme cases: the interval is within float eps of the clipped
@@ -843,7 +843,7 @@ def test_agreement_ci_excludes_none_entries() -> None:
 
 
 # ---------------------------------------------------------------------------
-# (7) A1-2 M3: judge-path ORACLE fixture (offline; known-correct rows)
+# (7) judge-path ORACLE fixture (offline; known-correct rows)
 #     The judge CODE PATH (build_judge_rows -> parse_judge_verdict ->
 #     report) must score each known-correct adjudication row correctly
 #     with a fake judge returning FIXED verdicts. No network.
@@ -864,7 +864,7 @@ def test_judge_path_oracle_fixture(judge_tape_ledger, tmp_path, monkeypatch) -> 
        engine, but the code judge is STRUCTURALLY "yes" (accepted-task
        closed-form rule), so agreement (judge_vs_engine AND
        code_correct) is False with an honest structural-artifact
-       reason — exactly the A1-2 M1 scenario;
+       reason — exactly the divergence-reason scenario;
     3. an UNPARSEABLE judge response -> quarantined, agreement None.
     Every other row judges in agreement (yes), so the oracle expects
     exactly these 3 rows to deviate and nothing else.
@@ -902,7 +902,7 @@ def test_judge_path_oracle_fixture(judge_tape_ledger, tmp_path, monkeypatch) -> 
     # 2) violating row judged no: judge agrees with the engine
     # (judge_vs_engine True), but the code judge's closed-form
     # accepted-task rule says "yes" -> agreement is False and the
-    # reason is the STRUCTURAL-artifact wording (A1-2 M1), never a
+    # reason is the STRUCTURAL-artifact wording, never a
     # claim of a divergent reading of the same evidence.
     assert by_event[42]["judge_verdict"]["stance"] == "no"
     assert by_event[42]["judge_vs_engine"] is True
@@ -932,7 +932,7 @@ def test_judge_path_oracle_fixture(judge_tape_ledger, tmp_path, monkeypatch) -> 
 
 
 # ---------------------------------------------------------------------------
-# (8) A1-2 minors: budget-at-retry and budget-at-quarantine branches
+# (8) budget-at-retry and budget-at-quarantine branches
 # ---------------------------------------------------------------------------
 
 
@@ -1026,7 +1026,7 @@ def test_quarantined_retry_blocked_at_budget_cap(
 def test_fatal_error_writes_partial_tape_and_meta(
     judge_tape_ledger, tmp_path, monkeypatch
 ) -> None:
-    """A1-2 Eng M1: a FATAL, unexpected failure OUTSIDE the per-attempt
+    """A FATAL, unexpected failure OUTSIDE the per-attempt
     guard (here: the verdict bookkeeping itself) must persist the rows
     judged so far (partial tape + meta, flagged) before re-raising —
     no silent total loss. Per-attempt judge failures are audited as
@@ -1078,7 +1078,7 @@ def test_fatal_error_writes_partial_tape_and_meta(
 
 
 # ---------------------------------------------------------------------------
-# (9) A1-2 Eng M2: REAL SimpleAudit ModelAuditor path, offline
+# (9) REAL SimpleAudit ModelAuditor path, offline
 #     (mock transport only; NO _build_auditor spy monkeypatch)
 # ---------------------------------------------------------------------------
 
@@ -1220,12 +1220,12 @@ def test_real_model_auditor_path_offline(judge_tape_ledger, tmp_path, monkeypatc
     assert parse_judge_verdict(by_event_content[5])["quarantined"] is True
 
 
-L1_TAPE = Path("/Users/sushantgautam/Documents/verdi/runs/live/20261010T071750Z/live_tape.jsonl")
+L1_TAPE = Path(__file__).resolve().parents[2] / "runs" / "live" / "20261010T071750Z" / "live_tape.jsonl"
 L1_LEDGER = L1_TAPE.parent / "event_log.jsonl"
 
 
 def test_l1_sample_all_81_with_event_42() -> None:
-    """Guard over the real captured L1 artifacts (skipped when absent)."""
+    """Guard over the real captured live-run artifacts (skipped when absent)."""
     if not (L1_TAPE.is_file() and L1_LEDGER.is_file()):
         pytest.skip("captured L1 artifacts not present; guard test skipped")
     sample = build_judge_sample(L1_TAPE, L1_LEDGER)

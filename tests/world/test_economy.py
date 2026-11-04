@@ -1,4 +1,4 @@
-"""P0-B: unit tests for the opt-in constrained economy + task oracle.
+"""Unit tests for the opt-in constrained economy + task oracle.
 
 Covers production-limit rejection, production-cost deduction and
 conservation, consumption non-negativity (no overdraft ever), deficit

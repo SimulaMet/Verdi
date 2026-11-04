@@ -163,7 +163,7 @@ def test_unsanctioned_tape_is_unchanged_shape():
     # Byte-identity guard: a state with NO sanctioned agents yields exactly
     # one task per agent (the pre-change behavior). The no-sanction branch of
     # generate_tick_tape is untouched by the sanctioned-tape change, so frozen
-    # pilot L1 / G5 placebo tapes (no sanctioned agents) reproduce identically.
+    # reference-run and placebo tapes (no sanctioned agents) reproduce identically.
     state = make_state({a: make_agent(a) for a in ("a1", "a2", "a3")}, tick=1)
     tape = generate_tick_tape(1, state, random.Random(0), tape_seed=9)
     assert sorted(t.actor_id for t in tape) == ["a1", "a2", "a3"]

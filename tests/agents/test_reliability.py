@@ -1,4 +1,4 @@
-"""P3 reliability soak for the ModelClient retry path (WS-6).
+"""Reliability soak tests for the ModelClient retry path.
 
 Deterministic, offline, no wall-clock sleep: ``asyncio.sleep`` is replaced by a
 recorder and the backoff RNG is seeded per scenario. Expected values are

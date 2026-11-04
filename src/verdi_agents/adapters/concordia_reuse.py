@@ -1,4 +1,4 @@
-"""Deep REUSE of Google DeepMind Concordia building blocks in Verdi (todo D).
+"""Deep REUSE of Google DeepMind Concordia building blocks in Verdi.
 
 This module reuses Concordia's *actual* reusable components — not just its ABCs —
 for the parts where they genuinely reduce duplication in Verdi's auditing /

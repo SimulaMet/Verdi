@@ -1,4 +1,4 @@
-"""Offline tests for P0-D primary outcome metrics + comparative report.
+"""Offline tests for the primary outcome metrics and the comparative report.
 
 Runs REAL offline paired campaigns (scripted fake caller, small ticks —
 same pattern as tests/experiments/test_paired_run.py) into tmp_path and

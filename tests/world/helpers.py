@@ -1,4 +1,4 @@
-"""Shared builders for world-engine tests (deterministic, no fixtures beyond G0)."""
+"""Shared builders for world-engine tests (deterministic, base-law fixtures only)."""
 from __future__ import annotations
 
 import json

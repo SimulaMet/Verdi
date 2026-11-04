@@ -1,4 +1,4 @@
-"""Contract tests: fixtures serialize/deserialize and enforce invariants (G0/G1)."""
+"""Contract tests: fixtures serialize/deserialize and enforce invariants."""
 from __future__ import annotations
 
 import json

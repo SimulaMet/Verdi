@@ -1,4 +1,4 @@
-"""Longitudinal interview experiment driver (todo E).
+"""Run a live society campaign with repeated agent interviews and audit the answers over time.
 
 Runs a live society campaign (real Qwen, vLLM endpoint), then post-processes
 the SAME run's artifacts to produce the longitudinal evidence:

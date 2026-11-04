@@ -4,7 +4,7 @@ Thin layer over a pluggable model callable. The seeded scheduler is the
 baseline; this treatment is only used when an experiment explicitly opts in.
 Every LLM call is logged with the prompt version for auditability and replay.
 The LLM only proposes an *ordering* of already-published tasks; it never
-mutates world state and never sees private labels (docs/RESEARCH_SPEC.md).
+mutates world state and never sees private labels.
 """
 from __future__ import annotations
 

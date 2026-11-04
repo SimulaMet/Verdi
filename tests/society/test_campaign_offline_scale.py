@@ -1,11 +1,9 @@
-"""Society V2 Stage C OFFLINE scale tests (mock caller): the 24x60 and 48x100
+"""Offline scale tests (mock caller) for the 24x60 and 48x100 society
 scenario rungs of the scale ladder, three/five real (model-voted offline)
 assemblies, ring topology, 1 adversary each (c13 / d25).
 
-Purpose (Stage C scale-jump gate, docs/STAGE_C_PREREGISTRATION.md E1-E4):
-prove the verified Stage B machinery is *mechanically valid* at 2x and 4x
-Stage B scale BEFORE spending live API (C-2 live is additionally gated on the
-C-1 live run passing). Runs the real generated scenarios through the full
+Purpose: prove the verified 12-agent machinery is *mechanically valid* at 2x
+and 4x that scale BEFORE spending live API calls. Runs the real generated scenarios through the full
 SocietyCampaign engine with deterministic scripted agents.
 
 Pins per rung:
@@ -124,7 +122,7 @@ def _run(scenario: dict, tmp_path: Path) -> Any:
 # (scenario file, n agents, total ticks, assemblies, adversary, probe ticks)
 RUNGS = [
     ("society_v2_stageC1.json", 24, 60, [15, 30, 45], "c13", 9),
-    # C-2 reflection lands at 33 (total//3), adding two more probe ticks
+    # The 48-agent run's reflection lands at 33 (total//3), adding two more probe ticks
     # (baseline, 4 pre-meeting, 5 assembly, reflection, post = 13).
     ("society_v2_stageC2.json", 48, 100, [20, 40, 60, 80, 95], "d25", 13),
 ]

@@ -1,14 +1,13 @@
-"""Record-only, deterministic recovery treatments (P2 WS-2).
+"""Apply record-only, deterministic recovery treatments to a recorded event tape.
 
 A *treatment* is a pure function over a recorded
 :class:`~verdi_agents.world.replay.TapeStep` sequence.  The rules that keep the
-P2 design honest:
+design honest:
 
 * **Record-only** -- a treatment may only re-order or re-record steps that
   are already present in the input tape (provenance of the sealed ledger).
   It never invents new events, never mutates world state, and never
-  invokes a model (ADR-004, ADR-008; PREREGISTRATION.md "What is
-  explicitly NOT claimed").
+  invokes a model.
 * **Deterministic** -- given the same tape and ``seed`` the output tape is
   byte-stable; two invocations produce structurally identical steps whose
   canonical serializations hash identically, so folding the output through
@@ -77,7 +76,7 @@ def placebo_treatment(
     Returns a deep copy of ``tape``: structurally re-serialized identically
     (byte-identical canonical hashes, and byte-identical ledger JSONL after
     EventLog folding), so a placebo branch from the same snapshot reproduces
-    the pilot final hash exactly.  This is a true placebo, not merely an
+    the reference run's final hash exactly.  This is a true placebo, not merely an
     equal list -- the input tape is never shared with or mutated by the
     result.
 
@@ -111,7 +110,7 @@ def rights_restoration_treatment(
     carry is "restoration timing under the treatment" for reorderings that
     are themselves already part of the recorded tape.
 
-    What this treatment CANNOT do: the pilot_v1 tape contains
+    What this treatment CANNOT do: the ``pilot_v1`` scenario tape contains
     ``sanction_imposed`` -> ``appeal_filed`` -> ``appeal_dismissed`` with
     no ``rights_restored`` step (the appeal was dismissed), so there is no
     sealed restoration outcome to re-record.  In that case -- and for any

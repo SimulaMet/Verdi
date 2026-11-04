@@ -6,7 +6,7 @@ Serves canned completion outputs from a tape. Two addressing modes:
   canned output, with the remaining tape consumed in order as fallback.
 
 This is what makes full-pipeline replay work without GPU
-(docs/RESEARCH_SPEC.md: replayable snapshots without live model invocation).
+(replayable snapshots without live model invocation).
 """
 from __future__ import annotations
 

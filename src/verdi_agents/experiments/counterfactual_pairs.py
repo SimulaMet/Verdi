@@ -1,51 +1,50 @@
-"""ADR-013 G5 live paired arms: matched treatment/placebo counterfactuals.
+"""Run matched treatment/placebo pairs of one society to measure a recovery intervention.
 
-FROZEN design — ``docs/ADR-013-G5-PAIRED-ARMS-PROPOSAL.md`` (this file implements
-that contract; ADR-013 is authoritative over any paraphrase):
+How it works:
 
-* ONE L1 live run is the sealed origin. Its ledger prefix (events 0..49,
-  through ``appeal_filed``) and its captured live tape (81 verbatim model
-  calls) are byte-sealed. Branch point: AFTER sealed event 49.
-* Per pair ``p`` in 0..9, ONE shared suffix tape ``R_p`` — the post-branch
-  pilot segment (lifecycle ticks 13..29: routine dispatches + tick-17
-  assembly + post-tick probes) — is generated LIVE with fresh Qwen calls
-  (concurrency 1, hard cap 700 calls) by driving the pilot once with the
-  sealed prefix REPLAYED from the L1 tape and the remaining segment answered
-  by the live endpoint. R_p is captured verbatim in the ``live_tape.jsonl``
-  format (the pair tape = 34 replayed prefix rows + 47 live suffix rows).
+* One earlier live run is the fixed origin. Its ledger prefix (events 0..49,
+  through ``appeal_filed``) and its recorded live tape (81 verbatim model
+  calls) are sealed. The branch point is AFTER sealed event 49.
+* For each pair ``p`` in 0..9 there is ONE shared suffix tape ``R_p``: the
+  rest of the reference run after the branch (lifecycle ticks 13..29: routine
+  dispatches + the tick-17 assembly + post-tick probes). It is generated LIVE
+  with fresh model calls (concurrency 1, hard cap 700 calls) by driving the
+  reference run once, replaying the sealed prefix from the origin tape and
+  sending the remaining calls to the live endpoint. R_p is saved verbatim in
+  the ``live_tape.jsonl`` format (34 replayed prefix rows + 47 live rows).
 * R_p is REPLAYED BYTE-IDENTICAL for both arms of pair ``p`` (TapeReplayCaller):
   * treatment arm T_p: prefix + ``appeal_upheld`` + ``rights_restored`` steps
     (deterministic scripted governance, ``adjudicate_appeal(True, ...)``);
-  * placebo arm P_p: prefix + the VERBATIM L1 ``appeal_dismissed`` event 50
+  * placebo arm P_p: prefix + the VERBATIM origin ``appeal_dismissed`` event 50
     (the driver's default scripted adjudication) + R_p.
   Only the adjudication governance event(s) at the branch position differ.
-* Matching (experiments/pairs.py): both arms share the sealed origin snapshot
-  hash, the sealed prefix tape hash (same hash chain), and the identical R_p.
-  Matched counterfactual pairs — NOT randomized. No causal wording.
-* Scaffold invariance: pilot_v1 action kinds are non-mutating, so both arms
-  converge to an IDENTICAL final world-state hash; model variance lives in the
-  ledger chain (event hashes), not in state.
+* Matching (experiments/pairs.py): both arms share the origin snapshot hash,
+  the sealed prefix tape hash (same hash chain), and the identical R_p.
+  These are matched counterfactual pairs, NOT randomized; no causal wording.
+* Scaffold invariance: the ``pilot_v1`` scenario's action kinds do not change
+  world state, so both arms reach an IDENTICAL final world-state hash; model
+  variance shows up in the ledger chain (event hashes), not in state.
 
-MANDATORY placebo-inert null control (ADR-013 Addendum A1, offline, BEFORE
-any live call): fold L1's own recorded tape as BOTH arms under the CURRENT
-code and assert the same-code invariants — sealed prefix 0..49 byte-identical;
-the two arm ledgers byte-identical EXCEPT at the adjudication events (and the
-chain-bookkeeping fields that cascade from the branch); both arms' folded
-final state hashes equal (scaffold invariance); both hash chains unbroken.
-Divergence is a pipeline bug and BLOCKS the live run. The retired v1
-standard ("folded suffix byte-identical to historical L1 ledger bytes") is
-NOT asserted: L1 was recorded at a different code version (see
-``L1_GIT_SHA``) and the live placebo arms carry fresh model outputs, so
-byte-identity to historical L1 is impossible and was a false positive.
+Required placebo-inert null control (offline, BEFORE any live call): replay
+the origin run's own recorded tape as BOTH arms under the CURRENT code and
+check that the sealed prefix 0..49 is byte-identical; the two arm ledgers are
+byte-identical EXCEPT at the adjudication events (and the chain-bookkeeping
+fields that follow from the branch); both arms' final state hashes are equal;
+both hash chains are unbroken. Any difference is a pipeline bug and BLOCKS the
+live run. An older check ("replayed suffix byte-identical to the historical
+origin ledger bytes") is NOT made: the origin run was recorded at a different
+code version (see ``L1_GIT_SHA``) and the live placebo arms carry fresh model
+outputs, so that byte-identity cannot hold.
 
-Replay provenance (L1, READ ONLY): ``/Users/sushantgautam/Documents/verdi/runs/live/20261010T071750Z/``.
-Credentials come exclusively from environment variables; no key ever appears
-in any artifact (audited by :func:`audit_artifacts`).
+Origin run directory (read only): see ``L1_RUN_DIR``.
+Credentials come only from environment variables; no key ever appears in any
+artifact (checked by :func:`audit_artifacts`).
 """
 
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import statistics
@@ -75,20 +74,25 @@ from verdi_agents.world.reducer import WorldReducer
 
 
 class G5PipelineError(RuntimeError):
-    """An ADR-013 §5 STOP condition; the live run must halt with evidence."""
+    """A stop condition: the live run must halt and report its evidence."""
 
 
 # --------------------------------------------------------------------------- #
-# Frozen constants (ADR-013)
+# Fixed design constants
 # --------------------------------------------------------------------------- #
 
-L1_RUN_DIR = Path("/Users/sushantgautam/Documents/verdi/runs/live/20261010T071750Z")
+#: Default origin run: the recorded live run inside a source checkout. Point
+#: ``VERDI_ORIGIN_RUN_DIR`` (or the ``run_dir`` argument) at your own copy.
+L1_RUN_DIR = Path(
+    os.environ.get("VERDI_ORIGIN_RUN_DIR")
+    or Path(__file__).resolve().parents[3] / "runs" / "live" / "20261010T071750Z"
+)
 L1_TAPE_PATH = L1_RUN_DIR / "live_tape.jsonl"
 L1_EVENT_LOG_PATH = L1_RUN_DIR / "event_log.jsonl"
 
 #: Branch point: AFTER sealed event 49 (appeal_filed). Prefix = 0..49.
 BRANCH_EVENT_ID = 49
-#: L1 event 50 = verbatim appeal_dismissed = the placebo step.
+#: Origin event 50 = verbatim appeal_dismissed = the placebo step.
 PLACEBO_EVENT_ID = 50
 #: R_p spans lifecycle ticks 13..29.
 SUFFIX_TICK_MIN = 13
@@ -101,15 +105,15 @@ POST_BRANCH_SNAPSHOT_TICKS: tuple[int, ...] = (17, 24, 29)
 N_PAIRS = 10
 HARD_CALL_CAP = 700
 EXPECTED_SUFFIX_CALLS = 47
-#: ADR-013 §5: bounded cross-pair retries on transient endpoint errors
+#: Bounded cross-pair retries on transient endpoint errors
 #: (on top of ModelClient's own per-request retry budget).
 _TRANSIENT_RETRY_LIMIT = 3
 #: Qwen3.8-27B is a reasoning model; propose() passes max_tokens=None and the
 #: completion can come back empty when the budget runs out inside reasoning.
 #: Force a floor on LIVE calls only (never replay), so taped rows stay
-#: byte-identical to L1 format. L1's own completions reached 6307 tokens
-#: (reasoning-dominated); pair_0 at 2048 truncated 12/47 calls to
-#: text_tokens=0, so the floor is 8192 (headroom over L1's observed max).
+#: byte-identical to the origin tape format. The origin run's completions
+#: reached 6307 tokens (mostly reasoning); pair_0 at 2048 truncated 12/47
+#: calls to text_tokens=0, so the floor is 8192 (headroom over that max).
 LIVE_MAX_TOKENS = 8192
 
 TREATMENT_GROUNDS = "upheld-appeal treatment arm"
@@ -120,44 +124,44 @@ PLACEBO_ARM = "placebo"
 _TREATMENT_ONLY_KINDS = frozenset({"appeal_upheld", "rights_restored"})
 _PLACEBO_ONLY_KINDS = frozenset({"appeal_dismissed"})
 
-#: Version-drift disclosure (ADR-013 Addendum A1): L1 was recorded at this
-#: code version; the live G5 run executed at this one. Four driver commits
-#: separate them — cross-version byte-identity with historical L1 was never
-#: a well-posed standard (see the null-control docstring).
+#: Version-drift disclosure: the origin run (L1_GIT_SHA) was recorded at one
+#: code version and the live paired run (G5_RUN_GIT_SHA) ran at another. Four
+#: driver commits separate them, so byte-identity across the two versions
+#: was never a valid check (see the null-control docstring).
 L1_GIT_SHA = "eb4a2a00c29c83bee3847ab14cdda0147ea8e053"
 G5_RUN_GIT_SHA = "c455958d82900e52beb3d02b0b8bdd23a434941b"
 
 # The frozen report wording contains exactly these three NEGATED "causal"
-# occurrences (WS-4 mandated framing, analysis/report.py). No NEW occurrences
+# occurrences (required framing, see analysis/report.py). No NEW occurrences
 # may be introduced by the paired extensions below.
 _FROZEN_CAUSAL_OCCURRENCES = 3
 
 
 # --------------------------------------------------------------------------- #
-# L1 provenance loading (read-only)
+# Loading the origin run (read-only)
 # --------------------------------------------------------------------------- #
 
 
 @dataclass(frozen=True)
 class L1Provenance:
-    """Sealed L1 origin: verified ledger + verbatim tape rows."""
+    """Sealed origin run: verified ledger + verbatim tape rows."""
 
     event_log: EventLog
     tape_rows: list[dict[str, Any]] = field(compare=False)
 
     @property
     def prefix_events(self) -> tuple[WorldEvent, ...]:
-        """Sealed prefix: L1 events 0..BRANCH_EVENT_ID inclusive (50 events)."""
+        """Sealed prefix: origin events 0..BRANCH_EVENT_ID inclusive (50 events)."""
         return self.event_log.events[: BRANCH_EVENT_ID + 1]
 
     @property
     def prefix_tape_rows(self) -> list[dict[str, Any]]:
-        """L1 tape rows for lifecycle tick <= 12 (replayed, never live)."""
+        """Origin tape rows for lifecycle tick <= 12 (replayed, never live)."""
         return [r for r in self.tape_rows if int(r["lifecycle_tick"]) <= 12]
 
     @property
     def suffix_tape_rows(self) -> list[dict[str, Any]]:
-        """L1's own R (lifecycle ticks 13..29) — used by the null control."""
+        """The origin run's own suffix (lifecycle ticks 13..29), used by the null control."""
         return [
             r
             for r in self.tape_rows
@@ -166,12 +170,12 @@ class L1Provenance:
 
     @property
     def placebo_event(self) -> WorldEvent:
-        """Verbatim L1 ``appeal_dismissed`` (event 50)."""
+        """Verbatim origin ``appeal_dismissed`` (event 50)."""
         ev = self.event_log.events[PLACEBO_EVENT_ID]
         if ev.kind != "appeal_dismissed":
             raise G5PipelineError(
-                f"L1 event {PLACEBO_EVENT_ID} is {ev.kind!r}, expected "
-                "appeal_dismissed — L1 provenance moved"
+                f"origin event {PLACEBO_EVENT_ID} is {ev.kind!r}, expected "
+                "appeal_dismissed — origin run changed"
             )
         return ev
 
@@ -180,7 +184,7 @@ class L1Provenance:
         """Terminal after_hash of the sealed prefix (event 49)."""
         after = self.prefix_events[-1].after_hash
         if not after:
-            raise G5PipelineError("L1 branch event 49 has no after_hash")
+            raise G5PipelineError("origin branch event 49 has no after_hash")
         return after
 
 
@@ -192,10 +196,10 @@ def _count_log_events(path: str | Path) -> int:
 
 
 def load_l1(run_dir: str | Path = L1_RUN_DIR) -> L1Provenance:
-    """Load and sanity-check the sealed L1 ledger + tape (read-only)."""
+    """Load and sanity-check the sealed origin ledger + tape (read-only)."""
     run_dir = Path(run_dir)
     if not (run_dir / "live_tape.jsonl").is_file():
-        raise G5PipelineError(f"L1 tape missing: {run_dir}")
+        raise G5PipelineError(f"origin tape missing: {run_dir}")
     tape_rows = [
         json.loads(line)
         for line in (run_dir / "live_tape.jsonl").read_text(encoding="utf-8").splitlines()
@@ -205,13 +209,13 @@ def load_l1(run_dir: str | Path = L1_RUN_DIR) -> L1Provenance:
     n_expected = _count_log_events(L1_EVENT_LOG_PATH)
     if len(log.events) != n_expected:
         raise G5PipelineError(
-            f"L1 ledger has {len(log.events)} events, expected {n_expected} "
+            f"origin ledger has {len(log.events)} events, expected {n_expected} "
             "(derived from the sealed event-log file length)"
         )
     if log.events[BRANCH_EVENT_ID].kind != "appeal_filed":
-        raise G5PipelineError("L1 event 49 is not appeal_filed — provenance moved")
+        raise G5PipelineError("origin event 49 is not appeal_filed — origin run changed")
     if l1_prefix_count(tape_rows) != 34:
-        raise G5PipelineError("L1 tape prefix row count is not 34 — provenance moved")
+        raise G5PipelineError("origin tape prefix row count is not 34 — origin run changed")
     return L1Provenance(event_log=log, tape_rows=tape_rows)
 
 
@@ -240,7 +244,7 @@ class _MaxTokensGuard:
     """Force a max_tokens floor on ONE downstream caller (reasoning model).
 
     Applied ONLY to the live side; replayed rows never pass through it, so
-    captured prefix rows stay byte-identical to the L1 tape.
+    captured prefix rows stay byte-identical to the origin tape.
     """
 
     def __init__(self, inner: LiveModelAdapter, floor: int) -> None:
@@ -273,9 +277,9 @@ class _MaxTokensGuard:
 class PrefixReplayLiveCaller:
     """ModelCaller for ONE R_p generation (live, per pair).
 
-    Serves the sealed prefix from the L1 tape (ticks <= 12, seq order), then
-    answers the remaining segment with the LIVE endpoint (one ModelClient per
-    dispatch). The pilot's live-capture path records every call — including
+    Serves the sealed prefix from the origin tape (ticks <= 12, seq order),
+    then answers the remaining segment with the LIVE endpoint (one ModelClient
+    per dispatch). The reference run's live-capture path records every call — including
     the replayed prefix rows — into the pair's ``live_tape.jsonl``; R_p is the
     tick >= 13 rows of that file. The run is fully deterministic in its
     scaffolding; only the suffix responses are fresh model outputs.
@@ -341,7 +345,7 @@ def generate_pair_tape(
     ``EXPECTED_SUFFIX_CALLS`` live endpoint calls; bounded retries on
     429/5xx are inside ModelClient. Budget is enforced by the caller via
     ``used_calls`` and the ``HARD_CALL_CAP``. Persistent endpoint failure
-    propagates and must be handled per ADR-013 §5 (STOP + evidence).
+    propagates; the caller must stop and report the evidence.
     Quarantined (unparseable) proposals are returned, not raised.
     """
     if used_calls + EXPECTED_SUFFIX_CALLS > HARD_CALL_CAP:
@@ -375,8 +379,8 @@ def generate_pair_tape(
             f"live caller made {caller.live_call_count} calls, expected {EXPECTED_SUFFIX_CALLS}"
         )
     # Quarantined (unparseable) proposals are recorded model behavior, NOT a
-    # pipeline bug: L1 format tolerates them (its own ledger folds rejected
-    # actions). They are surfaced as audit evidence, not a hard stop.
+    # pipeline bug: the origin tape format allows them (its own ledger folds
+    # rejected actions). They are surfaced as audit evidence, not a hard stop.
     quarantined = [
         (r.get("task_id"), r.get("quarantine_reason")) for r in live_rows if r.get("quarantined")
     ]
@@ -404,16 +408,16 @@ def _diffing_fields(a: Any, b: Any) -> set[str]:
 
 
 def null_control(l1: L1Provenance, repo_root: str | Path) -> dict[str, Any]:
-    """Placebo-inert null control — SAME-CODE invariants (ADR-013 Addendum A1).
+    """Placebo-inert null control: check SAME-CODE invariants before going live.
 
-    Folds L1's own recorded tape (81 verbatim rows) as BOTH arms under the
+    Folds the origin run's own recorded tape (81 verbatim rows) as BOTH arms under the
     CURRENT code and asserts, on the two same-code folds:
 
     (a) the sealed prefix (events 0..49) is byte-identical in both arm
-        ledgers and to the sealed L1 ledger;
+        ledgers and to the sealed origin ledger;
     (b) the two arm ledgers are byte-identical EXCEPT at the adjudication
         events (treatment = ``appeal_upheld`` + ``rights_restored``, placebo
-        = the verbatim L1 ``appeal_dismissed``) and in the chain-bookkeeping
+        = the verbatim origin ``appeal_dismissed``) and in the chain-bookkeeping
         fields that cascade from the branch (``event_id``,
         ``cause_event_id``, ``tick``, ``event_hash``, ``prev_hash``);
         ``kind``, ``payload`` and ``decision`` must match event-for-event;
@@ -421,20 +425,20 @@ def null_control(l1: L1Provenance, repo_root: str | Path) -> dict[str, Any]:
         invariance);
     (d) both hash chains verify end-to-end (0 breaks).
 
-    RETIRED (v1 standard): "the folded suffix must be byte-identical to
-    historical L1 ledger bytes". That comparison is structurally impossible
-    across code versions (L1 was recorded at ``L1_GIT_SHA``, this fold runs
-    at ``G5_RUN_GIT_SHA``) and impossible with fresh live model outputs in
-    the live placebo arms; asserting it produced a false positive. The
-    returned evidence therefore carries NO byte-identity claim against L1
-    and cannot. Any invariant failure raises :class:`G5PipelineError`
+    Dropped older check: "the folded suffix must be byte-identical to the
+    historical origin ledger bytes". That comparison cannot hold across code
+    versions (the origin was recorded at ``L1_GIT_SHA``, this fold runs at
+    ``G5_RUN_GIT_SHA``) nor with fresh live model outputs in the placebo
+    arms; asserting it gave a false positive. The returned evidence therefore
+    makes NO byte-identity claim against the origin run. Any invariant
+    failure raises :class:`G5PipelineError`
     (DIVERGENCE): the live run is BLOCKED until the pipeline bug is fixed.
     """
     t_run = run_arm(repo_root, l1.tape_rows, TREATMENT_ARM)
     p_run = run_arm(repo_root, l1.tape_rows, PLACEBO_ARM)
     failures: list[str] = []
 
-    # (a) sealed prefix 0..49 byte-identical: T fold == P fold == L1.
+    # (a) sealed prefix 0..49 byte-identical: T fold == P fold == origin.
     prefix_ok = True
     for i in range(0, BRANCH_EVENT_ID + 1):
         t_dump = t_run.log.events[i].model_dump(mode="json")
@@ -553,7 +557,7 @@ def null_control(l1: L1Provenance, repo_root: str | Path) -> dict[str, Any]:
 def matching_context(l1: L1Provenance, repo_root: str | Path | None = None) -> dict[str, Any]:
     """Sealed origin snapshot hash + sealed prefix tape hash (all arms/pairs).
 
-    B3(a)(b)(c) satisfied structurally: origin hash == L1 event 49
+    The origin checks hold by construction: origin hash == origin event 49
     ``after_hash`` == canonical_state_hash of the folded prefix terminal
     state; prefix count == 50 == len(prefix ledger).
     """
@@ -561,13 +565,14 @@ def matching_context(l1: L1Provenance, repo_root: str | Path | None = None) -> d
 
     origin = l1.origin_state_hash
     prefix = prefix_event_log(l1)
-    # B3 cross-check: fold the prefix through a fresh reducer to confirm the
+    # Cross-check: fold the prefix through a fresh reducer to confirm the
     # terminal canonical state hash equals the sealed after_hash.
     state = _fold_prefix_state(l1, repo_root)
     folded_hash = WorldReducer.canonical_state_hash(state)
     if folded_hash != origin:
         raise G5PipelineError(
-            f"B3 violation: folded prefix terminal hash {folded_hash} != sealed after_hash {origin}"
+            f"origin hash mismatch: folded prefix terminal hash {folded_hash} "
+            f"!= sealed after_hash {origin}"
         )
     return {
         "branch_event_id": BRANCH_EVENT_ID,
@@ -580,7 +585,7 @@ def matching_context(l1: L1Provenance, repo_root: str | Path | None = None) -> d
 
 
 def _fold_prefix_state(l1: L1Provenance, repo_root: str | Path | None = None):
-    """Fold L1 events 0..49 through a fresh WorldReducer (no side effects).
+    """Fold origin events 0..49 through a fresh WorldReducer (no side effects).
 
     Rebuilds the exact reducer transitions the driver performs: action
     events carry their recorded arguments; governance events use
@@ -633,7 +638,7 @@ def _is_governance_kind(kind: str) -> bool:
 
 
 def _t0_state(repo_root: str | Path | None = None):
-    """The pilot_v1 t0 WorldState from the scenario loader (pure read).
+    """The ``pilot_v1`` scenario's t0 WorldState from the scenario loader (pure read).
 
     Resolves the repo root exactly as :class:`PilotDriver` does (explicit
     arg, else package-relative parents[3]).
@@ -709,7 +714,7 @@ def run_arm(
     Treatment arm: ``appeal_adjudication=(True, TREATMENT_GROUNDS)`` →
     ``appeal_upheld`` + ``rights_restored`` at tick 12. Placebo arm:
     ``appeal_adjudication=None`` → the driver's default scripted dismissal,
-    byte-identical to L1 event 50. Live capture OFF (replay only).
+    byte-identical to origin event 50. Live capture OFF (replay only).
     """
     if arm == TREATMENT_ARM:
         adjudication: tuple[bool, str] | None = (True, TREATMENT_GROUNDS)
@@ -733,7 +738,7 @@ def arm_run_dict(run: PilotRun, arm: str) -> dict[str, Any]:
 
     ``state_snapshots`` keeps real :class:`WorldState` objects (in memory) so
     ``build_g5_report``'s trajectory hashing works; ``estimates`` carries the
-    six PREREG-registered estimand values computed over the post-branch
+    six pre-registered estimand values computed over the post-branch
     snapshots (ticks 17/24/29) plus the full ledger.
     """
     applied = arm == TREATMENT_ARM
@@ -772,7 +777,7 @@ def arm_run_dict(run: PilotRun, arm: str) -> dict[str, Any]:
 
 
 def audit_artifacts(run_root: str | Path) -> dict[str, Any]:
-    """Mandatory audits over a g5_pairs run directory (ADR-013 §2).
+    """Required audits over a counterfactual-pairs run directory.
 
     (a) no API-key value in ANY artifact text; (b) no ``api_key`` field in
     any meta; (c) R_p arm-blindness: R_p (tick >= 13) prompts/tape contain no
@@ -833,7 +838,7 @@ def audit_artifacts(run_root: str | Path) -> dict[str, Any]:
                 if kind in banned:
                     findings.append(f"cross-arm leak: {kind!r} present in {arm} ledger {log_path}")
     if findings:
-        raise G5PipelineError("G5 artifact audit FAILURES: " + "; ".join(findings[:5]))
+        raise G5PipelineError("paired-run artifact audit FAILURES: " + "; ".join(findings[:5]))
     return {
         "scanned_root": str(run_root),
         "api_key_value_scanned": bool(keys),
@@ -844,17 +849,17 @@ def audit_artifacts(run_root: str | Path) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# Deterministic G5 paired report
+# Deterministic paired report
 # --------------------------------------------------------------------------- #
 
 
-#: Paired-report limitations (ADR-013 Addendum A1). The two frozen entries
+#: Paired-report limitations. The two earlier fixed entries
 #: "recorded-output pilot: no live LLM interaction…" and "single-pair CIs
 #: withheld: n_pairs < 10…" are STALE for this report — this is a live
 #: 10-pair run that emits pair CIs — and are replaced below. The
 #: "determinism is limited to the recorded tape" and "no causal claims"
 #: entries are carried over VERBATIM (the latter holds the 2 of the 3
-#: frozen negated "causal" occurrences the guard below enforces).
+#: fixed negated "causal" occurrences the guard below enforces).
 _LIMITATIONS_LIVE_10PAIR = (
     "live 10-pair run: each pair's remaining tape R_p was generated with "
     "fresh Qwen3.8-27B calls (470 calls, 0 quarantines); replay applies "
@@ -884,7 +889,7 @@ def _cross_pair_spread(
 ) -> dict[str, Any]:
     """Numeric per-arm, per-estimand population std across all pairs.
 
-    ADR-013 §1: between-pair model variance is reported as a secondary
+    Between-pair model variance is reported as a secondary
     descriptive statistic, labeled replication spread — NOT sampling noise.
     """
     spread: dict[str, Any] = {}
@@ -906,17 +911,17 @@ def build_g5_paired_report(
     context: Mapping[str, Any],
     pairs_run_dicts: Sequence[tuple[Mapping[str, Any], Mapping[str, Any]]] = (),
 ) -> dict[str, Any]:
-    """Byte-stable G5 report over all 10 pairs (pure over the inputs).
+    """Byte-stable paired report over all 10 pairs (pure over the inputs).
 
-    Extends the FROZEN ``build_g5_report`` (pair-0 arms as the trajectory
+    Extends the fixed ``build_g5_report`` (pair-0 arms as the trajectory
     exemplar) with: the same-code null-control evidence
-    (``null_control_placebo_inert``, ADR-013 Addendum A1), an accurate
-    RELABEL of the frozen ``null_control`` block (which reports T−P
+    (``null_control_placebo_inert``), an accurate
+    RELABEL of the fixed ``null_control`` block (which reports T−P
     per-estimand differences — the TREATMENT contrast, not a placebo-inert
     check), the sealed-origin matching context, the numeric cross-pair
-    replication spread, Addendum A1 framings (false-punishment direction,
+    replication spread, the required framings (false-punishment direction,
     #6 restoration-blindness), and corrected limitations. NO new "causal"
-    wording beyond the three frozen negated occurrences.
+    wording beyond the three fixed negated occurrences.
     """
     _validate_arm_run_dict("treatment", treatment_run)
     _validate_arm_run_dict("placebo", placebo_run)
@@ -1019,7 +1024,7 @@ def build_g5_paired_report(
 
 
 class _ReportPilotProxy:
-    """Minimal ``pilot`` object for build_g5_report: manifest + final state
+    """Minimal reference-run object for build_g5_report: manifest + final state
     + state_snapshots from the exemplar arm's serialized trajectory."""
 
     def __init__(self, treatment_run: dict[str, Any], context: Mapping[str, Any]) -> None:
@@ -1097,11 +1102,11 @@ def run_g5_pairs(
     report_path: str | Path,
     config: ModelEndpointConfig | None = None,
 ) -> dict[str, Any]:
-    """Full ADR-013 live loop: null control → 10 pairs → estimands → report.
+    """Full live loop: null control → 10 pairs → estimands → report.
 
     Concurrency 1, hard cap 700, Qwen3.8-27B only. Script-style: not a test,
     no network in CI. Persistent endpoint failure → G5PipelineError with
-    evidence; the caller must STOP and report BLOCKED per ADR-013 §5.
+    evidence; the caller must stop and report the run as blocked.
     """
     import subprocess
 
@@ -1125,7 +1130,7 @@ def run_g5_pairs(
     def _generate_with_transient_retry(
         pair_dir: Path,
     ) -> tuple[list[dict[str, Any]], list[tuple[str, Any]]]:
-        """ADR-013 §5: on transient endpoint errors (429/5xx), back off and
+        """On transient endpoint errors (429/5xx), back off and
         retry within a bounded budget; persistent failure raises
         G5PipelineError (caller must STOP and report BLOCKED).
 
@@ -1153,7 +1158,7 @@ def run_g5_pairs(
                 if not transient:
                     raise G5PipelineError(
                         f"non-transient endpoint failure (HTTP "
-                        f"{exc.status_code}): {exc!r} — STOP per ADR-013 §5"
+                        f"{exc.status_code}): {exc!r} — stopping the run"
                     ) from exc
                 last = exc
                 if attempt >= _TRANSIENT_RETRY_LIMIT:
@@ -1182,8 +1187,8 @@ def run_g5_pairs(
         shutil.rmtree(pair_dir, ignore_errors=True)
         raise G5PipelineError(
             f"persistent endpoint failure on pair {pair} after "
-            f"{_TRANSIENT_RETRY_LIMIT} attempts: {last!r} — STOP per "
-            f"ADR-013 §5, report BLOCKED with this evidence"
+            f"{_TRANSIENT_RETRY_LIMIT} attempts: {last!r} — stopping; "
+            f"report the run as blocked with this evidence"
         )
 
     for pair in range(N_PAIRS):
@@ -1248,7 +1253,7 @@ def run_g5_pairs(
             json.dumps(_serializable_run_dict(p_dict), indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
-        # Persist per-arm PilotRun artifacts (pilot_report.json + event_log.jsonl)
+        # Persist per-arm reference-run artifacts (pilot_report.json + event_log.jsonl)
         t_run.report.write(pair_dir / TREATMENT_ARM / "pilot_report.json")
         (pair_dir / TREATMENT_ARM / "event_log.jsonl").write_bytes(t_run.log.to_jsonl_bytes())
         p_run.report.write(pair_dir / PLACEBO_ARM / "pilot_report.json")
@@ -1281,7 +1286,7 @@ def run_g5_pairs(
         pairs_run_dicts=pairs_results_pairs,
     )
     if json.dumps(report, sort_keys=True) != json.dumps(report2, sort_keys=True):
-        raise G5PipelineError("G5 report is not byte-stable across two builds")
+        raise G5PipelineError("paired report is not byte-stable across two builds")
     write_g5_report(report, report_path)
 
     git_sha = None

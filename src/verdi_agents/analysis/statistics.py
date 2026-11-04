@@ -1,7 +1,6 @@
-"""G5 descriptive estimation helpers (P2 WS-3, frozen per docs/P2_CONTRACT.md).
+"""Descriptive statistics (bootstrap CIs, paired differences) for paired experiments.
 
-These are **descriptive** estimation helpers for pre-registered estimands
-(docs/PREREGISTRATION.md v1.0):
+These are **descriptive** estimation helpers for the pre-registered estimands:
 
 * :func:`bootstrap_ci` — nonparametric percentile bootstrap confidence
   interval of the MEAN, deterministic for a given ``seed``.
@@ -12,7 +11,7 @@ These are **descriptive** estimation helpers for pre-registered estimands
 
 Statistical honesty rules (binding):
 
-* Per PREREGISTRATION.md ("No causal label without randomization"), these
+* No causal label without randomization: these
   helpers NEVER label effects causal. They report a point estimate and an
   uncertainty interval for whatever differences/quantities are passed in;
   interpretation of the design belongs to the caller.
@@ -23,7 +22,7 @@ Statistical honesty rules (binding):
   coverage.
 
 Implementation is stdlib only (``random``, ``math``, ``statistics``) — no
-numpy/scipy, no third-party imports, per ADR-009.
+numpy/scipy, no third-party imports.
 """
 
 from __future__ import annotations
@@ -59,7 +58,7 @@ def bootstrap_ci(
     using ``random.Random(seed)`` and returns the percentile interval
     ``((1 - ci) / 2, 1 - (1 - ci) / 2)`` over the bootstrap means.
 
-    Percentile convention (P2 review F4): the bounds are the *inclusive*
+    Percentile convention: the bounds are the *inclusive*
     linear-interpolation percentiles of the sorted bootstrap means, i.e.
     exactly the values ``statistics.quantiles(means, n=200,
     method="inclusive")`` would return at indices
@@ -147,7 +146,7 @@ def paired_effect(
     """Estimate a paired treatment-vs-placebo effect (descriptive, not causal).
 
     The paired differences are ``treatment[i] - placebo[i]`` for matched
-    pairs (matched snapshots + matched task tape per PREREGISTRATION.md).
+    pairs (matched snapshots + matched task tape per the preregistration).
     ``estimate`` is the mean paired difference. When at least 10 pairs are
     available (``sufficient``), a percentile bootstrap CI of the mean
     difference is reported using the same ``seed``; otherwise the CI is
@@ -202,7 +201,7 @@ def null_control_passes(
 ) -> bool:
     """Negative-control check: True iff the bootstrap CI of the mean contains 0.
 
-    Used for null-drift / no-intervention arms per PREREGISTRATION.md
+    Used for null-drift / no-intervention arms per the preregistration
     ("Negative controls: null drift ... probe deltas CI contains 0 on a
     no-intervention arm").
     """

@@ -1,5 +1,5 @@
 """Longitudinal value trajectories combining interviews, probes, and observed
-behavior, linked to real world events (todo C).
+behavior, linked to real world events.
 
 Scientific-honesty contract (mirrors :mod:`verdi_agents.measurement.longitudinal`):
 channels are NEVER merged into a single "belief" number. Each trajectory row

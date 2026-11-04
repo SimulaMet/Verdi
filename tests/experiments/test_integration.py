@@ -1,13 +1,13 @@
-"""P2 WS-2 integration test: pilot -> branch point -> treated vs placebo
+"""Integration test: reference run -> branch point -> treated vs placebo
 branch arms -> matched pair.
 
-Runs the recorded-output pilot (no LLM), forks both arms from the SAME
-sealed snapshot at the pilot's governance branch point, and validates:
+Runs the recorded-output reference run (no LLM), forks both arms from the SAME
+sealed snapshot at its governance branch point, and validates:
 
-* the placebo branch reproduces the pilot's final state hash exactly
+* the placebo branch reproduces the reference run's final state hash exactly
   (the placebo is truly inert);
 * the rights-restoration treatment's honest ``applied`` flag on this tape
-  (the pilot appeal is DISMISSED, so no sealed ``rights_restored`` event
+  (the reference-run appeal is DISMISSED, so no sealed ``rights_restored`` event
   exists to re-record -> ``applied=False``, tape returned unmodified);
 * a :class:`~verdi_agents.experiments.MatchedPair` built from both arms'
   manifests (``branch_origin`` / ``treatment_seed`` carried through via
@@ -34,7 +34,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def _branch_point():
-    """Replay the pilot tape up to the first governance step and return
+    """Replay the reference-run tape up to the first governance step and return
     (pilot, snapshot, prefix_log, remaining_tape)."""
     pilot = PilotDriver(REPO_ROOT).run()
     tape = pilot.full_tape_steps
@@ -73,7 +73,7 @@ def test_pilot_placebo_branch_reproduces_final_hash_and_pair_validates():
         snapshot, prefix_log, placebo_outcome.tape, spec
     )
 
-    # (d) the placebo branch must reproduce the pilot final hash exactly.
+    # (d) the placebo branch must reproduce the reference run's final hash exactly.
     assert placebo_result.branch_state_hash == pilot.final_state.state_hash
     # byte-identical full ledger as well (true placebo, not just equal hash)
     assert placebo_result.log.to_jsonl_bytes() == pilot.log.to_jsonl_bytes()
@@ -83,7 +83,7 @@ def test_pilot_placebo_branch_reproduces_final_hash_and_pair_validates():
         treatment_spec, remaining, seed=treatment_spec.treatment_seed
     )
     assert isinstance(treatment_outcome, TreatmentOutcome)
-    # Honest: the pilot tape contains sanction -> appeal_filed ->
+    # Honest: the reference-run tape contains sanction -> appeal_filed ->
     # appeal_dismissed and NO rights_restored event, so there is no sealed
     # restoration outcome to re-record. The treatment must NOT invent one.
     assert treatment_outcome.applied is False
@@ -110,7 +110,7 @@ def test_pilot_placebo_branch_reproduces_final_hash_and_pair_validates():
     treatment_manifest = manifest_for_branch(treatment_result.spec, base_manifest)
     placebo_manifest = manifest_for_branch(placebo_result.spec, base_manifest)
 
-    # branch identity is carried into the manifests (B5)
+    # branch identity is carried into the manifests
     assert treatment_manifest["branch_origin"] == treatment_spec.branch_id
     assert treatment_manifest["treatment_seed"] == treatment_spec.treatment_seed
     assert placebo_manifest["branch_origin"] == spec.branch_id

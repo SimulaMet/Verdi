@@ -1,12 +1,11 @@
-"""Counterfactual snapshot branching (P2 WS-1, frozen contract v1.0).
+"""Fork a new ledger from a saved world snapshot to replay a counterfactual branch.
 
 A *branch* forks a new ledger from a sealed point of the world: a
 :class:`~verdi_agents.schemas.WorldState` snapshot plus the hash-chained prefix
 ledger up to the branch point. The counterfactual tape (the *remaining*
 recorded :class:`~verdi_agents.world.replay.TapeStep` sequence) is folded through
-the same deterministic reducer the pilot uses, so the branch is a
-replay-only construction: no model invocation, fully deterministic
-(ADR-004, ADR-008).
+the same deterministic reducer the reference run uses, so the branch is a
+replay-only construction: no model invocation, fully deterministic.
 
 Guarantees (tested in ``tests/world/test_branch.py``):
 * B1: inputs (snapshot, prefix log) are never mutated;
@@ -45,9 +44,9 @@ class BranchSpec:
 
     origin_state_hash: str          # canonical_state_hash of the snapshot
     origin_event_count: int         # ledger length at the branch point
-    # Caller-supplied LIFECYCLE-tick metadata at the branch point. Per
-    # ADR-008 the reducer tick is a pure transition counter, not the
-    # pilot's lifecycle tick, so this is identity/provenance metadata
+    # Caller-supplied LIFECYCLE-tick metadata at the branch point. The
+    # reducer tick is a pure transition counter, not the
+    # reference run's lifecycle tick, so this is identity/provenance metadata
     # only — branch_from_snapshot performs no cross-check on it.
     origin_tick: int
     branch_id: str                  # e.g. "counterfactual-v2"
@@ -65,7 +64,7 @@ class BranchResult:
 
 
 # --------------------------------------------------------------------------- #
-# governance event construction (ported from the pilot's replay path)
+# governance event construction (ported from the reference run's replay path)
 # --------------------------------------------------------------------------- #
 def _governance_event(
     before: WorldState,
@@ -77,10 +76,10 @@ def _governance_event(
     """Unsealed governance ledger event, byte-identical to the action-path
     construction except for ``kind``/``payload``.
 
-    Local copy of the pilot's ``build_governance_event`` so the world
+    Local copy of the reference run's ``build_governance_event`` so the world
     engine has no dependency on ``verdi_agents.reference_run``. Keep in sync with its
     counterpart in ``verdi_agents.reference_run.driver.build_governance_event``; the
-    pilot-branch byte-identity test
+    reference-run/branch byte-identity test
     (``tests/world/test_branch.py::test_branch_replay_matches_live_ledger``)
     guards against drift between the two builders. ``event_id`` comes
     from ``before.event_cursor`` (same as the reducer); ``prev_hash`` is
@@ -133,7 +132,7 @@ def branch_from_snapshot(
 ) -> BranchResult:
     """Fold ``remaining_tape`` from a sealed snapshot into a branch ledger.
 
-    The fold uses the exact pilot replay semantics (governance steps take
+    The fold uses the exact reference-run replay semantics (governance steps take
     their ``kind``/``payload`` from ``step.governance``) and CONTINUES the
     hash chain: the first folded event has ``prev_hash = log.last_hash()``
     and ``event_id = len(log) + i``.
@@ -150,7 +149,7 @@ def branch_from_snapshot(
     spec:
         Branch origin + treatment identity (see :class:`BranchSpec`).
         ``spec.origin_tick`` is caller-supplied LIFECYCLE-tick metadata
-        only (per ADR-008 the reducer tick is a transition counter, so
+        only (the reducer tick is a transition counter, so
         no hard cross-check against the reducer tick is possible); it is
         carried through to the result but never validated here.
 
@@ -234,7 +233,7 @@ def branch_from_snapshot(
 def manifest_for_branch(spec: BranchSpec, base_manifest: dict[str, Any]) -> dict[str, Any]:
     """Return ``base_manifest`` with branch identity applied (B5).
 
-    Schema-free helper: the pilot owns :class:`ExperimentManifest`
+    Schema-free helper: the reference run owns :class:`ExperimentManifest`
     construction; this only guarantees ``branch_origin`` /
     ``treatment_seed`` carry through. The input dict is not mutated.
     """

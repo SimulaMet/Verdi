@@ -1,4 +1,4 @@
-"""Run report assembly for Verdi experiments (P1-E).
+"""Run report assembly for Verdi experiments.
 
 A :class:`RunReport` is a plain, JSON-serializable record of one run:
 manifest, lifecycle ticks, computed metrics, event count, final state
@@ -123,10 +123,10 @@ class RunReport:
 
 
 # --------------------------------------------------------------------------- #
-# G5 statistical sanity report (P2 WS-4)
+# Paired-arm statistical report
 # --------------------------------------------------------------------------- #
 
-#: The six frozen primary estimands (docs/PREREGISTRATION.md v1.0).
+#: The six frozen primary estimands (pre-registration v1.0).
 G5_ESTIMANDS = (
     "safety_rate",
     "false_punishment_rate",
@@ -136,7 +136,7 @@ G5_ESTIMANDS = (
     "time_under_deprivation",
 )
 
-#: Limitations every G5 report MUST carry (deterministic, in this order).
+#: Limitations every paired-arm report MUST carry (deterministic, in this order).
 G5_LIMITATIONS: tuple[str, ...] = (
     "recorded-output pilot: no live LLM interaction was measured; agent "
     "behavior is a deterministic stand-in",
@@ -160,7 +160,7 @@ def _arm_trajectory(
     estimates: dict[str, float] | None,
 ) -> dict[str, Any]:
     """Per-arm raw trajectory: per LIFECYCLE-tick canonical state hashes
-    (ADR-008) plus the arm's terminal estimand values."""
+    plus the arm's terminal estimand values."""
     ticks: dict[str, str] = {}
     for tick, state in sorted(snapshots or [], key=lambda item: int(item[0])):
         ticks[str(tick)] = _canonical_state_hash(state)
@@ -225,7 +225,7 @@ def _null_control(pairs_results: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-#: Required top-level keys for a WS-2 arm run dict. ``estimates`` is
+#: Required top-level keys for an arm run dict. ``estimates`` is
 #: required unless the run dict instead carries both ``states_by_tick``
 #: and ``log`` (from which estimands can be computed), in which case the
 #: estimator falls back to :func:`verdi_agents.analysis.estimates.run_estimates_for`.
@@ -244,10 +244,10 @@ _RAW_SOURCE_KEYS: tuple[str, ...] = ("states_by_tick", "log")
 def _validate_arm_run_dict(
     arm_name: str, run: Mapping[str, Any]
 ) -> None:
-    """Validate the required key set for a WS-2 arm run dict up front.
+    """Validate the required key set for an arm run dict up front.
 
     Raises :class:`ValueError` naming every missing required key so a
-    mis-constructed run dict never silently yields nulls in the G5
+    mis-constructed run dict never silently yields nulls in the
     report. ``estimates`` (a mapping with the six estimand keys) is
     required unless BOTH ``states_by_tick`` and ``log`` are present, in
     which case the estimands can be recomputed from the raw material.
@@ -285,11 +285,11 @@ def build_g5_report(
     placebo_run: dict[str, Any],
     pairs_results: dict[str, Any],
 ) -> dict[str, Any]:
-    """Assemble the schema-free, JSON-serializable G5 report.
+    """Assemble the schema-free, JSON-serializable paired-arm report.
 
     ``pilot`` is a :class:`~verdi_agents.reference_run.driver.PilotRun` (or any object
     with ``manifest`` / ``final_state`` / ``state_snapshots``
-    attributes). ``treatment_run`` / ``placebo_run`` are WS-2 run dicts
+    attributes). ``treatment_run`` / ``placebo_run`` are arm run dicts
     (``arm``, ``applied``, ``reason``, ``manifest``, ``state_snapshots``,
     ``estimates``); each arm's ``estimates`` are produced by
     :func:`verdi_agents.analysis.estimates.run_estimand_values` and both arms
@@ -304,7 +304,7 @@ def build_g5_report(
     ``states_by_tick`` + ``log``); missing keys raise :class:`ValueError`
     rather than silently producing nulls in the report.
 
-    Contents (G5, docs/ACCEPTANCE.md): raw per-arm trajectories
+    Contents: raw per-arm trajectories
     (per-lifecycle-tick canonical state hashes + estimand values),
     per-estimand paired results with CI-or-null and the sufficiency
     flag, the null control (placebo vs itself), and the required
@@ -363,7 +363,7 @@ def build_g5_report(
 
 
 def write_g5_report(report: dict[str, Any], path: str | Path) -> Path:
-    """Write the G5 report as deterministic JSON.
+    """Write the paired-arm report as deterministic JSON.
 
     Pretty-printed, ``sort_keys=True``, trailing newline: for identical
     report dicts the bytes are identical (stable across repeated

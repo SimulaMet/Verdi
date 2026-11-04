@@ -1,9 +1,8 @@
-"""Pure per-agent observation of committed world state (Lane W).
+"""Pure per-agent observation of committed world state.
 
 ``agent_observation`` is a pure function of a committed :class:`WorldState`:
 it never reads the future, never writes, never uses wall clock or global
-RNG. This purity is what makes the feedback-leakage tests possible
-(SOCIETY_V2_PROTOCOL.md §2, Lane W invariants).
+RNG. This purity is what makes the feedback-leakage tests possible.
 """
 from __future__ import annotations
 

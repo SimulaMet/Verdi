@@ -82,7 +82,7 @@ class WorldReducer:
             return self._with_hash(nxt)
 
         if action.action_kind == "task_objective" or action.actor_id == "world":
-            # Deterministic record-only world steps (P0-B delivery-objective
+            # Deterministic record-only world steps (delivery-objective
             # outcomes): content is unchanged by construction (before ==
             # after); only the ledger bookkeeping advances. The campaign's
             # replay path rebuilds these events from the recorded tape

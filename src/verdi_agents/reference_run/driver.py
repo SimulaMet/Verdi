@@ -1,11 +1,11 @@
-"""Cross-module pilot driver (P1-I): the t0–t11 vertical slice end-to-end.
+"""Drive the reference run: one small scenario through every module, end to end.
 
-Wires every frozen-contract module together over the recorded-output pilot
-scenario: scenario loader -> seeded scheduler -> recorded model + policy ->
-deterministic validation + world reducer -> hash-chained event log ->
-governance (assemblies, sanction, appeal, restoration) -> hidden rotated
-probes with rubric scoring -> in-memory audit adapter -> metric definitions
--> run report.
+Wires every frozen-contract module together over the recorded-output reference
+scenario (``pilot_v1``, ticks t0–t11): scenario loader -> seeded scheduler ->
+recorded model + policy -> deterministic validation + world reducer ->
+hash-chained event log -> governance (assemblies, sanction, appeal,
+restoration) -> hidden rotated probes with rubric scoring -> in-memory audit
+adapter -> metric definitions -> run report.
 
 Scientific rules enforced here:
 * only the reducer mutates world state;
@@ -105,7 +105,7 @@ def build_governance_event(
     construction except for ``kind``/``payload``.
 
     Shared by the live run and the full-ledger replay so the two ledgers
-    hash identically (G3). ``event_id`` comes from ``before.event_cursor``
+    hash identically. ``event_id`` comes from ``before.event_cursor``
     (same as the reducer); ``prev_hash`` is left to the caller to match the
     log position and is passed in via ``model_copy`` before sealing.
     """
@@ -180,7 +180,7 @@ def model_output_for(action_kind: str) -> str:
 
 
 class ProbeLeakError(RuntimeError):
-    """G3 defense: a hidden probe dilemma leaked into an agent-visible surface."""
+    """A hidden probe dilemma leaked into an agent-visible surface."""
 
 
 def assert_no_probe_leak(
@@ -210,7 +210,7 @@ def probe_response_for(agent_id: str, tick: int, channel: str) -> str:
 def _assert_no_probe_leak_over_surfaces(
     bank: ProbeBank, state: WorldState, tape: list[list], lifecycle_tick: int
 ) -> None:
-    """G3 runtime defense: no hidden dilemma may appear in any agent-visible surface.
+    """Runtime defense: no hidden dilemma may appear in any agent-visible surface.
 
     Scans persona summaries, public signals, task public observations and the
     rendered policy prompts of the current tick.
@@ -259,7 +259,7 @@ def _precompute_dispatch(
 
 @dataclass
 class PilotRun:
-    """Everything a pilot run produces (kept in memory; artifacts on request)."""
+    """Everything a reference run produces (kept in memory; artifacts on request)."""
 
     loaded: LoadedScenario
     manifest: ExperimentManifest
@@ -280,7 +280,7 @@ class PilotRun:
 
 
 class PilotDriver:
-    """Drives one pilot run over pilot_v1 (recorded output, or a live model)."""
+    """Drives one reference run over pilot_v1 (recorded output, or a live model)."""
 
     def __init__(
         self,
@@ -301,11 +301,11 @@ class PilotDriver:
         self._model = model
         self._model_id = model_id
         self._base_url = base_url
-        # ADR-013: optional treatment-arm override for the tick-12 scripted
-        # appeal adjudication. None keeps the canonical (L1) dismissal
+        # Optional treatment-arm override for the tick-12 scripted
+        # appeal adjudication. None keeps the canonical (recorded live run) dismissal
         # byte-exact; (True, grounds) makes the engine uphold the appeal.
         self._appeal_adjudication = appeal_adjudication
-        # Live capture: one verbatim record per model call (ADR-010),
+        # Live capture: one verbatim record per model call,
         # including quarantined proposals. Default dir when a live model is
         # injected but no dir given: runs/live/<UTC-stamp>/.
         if live_capture_dir is None and model is not None:
@@ -343,8 +343,8 @@ class PilotDriver:
             task_tape_hash=loaded.tape_hash,
             probe_bank_version=BANK_VERSION,
             git_sha=None,
-            # The bridge only runs in the live path (L2); recorded runs keep
-            # None by design (see test_g4_offline expectation).
+            # The SimpleAudit bridge only runs in the live path; recorded runs
+            # keep None by design (see the offline trace-audit tests).
             simpleaudit_version=live_audit_version,
         )
 
@@ -393,7 +393,7 @@ class PilotDriver:
         tape_outputs = [model_output_for(tasks_by_id[tid].action_type) for _, tid, _ in dispatch]
         model = self._model if live else RecordedModel(tape_outputs)
 
-        # --- Live capture (ADR-010) ------------------------------------- #
+        # --- Live capture ------------------------------------------------ #
         # One verbatim JSON object per model call, including quarantined
         # proposals, appended to {live_capture_dir}/live_tape.jsonl.
         live_tape_path = None
@@ -854,7 +854,7 @@ class PilotDriver:
 
     # ------------------------------------------------------------------ #
     def replay_check(self, pilot: PilotRun) -> tuple[WorldState, list[WorldEvent]]:
-        """G3 replay: fold the FULL recorded ledger tape (every action AND
+        """Replay check: fold the FULL recorded ledger tape (every action AND
         governance step, in ledger order) through a fresh reducer + log.
 
         Must reproduce the live run's final state hash and a byte-identical
@@ -892,7 +892,7 @@ class PilotDriver:
 
 
 def run_pilot(repo_root: str | Path | None = None, out_dir: str | Path | None = None) -> PilotRun:
-    """Convenience entry: drive one full deterministic pilot run."""
+    """Convenience entry: drive one full deterministic reference run."""
     return PilotDriver(repo_root).run(out_dir)
 
 

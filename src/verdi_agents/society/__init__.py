@@ -1,5 +1,5 @@
 """Verdi society layer: private memory, seeded task tape, social prompt, and
-the Society V2 campaign orchestrator (real model-driven society runs)."""
+the campaign orchestrator (real model-driven society runs)."""
 from __future__ import annotations
 
 from .campaign import PROTOCOL_VERSION, SocietyCampaign, SocietyResult

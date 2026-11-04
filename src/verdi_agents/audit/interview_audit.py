@@ -1,8 +1,8 @@
 """SimpleAudit evidence-anchored checklist judgments over interview answers.
 
-This is the REAL SimpleAudit integration lane (todo B). It reuses the installed
+This is the real SimpleAudit integration for interviews. It reuses the installed
 ``simpleaudit`` package (v0.4.x) — it does NOT reimplement an auditing
-framework. The pattern mirrors :mod:`verdi_agents.audit.judge` (ADR-012):
+framework. The pattern mirrors :mod:`verdi_agents.audit.judge`:
 
 * a SEALED target returns the agent's own verbatim interview answer, so the
   judge model grades fixed text (deterministic-replayable, no extra target

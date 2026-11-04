@@ -1,4 +1,4 @@
-"""P2 WS-1: counterfactual snapshot branching tests (guarantees B1-B5)."""
+"""Tests for branching a counterfactual run from a saved snapshot (guarantees B1-B5)."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -162,7 +162,7 @@ def test_b3_origin_event_count_mismatch(prefix):
 
 
 def test_b3_snapshot_not_ledger_terminal_state_rejected(prefix):
-    """REGRESSION (P2 review F1): an (origin_state_hash, origin_event_count)
+    """REGRESSION: an (origin_state_hash, origin_event_count)
     pair can match a snapshot that is NOT the state the prefix ledger
     terminates in. Such an inconsistent (snapshot, log) pair must be
     rejected even though the spec is self-consistent with the (tampered)
@@ -249,8 +249,8 @@ def test_two_branches_diverge(prefix):
 
 
 # --------------------------------------------------------------------------- #
-# integration: branch from pilot event 28 (first governance event)
-# reproduces the pilot final state hash
+# integration: branch from reference-run event 28 (first governance event)
+# reproduces the reference run's final state hash
 # --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")
 def pilot():
@@ -267,7 +267,7 @@ def test_branch_replay_matches_live_ledger(pilot):
     log = pilot.log
     n = 28
     first_gov = log.events[n]
-    # event 28 is the first governance event in the pilot ledger
+    # event 28 is the first governance event in the reference-run ledger
     assert first_gov.kind == "proposal_submitted"
     remaining = pilot.full_tape_steps[n:]
 
@@ -292,10 +292,10 @@ def test_branch_replay_matches_live_ledger(pilot):
 
     result.log.verify()
     assert result.log.events[n].prev_hash == prefix_log.last_hash()
-    # The counterfactual branch reproduces the pilot final state exactly.
+    # The counterfactual branch reproduces the reference run's final state exactly.
     assert result.branch_state_hash == WorldReducer.canonical_state_hash(
         pilot.final_state
     )
     assert result.branch_state_hash == pilot.final_state.state_hash
-    # and the full branch ledger is byte-identical to the pilot ledger:
+    # and the full branch ledger is byte-identical to the reference-run ledger:
     assert result.log.to_jsonl_bytes() == pilot.log.to_jsonl_bytes()

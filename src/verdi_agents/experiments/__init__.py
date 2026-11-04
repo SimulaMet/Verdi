@@ -1,6 +1,6 @@
-"""P2 controlled recovery experiments (WS-2 public surface).
+"""Controlled recovery experiments: regimes, treatments and matched pairs.
 
-Re-exports the public names other workstreams may import: regime
+Re-exports the public names other modules may import: regime
 configuration, record-only deterministic treatments and matched pairs.
 """
 from verdi_agents.experiments.pairs import MatchedPair, make_matched_pair, tape_hash

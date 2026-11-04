@@ -8,7 +8,7 @@ Construct validity rules enforced here:
 - Within one bank epoch (one full pass over a channel's pool), no agent
   draws the same dilemma twice.
 - Isolation: a probe item's dilemma text is never serialized into anything
-  agent-visible; :meth:`ProbeBank.leak_check` is the G3 defense that flags
+  agent-visible; :meth:`ProbeBank.leak_check` is the defense that flags
   leaked dilemmas in agent-visible content.
 """
 from __future__ import annotations
@@ -103,11 +103,11 @@ class ProbeBank:
     def _declared_is_likert(self) -> bool:
         """Whether this instrument version uses a graded (0-5) declared channel.
 
-        The original pilot instrument (``probe-instrument-pilot-v1``) forced
+        The original reference-run instrument (``probe-instrument-pilot-v1``) forced
         the declared channel to yes/no, which flattened the value channel.
         Every other instrument (the live society campaign) grades it as a 0-5
         Likert so value drift on the primary "declared values" channel is
-        measurable. The frozen pilot baseline keeps the legacy yes/no so its
+        measurable. The frozen reference-run baseline keeps the legacy yes/no so its
         historical tape still replays byte-for-byte.
         """
         v = (self.instrument_version or "").lower()
@@ -173,7 +173,7 @@ class ProbeBank:
         return [item.dilemma_text for item in self._pools[channel]]
 
     def leak_check(self, agent_visible_text: str) -> list[str]:
-        """G3 information-access defense.
+        """Information-access defense against probe leaks.
 
         Returns the dilemma texts that appear verbatim inside
         ``agent_visible_text``. An empty list means clean; any entry means a

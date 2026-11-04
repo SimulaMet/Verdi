@@ -3,7 +3,7 @@
 The policy calls the model, then parses and validates the JSON into the frozen
 ProposedAction schema. Malformed or schema-invalid output is *quarantined*
 (returned as (None, reason) and recorded), never raised: an LLM's invalid
-completion must not crash the run (docs/ARCHITECTURE.md, GPU execution).
+completion must not crash the run.
 """
 from __future__ import annotations
 

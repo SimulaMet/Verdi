@@ -1,1 +1,1 @@
-"""P2 WS-2: experiments package tests (regimes, treatments, matched pairs)."""
+"""Tests for the experiments package (regimes, treatments, matched pairs)."""

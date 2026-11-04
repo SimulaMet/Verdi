@@ -1,7 +1,7 @@
-"""Society V2 Stage B offline tests (mock caller): 12 agents, 30 ticks,
+"""Offline tests (mock caller) for the 12-agent, 30-tick society scenario:
 three real (model-voted offline) assemblies, reflection at t11, adversary b05.
 
-These pin the Stage B scenario's structural invariants OFFLINE so the live
+These pin the scenario's structural invariants OFFLINE so the live
 run can be compared against a deterministic expectation before any endpoint
 cost is spent.
 """
@@ -25,7 +25,7 @@ def _scenario() -> dict:
 
 
 class StageBScriptedCaller:
-    """Deterministic fake ModelCaller for Stage B agent IDs.
+    """Deterministic fake ModelCaller for this scenario's agent IDs.
 
     Adversary b05 attempts an overdraft transfer on its first action
     (rejected by the validator); everyone else emits a signal.
@@ -141,7 +141,7 @@ def test_stageB_offline_run_completes_and_replays(tmp_path):
     b05_sanction_tick = [s for s in sanctioned_tick_steps if s.action.actor_id == "b05"]
     assert len(b05_sanction_tick) == 1, "b05 must act during his sanctioned tick (not be suspended)"
 
-    # G3: byte-identical replay + hash chain.
+    # Replay is byte-identical and the hash chain holds.
     assert res.replay_matches is True
     assert res.replay_log_identical is True
     log = EventLog.load_jsonl(tmp_path / "events.jsonl")

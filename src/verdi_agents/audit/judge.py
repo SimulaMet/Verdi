@@ -1,6 +1,6 @@
-"""ADR-012: independent LIVE judge-model pass over the L1 live tape (G4).
+"""Ask a live judge model to grade each recorded model call of a captured live run.
 
-Adds the missing G4 piece from the L2 bridge (``live_bridge.py``): a judge
+Extends the trace audit (``trace_audit.py``) with a judge
 **model** verdict per sampled dispatch row, reported against the
 deterministic code-level judgment (SimpleAudit ``grade_choice_match``) and
 the engine decision. Correlation reuses
@@ -9,16 +9,16 @@ the engine decision. Correlation reuses
 
 SimpleAudit usage (recorded in the report's ``simpleaudit_usage`` section):
 
-- ``ModelAuditor`` is used through its PUBLIC API exactly as ADR-012 §A
-  prescribes: ``ModelAuditor(model=..., provider="openai", judge_model=...,
+- ``ModelAuditor`` is used through its PUBLIC API only:
+  ``ModelAuditor(model=..., provider="openai", judge_model=...,
   judge_provider="openai", api_key=..., base_url=..., judge_api_key=...,
   judge_base_url=...)`` with ``judge_prompt``/``judge_response_schema``,
   then ``auditor.set_target(SealedTapeTarget(...))`` and
   ``auditor.run(scenarios, max_turns=1, max_workers=1)``.
 - ONE adapter (documented in the report): ``SealedTapeTarget``, a
-  ``simpleaudit.targets.Target`` implementation. The L1 transcript is
-  sealed (re-running the target model would re-burn budget and break the
-  ADR-010 replay contract), so the target's single turn replays the
+  ``simpleaudit.targets.Target`` implementation. The captured transcript is
+  sealed (re-running the target model would re-burn budget and break
+  replay-from-tape), so the target's single turn replays the
   CAPTURED assistant response verbatim; ``ModelAuditor.run_scenario`` then
   makes exactly ONE live judge call over that transcript. ``ScenarioExecution``
   is produced by ModelAuditor with the sealed ``event_id`` correlation ids
@@ -29,13 +29,13 @@ SimpleAudit usage (recorded in the report's ``simpleaudit_usage`` section):
   enforced: SimpleAudit's internal retry loop is otherwise invisible to
   this module's call counter.
 
-Framing disclosure (A1 addendum, B2): the judge is SHOWN the engine
+Framing disclosure: the judge is SHOWN the engine
 outcome in its prompt. The measured quantity is therefore judge-to-engine
-SELF-CONSISTENCY, not an independent compliance judgment. G4's blinding
-clause is satisfied by the CODE judge (the label reaches only the
+SELF-CONSISTENCY, not an independent compliance judgment. The blinding
+requirement is satisfied by the CODE judge (the label reaches only the
 grader via ``decision.accepted``), not by the model judge.
 
-Judge nondeterminism (ADR-012 §C): the judge endpoint is acknowledged
+Judge nondeterminism: the judge endpoint is acknowledged
 nondeterministic. The run is reproducible FROM the recorded judge tape
 (full judge prompt + response + usage captured verbatim under
 ``runs/live/judge/<ts>/``), not bit-reproducible on re-run.
@@ -71,18 +71,18 @@ from verdi_agents.audit.trace_audit import (
 )
 from verdi_agents.schemas import WorldEvent
 
-#: Deterministic seed string recorded in sample and report (ADR-012 §B: the
+#: Deterministic seed string recorded in sample and report (the
 #: sample is a pure function of the tape, no randomness, seed recorded).
 SAMPLE_SEED = "g4-judge-all-dispatches/v1"
 
-#: ADR-012 §C: judge max_tokens floor (reasoning models can return empty
-#: content below this; L1 lesson).
+#: Judge max_tokens floor (reasoning models can return empty
+#: content below this).
 MIN_JUDGE_MAX_TOKENS = 1024
 
 #: Retry backoff (seconds) for one outer-loop retry of a failed judge row.
 RETRY_BACKOFF_SECONDS = 1.0
 
-#: A1-2 m2: the report's ``agreement`` metric, stated in every report.
+#: The report's ``agreement`` metric, stated in every report.
 AGREEMENT_METRIC_DEFINITION = (
     "agreement = (judge_stance == engine_stance) AND code_judgment.correct, "
     "where engine_stance = yes iff the deterministic engine accepted the "
@@ -100,7 +100,7 @@ def wilson_ci_95(
 ) -> tuple[float, float] | None:
     """Wilson score 95% confidence interval for a binomial rate.
 
-    Stdlib-only (A1-2 M2 program rule: no scipy/numpy). Returns
+    Stdlib-only (no scipy/numpy). Returns
     ``(low, high)`` clipped to [0, 1], or ``None`` when ``total == 0``
     (no defined rate). Validated in tests against known values
     (e.g. n=100, x=10 -> ~[0.0552, 0.1744]).
@@ -233,13 +233,13 @@ def build_judge_sample(
     tape_path: Path | str,
     ledger_path: Path | str,
 ) -> list[dict[str, Any]]:
-    """The frozen all-dispatches judge sample (ADR-012 §B), sealed correlated.
+    """The frozen all-dispatches judge sample, correlated by sealed event id.
 
     Sample = ALL dispatch records of the tape, sorted by
     ``(tick, actor_id, task_id)`` (``seq`` tie-break for total order).
     It is a pure function of the tape: no randomness, no post-hoc selection
     after seeing judge output. Every engine-rejection row is therefore in
-    the sample (event 42 for the L1 run); the guarantee is asserted from
+    the sample (event 42 in the recorded live run); the guarantee is asserted from
     the ledger, not hardcoded.
     """
     tape = _load_jsonl(Path(tape_path))
@@ -288,7 +288,7 @@ def build_judge_sample(
 
 
 # ---------------------------------------------------------------------------
-# Sealed target: replays the captured L1 assistant response, zero calls
+# Sealed target: replays the captured assistant response, zero calls
 # ---------------------------------------------------------------------------
 
 
@@ -440,7 +440,7 @@ class JudgeTapeCapture:
         """Number of actual judge-model calls (budget-relevant).
 
         Budget-breach rows (calls never made) are audited in the tape but
-        do not consume the ADR-012 §C call budget.
+        do not consume the call budget.
         """
         return sum(
             1
@@ -461,7 +461,7 @@ def build_judge_rows(
 ) -> list[dict[str, Any]]:
     """Per-sample-row code-level judgment + the sealed-dispatch judge prompt.
 
-    Reuses ``live_bridge.build_judge_evidence`` / SimpleAudit
+    Reuses ``trace_audit.build_judge_evidence`` / SimpleAudit
     ``grade_choice_match`` for the deterministic code judgment (no model
     calls) and renders the judge prompt (the sealed dispatch: captured
     proposal verbatim + engine outcome + violation codes).
@@ -571,7 +571,7 @@ def _build_auditor(
     capture: JudgeTapeCapture,
     replay: str,
 ) -> ModelAuditor:
-    """ModelAuditor via its public API (ADR-012 §A) with the sealed target.
+    """ModelAuditor via its public API with the sealed target.
 
     ``temperature``/``max_tokens`` are PER-CALL ``acompletion`` kwargs, so they
     are applied through ``judge_params`` at run time (see ``_one_scenario``),
@@ -621,7 +621,7 @@ def run_live_judge(
     judge_base_url: str | None = None,
     judge_api_key: str | None = None,
 ) -> dict[str, Any]:
-    """Run the ADR-012 live judge pass and write the judge tape + meta.
+    """Run the live judge pass and write the judge tape + meta.
 
     Returns the raw judge-run record (verdicts + judge tape rows + meta).
     The DETERMINISTIC report is produced separately by
@@ -630,7 +630,7 @@ def run_live_judge(
     endpoint nondeterminism.
 
     - Sample: all dispatches of the tape (``build_judge_sample``); the sole
-      L1 engine DISPATCH rejection (event 42) is in-sample by construction.
+      engine DISPATCH rejection of the recorded run (event 42) is in-sample by construction.
     - Budget: <= ``max_calls`` (default 96) judge calls total (retries
       count), concurrency 1 (``max_workers=1``); one outer retry per
       transiently-failed row.
@@ -639,7 +639,7 @@ def run_live_judge(
       ledger, or any scoring input.
     """
     if max_tokens < MIN_JUDGE_MAX_TOKENS:
-        raise ValueError(f"judge max_tokens must be >= {MIN_JUDGE_MAX_TOKENS} (ADR-012 §C)")
+        raise ValueError(f"judge max_tokens must be >= {MIN_JUDGE_MAX_TOKENS}")
     if judge_base_url is None:
         judge_base_url = base_url
     if judge_api_key is None:
@@ -759,7 +759,7 @@ def run_live_judge(
     def _attempt(row: dict[str, Any]) -> tuple[str | None, Exception | None]:
         """One live judge attempt; returns (content, error).
 
-        A1-2 Eng M1: catches ANY per-attempt exception (not just
+        Catches ANY per-attempt exception (not just
         RuntimeError) so a single bad row is recorded as an audited
         judge_error row and the run continues; the outer loop only
         re-raises for a FATAL failure that prevents the tape itself
@@ -780,8 +780,8 @@ def run_live_judge(
         ]
 
     def _write_tape_and_meta(partial: bool, fatal_error: str | None) -> dict[str, Any]:
-        """Write judge tape + meta. On ``partial=True`` this is the A1-2
-        Eng M1 fatal-failure path: rows so far are persisted (never lost)
+        """Write judge tape + meta. On ``partial=True`` this is the
+        fatal-failure path: rows so far are persisted (never lost)
         and the meta is flagged ``partial`` before the caller re-raises."""
         tape_text = (
             "\n".join(json.dumps(r, sort_keys=True) for r in capture.rows) + "\n"
@@ -835,7 +835,7 @@ def run_live_judge(
         _write_json(out_dir / "judge_run_meta.json", meta)
         return meta
 
-    # A1-2 Eng M1: the per-row loop may hit a fatal, unexpected error
+    # The per-row loop may hit a fatal, unexpected error
     # (e.g. a missing tape field, a SimpleAudit regression). The rows
     # judged SO FAR must never be lost: on any unexpected exception write
     # a PARTIAL tape + meta (flagged) and re-raise. Per-attempt judge
@@ -912,7 +912,7 @@ async def _sleep_backoff() -> None:
 
 
 def _structural_artifact_note(code_stance: str, engine_stance: str) -> str:
-    """A1-2 M1: honest wording for a code-judge divergence that is
+    """Honest wording for a code-judge divergence that is
     STRUCTURAL, not a reading of the evidence.
 
     The code judge (SimpleAudit ``grade_choice_match`` over
@@ -954,7 +954,7 @@ def _disagreement_reason(row: dict[str, Any], verdict: dict[str, Any]) -> str:
                 f"Judge reason: {reason}"
             )
         # The model-judge diverges from the engine. Derive the wording from
-        # WHICH component it aligns with (A1-2 M1: no hardcoded events).
+        # WHICH component it aligns with (no hardcoded events).
         if code_stance == jv:
             return (
                 f"model-judge ({jv}) and code-judge ({code_stance}) both "
@@ -986,7 +986,7 @@ def build_judge_report(
     meta: dict[str, Any],
     correlation: dict[str, Any],
 ) -> dict[str, Any]:
-    """DETERMINISTIC G4 judge report — a PURE function.
+    """DETERMINISTIC judge report — a PURE function.
 
     Inputs are plain data only: the preregistered sample, the code-level
     judgment rows, the model-judge verdict rows (from the judge tape), the
@@ -1050,9 +1050,9 @@ def build_judge_report(
     rejected_rows = [r for r in judged if r["engine_decision"] == "rejected"]
 
     def _breakdown(sub: list[dict[str, Any]]) -> dict[str, Any]:
-        """A1-2 M2: per-class agreement with counts + Wilson 95% CI.
+        """Per-class agreement with counts + Wilson 95% CI.
 
-        Classes with a single judged row (e.g. the L1 rejection class,
+        Classes with a single judged row (e.g. the one rejection class,
         n=1) are explicitly flagged: a 1/1 rate carries a CI spanning
         (0, 1) and is NOT evidence about the class.
         """

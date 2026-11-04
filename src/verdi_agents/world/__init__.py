@@ -1,4 +1,4 @@
-"""Deterministic, event-sourced world engine (Worker A, P1-A).
+"""Deterministic, event-sourced world engine.
 
 Public API
 ----------

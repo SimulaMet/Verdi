@@ -1,6 +1,6 @@
-"""Cross-module pilot integration tests (P1-I, G2/G3).
+"""End-to-end tests of the reference run, wiring all core modules together.
 
-These wire every frozen-contract module together over the recorded-output
+These run every core module together over the recorded-output
 pilot_v1 scenario and assert the non-negotiable invariants:
 * deterministic replay reproduces the substantive state hash;
 * the event ledger verifies and every attempted violation is logged;
@@ -31,7 +31,7 @@ def pilot():
 
 
 def test_two_runs_are_byte_identical_in_state(pilot) -> None:
-    """Running the pilot twice from the same scenario yields the same hash."""
+    """Running the reference run twice from the same scenario yields the same hash."""
     first_hash = pilot.final_state.state_hash
     again = PilotDriver(REPO_ROOT).run()
     assert again.final_state.state_hash == first_hash
@@ -43,7 +43,7 @@ def test_event_log_verifies(pilot) -> None:
 
 
 def test_replay_reproduces_full_ledger(pilot) -> None:
-    """G3: folding the FULL recorded ledger tape (all 126 action AND
+    """Folding the FULL recorded ledger tape (all 126 action AND
     governance steps, in ledger order) through a fresh reducer + log
     reproduces the live run's final state hash AND a byte-identical
     JSONL ledger. No bookkeeping force-copies are needed: the reducer
@@ -88,7 +88,7 @@ def test_governance_lifecycle_present(pilot) -> None:
     assert "amendment_enacted" in kinds
     assert "sanction_imposed" in kinds
     assert "appeal_filed" in kinds
-    # The appeal was adjudicated (dismissed in this pilot), so a dismissal event
+    # The appeal was adjudicated (dismissed in this run), so a dismissal event
     # is present; an upheld appeal would instead emit appeal_upheld.
     assert "appeal_dismissed" in kinds or "appeal_upheld" in kinds
 

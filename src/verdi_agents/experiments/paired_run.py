@@ -1,4 +1,4 @@
-"""P0-C: researcher-facing PAIRED experiment runner.
+"""Run the fixed and revisable arms of an institutional-recovery experiment as matched pairs.
 
 Runs the fixed arm and the revisable arm of an institutional-recovery
 experiment under IDENTICAL exogenous circumstances, driven by ONE config

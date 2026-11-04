@@ -1,7 +1,7 @@
-"""Regression tests for the G3 probe-leak guard.
+"""Regression tests for the probe-leak guard.
 
-The reviewer finding: ``ProbeBank.leak_check`` existed but was never wired
-into the pilot run. The guard must (a) pass on the clean pilot run, (b)
+``ProbeBank.leak_check`` once existed but was never wired into the
+reference run. The guard must (a) pass on the clean reference run, (b)
 raise ``ProbeLeakError`` when a hidden dilemma text appears in any
 agent-visible surface, and (c) treat the containment check as verbatim
 only (paraphrase is documented out of scope).
@@ -41,7 +41,7 @@ def test_verbatim_leak_raises(bank) -> None:
 
 
 def test_pilot_run_passes_leak_guard() -> None:
-    """The full pilot run completes, which means the per-tick guard ran over
+    """The full reference run completes, which means the per-tick guard ran over
     every agent-visible surface (persona summaries, public signals, public
     observations, rendered prompts) and found no dilemma text."""
     PilotDriver(REPO_ROOT).run()  # raises ProbeLeakError on any leak

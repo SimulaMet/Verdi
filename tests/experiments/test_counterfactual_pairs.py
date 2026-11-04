@@ -1,17 +1,18 @@
-"""ADR-013 G5 paired arms — offline tests (NO NETWORK, NO REAL SLEEPS).
+"""Offline tests for matched treatment/placebo pairs (no network, no real sleeps).
 
-Pins the ADR-013 pipeline against the sealed L1 provenance:
-* L1 loading / provenance invariants;
-* matching invariants (origin hash B3 + sealed prefix tape hash,
+Checks the counterfactual-pairs pipeline against the sealed original live run:
+* loading the original live run and its provenance invariants;
+* matching invariants (origin state hash + sealed prefix tape hash,
   ``make_matched_pair`` identity);
-* the mandatory placebo-inert null control (same-code invariants per
-  ADR-013 Addendum A1: prefix byte-identical, arms identical except the
-  adjudication cascade, equal folded finals, unbroken chains);
-* arm folds: treatment (upheld + rights restored) vs placebo (verbatim L1
-  dismissal), scaffold invariance (identical final state hash),
-  cross-arm adjudication-kind isolation, placebo byte-identity to L1;
+* the mandatory placebo-inert null control (same-code invariants:
+  prefix byte-identical, arms identical except the adjudication
+  cascade, equal folded finals, unbroken chains);
+* arm folds: treatment (upheld + rights restored) vs placebo (the
+  original run's verbatim dismissal), scaffold invariance (identical
+  final state hash), cross-arm adjudication-kind isolation, placebo
+  byte-identity to the original run;
 * arm run dicts satisfy ``analysis.report._validate_arm_run_dict``;
-* deterministic G5 report byte-stability (build twice, identical bytes);
+* deterministic paired report byte-stability (build twice, identical bytes);
 * no API-key material in any artifact.
 
 The REAL live run (10 pairs × 47 Qwen calls) is script-style outside
@@ -55,7 +56,7 @@ from verdi_agents.world.reducer import WorldReducer
 WORKTREE = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.skipif(
     not L1_TAPE_PATH.is_file() or not L1_EVENT_LOG_PATH.is_file(),
-    reason="L1 live run artifacts not present (run artifacts, not repo assets)",
+    reason="original live run artifacts not present (run artifacts, not repo assets)",
 )
 
 
@@ -71,14 +72,14 @@ def context(l1):
 
 @pytest.fixture(scope="module")
 def arms(l1):
-    """One pair folded from L1's own tape (R = L1 suffix): fast, offline."""
+    """One pair folded from the original run's own tape (its own suffix): fast, offline."""
     tr = run_arm(WORKTREE, l1.tape_rows, "treatment")
     pr = run_arm(WORKTREE, l1.tape_rows, "placebo")
     return tr, pr
 
 
 # --------------------------------------------------------------------------- #
-# L1 provenance
+# Original live run provenance
 # --------------------------------------------------------------------------- #
 
 
@@ -89,7 +90,7 @@ def test_l1_provenance_invariants(l1):
     assert len(l1.tape_rows) == 81
     assert len(l1.prefix_tape_rows) == 34
     assert len(l1.suffix_tape_rows) == EXPECTED_SUFFIX_CALLS == 47
-    # B3(a): origin hash = sealed after_hash of event 49.
+    # Origin hash = sealed after_hash of event 49.
     assert l1.origin_state_hash == l1.event_log.events[49].after_hash
 
 
@@ -105,9 +106,9 @@ def test_prefix_event_log_chain(l1):
 
 
 def test_matching_context_b3(l1, context):
-    # B3(a): origin hash equals the folded prefix terminal canonical hash.
+    # Origin hash equals the folded prefix terminal canonical hash.
     assert context["folded_prefix_terminal_hash"] == context["origin_state_hash"]
-    # B3(b): origin event count.
+    # Origin event count.
     assert context["origin_event_count"] == 50
     # tape_hash is over the sealed prefix ledger.
     assert context["prefix_tape_hash"] == tape_hash(prefix_event_log(l1))
@@ -141,7 +142,7 @@ def test_matching_context_fold_is_pure(l1, context):
 
 
 def test_null_control_placebo_inert(l1):
-    """Same-code invariants (ADR-013 Addendum A1) all hold on the L1 tape."""
+    """Same-code invariants all hold on the original live run's tape."""
     evidence = null_control(l1, WORKTREE)
     invariants = evidence["invariants"]
     assert invariants["a_prefix_byte_identical"] is True
@@ -165,7 +166,7 @@ def test_null_control_placebo_inert(l1):
         "fa30e29786877c6534013a2f6a2683a6d19e1cb136a66830d35cd9a8defdd582"
     )
     assert evidence["event_counts"] == {"treatment": 127, "placebo": 126, "l1": 126}
-    # Structurally unable to claim byte-identity to historical L1.
+    # Structurally unable to claim byte-identity to the historical original run.
     assert "byte_identical" not in evidence
     assert "RETIRED" in evidence["standard"]
     assert evidence["version_drift"]["l1_git_sha"] != evidence["version_drift"][
@@ -285,7 +286,7 @@ def test_scaffold_invariance_final_state_hash(arms):
 
 def test_arm_ledger_verifies_and_counts(arms):
     tr, pr = arms
-    # Placebo arm: byte-identical to L1 (126 events, dismissal = 1 event).
+    # Placebo arm: byte-identical to the original run (126 events, dismissal = 1 event).
     # Treatment arm: 127 events (upheld + rights_restored = 2 events at the
     # branch position, no dismissal).
     tr.log.verify()
@@ -339,14 +340,14 @@ def test_report_byte_stability(l1, arms, context):
     b1 = json.dumps(r1, indent=2, sort_keys=True) + "\n"
     b2 = json.dumps(r2, indent=2, sort_keys=True) + "\n"
     assert b1 == b2
-    # No NEW causal wording beyond the three frozen negated occurrences.
+    # No NEW causal wording beyond the three fixed negated occurrences.
     assert len(re.findall(r"causal", b1, flags=re.IGNORECASE)) == 3
-    # ADR-013 §1 extensions present.
+    # Extended report sections present.
     assert "null_control_placebo_inert" in r1
     assert r1["matching"]["origin_state_hash"] == context["origin_state_hash"]
     assert r1["replication"]["n_pairs"] == 10
     assert r1["design"]["randomized"] is False
-    # Addendum A1: numeric cross-pair replication spread (replicated single
+    # Numeric cross-pair replication spread (replicated single
     # pair → zero spread, labeled as replication spread).
     spread = r1["cross_pair_replication_spread"]
     assert spread["n_pairs"] == 10
@@ -354,7 +355,7 @@ def test_report_byte_stability(l1, arms, context):
     assert set(spread["values"]) == set(ESTIMANDS)
     for per_arm in spread["values"].values():
         assert per_arm["treatment"] == 0.0 and per_arm["placebo"] == 0.0
-    # Addendum A1 framings + corrected limitations (stale entries removed).
+    # Framings + corrected limitations (stale entries removed).
     assert "false_punishment_direction" in r1["framings"]
     assert "deprivation_metric_restoration_blind" in r1["framings"]
     assert not any("no live LLM interaction" in s for s in r1["limitations"])

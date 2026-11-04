@@ -1,6 +1,6 @@
 """Optional, OFF-by-default compatibility adapter to Google DeepMind Concordia.
 
-This is a THIN bridge (todo D, follow-up). It exists so a Verdi agent / model
+This is a THIN bridge. It exists so a Verdi agent / model
 endpoint can be surfaced in Concordia's `Entity` and `LanguageModel` interfaces
 for cross-framework inspection or co-simulation experiments. It is:
 

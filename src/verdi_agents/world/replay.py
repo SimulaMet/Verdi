@@ -4,7 +4,7 @@
 the *tape* -- through the deterministic reducer and the hash-chained
 event log. It performs NO model invocation: everything is read from the
 recorded outputs, so two replays over the same tape yield an identical
-final state hash and an identical event list (G3).
+final state hash and an identical event list.
 """
 from __future__ import annotations
 
@@ -41,11 +41,11 @@ class TapeStep:
     # position; takes no action, advances no ledger event or tick — so a live
     # run and its replay both apply it identically and the state hash matches.
     shock: dict | None = None
-    # P0-B (constrained economy): deterministic production cost deduction
+    # Constrained economy: deterministic production cost deduction
     # ({actor_id, resource, amount}) applied at this position before the
     # produce commit; state-only, like rights_change / world_shock.
     production: dict | None = None
-    # P0-B: end-of-tick consumption payload ({tick_consumed, deficit_agents})
+    # End-of-tick consumption payload ({tick_consumed, deficit_agents})
     # recorded so replay applies the same deterministic deduction and rebuilds
     # the identical ledger event.
     consumption: dict | None = None

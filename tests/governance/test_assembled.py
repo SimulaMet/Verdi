@@ -1,4 +1,4 @@
-"""t10 real-assembly driver: model-voted proposals and votes (Society V2 §1.2).
+"""Tests for the real assembly: model-written proposals and model votes.
 
 Uses a FAKE ModelCaller (canned JSON, no network) — the Assembly's job is to
 route model output through the deterministic engine, never to decide outcomes

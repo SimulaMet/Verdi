@@ -1,18 +1,18 @@
-"""t10 real-assembly driver (Society V2 §1.2, Lane D).
+"""Run a constitutional assembly where live model agents propose amendments and vote.
 
-The pilot's scripted assembly votes are a protocol violation for Stage A;
-this module COMPOSES the existing deterministic ``GovernanceEngine`` with
+Scripted assembly votes (as in the reference run) are not allowed in live
+society runs; this module COMPOSES the existing deterministic ``GovernanceEngine`` with
 live model calls: the model only *proposes* amendments and *votes*; the
 engine performs all deterministic validation (law invariants,
 retroactivity, quorum, threshold) and is the sole writer of governance
 events and constitution versions.
 
-Modeling choice (documented per §1.2 step 2): deliberation uses ONE
+Modeling choice: deliberation uses ONE
 structured call per eligible voter rather than a single "council" call.
 Per-voter calls give every proposal a single, unambiguous author and
 ``attempt_id`` in ``model_calls.jsonl``, so traceability to
 "who proposed what" is exact; the cost is ``n_voters`` calls instead of
-one, which Stage A (6 agents, 1 assembly) is small enough to absorb.
+one, which small societies (e.g. 6 agents, 1 assembly) easily absorb.
 
 Honest outcomes are preserved: rejection and no-change are valid
 results. This driver never overrides an engine decision.
@@ -96,15 +96,15 @@ class AssemblyOutcome(BaseModel):
     votes: list[dict[str, Any]]  # per-voter: {voter_id, proposal_id, choice, attempt_id}
     abstentions: int
     # Per-proposal engine enact event dicts, in submitted order. Lets the
-    # campaign ledger every rejection, not just the last one (Tranche 11).
+    # campaign ledger every rejection, not just the last one.
     enact_events: list[dict[str, Any]] = Field(default_factory=list)
-    # Full proposal texts for review/plotting (Tranche 12h): each entry has
+    # Full proposal texts for review/plotting: each entry has
     # proposal_id, submitted_by, change_summary, payload.
     proposal_details: list[dict[str, Any]] = Field(default_factory=list)
 
 
 def _attempt_id(world_id: str, proposal_id: str | None, voter_id: str, tick: int) -> str:
-    """Stable attempt id shared with model_calls.jsonl (Society V2 §1.2)."""
+    """Stable attempt id shared with model_calls.jsonl."""
     basis = f"{world_id}|assembly|{proposal_id or 'delib'}|{voter_id}|{tick}"
     return hashlib.sha256(basis.encode("utf-8")).hexdigest()
 
@@ -135,7 +135,7 @@ def _summarize_context(context: list[dict[str, Any]]) -> str:
 
 
 class Assembly:
-    """t10 real-assembly driver. Live model calls for deliberation and votes;
+    """Real-assembly driver. Live model calls for deliberation and votes;
     every vote traces to an attempt_id. Deterministic ENGINE does final
     validation (quorum/threshold/retroactivity) — the model only proposes & votes."""
 

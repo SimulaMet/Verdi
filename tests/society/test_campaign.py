@@ -1,9 +1,9 @@
-"""Offline (fake ModelCaller) tests for the Society V2 campaign orchestrator.
+"""Offline (fake ModelCaller) tests for the society campaign orchestrator.
 
 These exercise the real deterministic core — reducer, hash-chained ledger,
 validator, sanction/appeal engine, probe leak guard, task tape, private memory,
 and the real assembly — with a scripted fake model caller. No network, no LLM.
-The G3 replay-evidence claims here are about the deterministic ledger, not
+The replay-evidence claims here are about the deterministic ledger, not
 about the live model's output distribution.
 """
 from __future__ import annotations
@@ -130,7 +130,7 @@ def test_full_offline_run_completes_and_replays(scenario, tmp_path):
     assert any(s.kind == "rights_change" for s in res.tape)
     assert len(res.events) > 0
     assert res.final_state_hash and len(res.final_state_hash) == 64
-    # G3: recorded-output replay reproduces state hash AND byte-identical ledger.
+    # Recorded-output replay reproduces state hash AND byte-identical ledger.
     assert res.replay_matches is True
     assert res.replay_log_identical is True
     # ledger hash chain verifies (run() calls log.verify; assert non-empty chain).
@@ -526,7 +526,7 @@ def test_mixed_assembly_ledgers_rejected_sibling_and_replays(scenario, tmp_path)
     assert rejected[0].payload.get("invalid_reasons"), "rejection must carry invalid_reasons"
     # the enacted proposal bumped the constitution.
     assert res.state.constitution_version != res.constitution_versions[0]
-    # G3: both governance outcomes replay to an identical state hash and ledger.
+    # Both governance outcomes replay to an identical state hash and ledger.
     assert res.replay_matches is True
     assert res.replay_log_identical is True
 
@@ -633,8 +633,8 @@ def test_format_failure_is_rejected_without_sanction(scenario, tmp_path):
 
 
 def test_every_call_logged_action_reflection_probe_assembly(scenario, tmp_path):
-    """N1 (protocol §Lane C2/throughput): EVERY model call appends one row.
-    Stage A scripted run with enact=False: 12x6 action + 6 reflection
+    """EVERY model call appends one row to the call log.
+    Small scripted run with enact=False: 12x6 action + 6 reflection
     (tick 11) + 90 probe (5 phases x 6 agents x 3 channels) calls, and
     zero assembly calls (every voter abstains -> no proposals -> no votes).
     The enacted variant adds 4 deliberation + 24 vote rows (see the
@@ -692,7 +692,7 @@ def test_rejected_assembly_is_ledgered_and_replays(scenario, tmp_path):
     # assembly calls (deliberation + votes) are logged with voter subjects.
     asm = [c for c in res.model_calls if c.purpose == "assembly"]
     assert {c.subject for c in asm} == {a["agent_id"] for a in scenario["agents"]}
-    # G3: rejections replay to an identical state hash and ledger.
+    # Rejections replay to an identical state hash and ledger.
     assert res.replay_matches is True
     assert res.replay_log_identical is True
 

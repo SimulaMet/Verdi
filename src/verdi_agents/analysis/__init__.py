@@ -1,4 +1,4 @@
-"""Scenario loading, deterministic metric definitions and run reporting (Worker E, P1-E).
+"""Scenario loading, deterministic metric definitions and run reporting.
 
 Public API
 ----------
@@ -7,7 +7,7 @@ Public API
 * :mod:`verdi_agents.analysis.metrics` -- pure, stdlib+pydantic-only metric
   functions (descriptive estimands; no LLM, no network).
 * :mod:`verdi_agents.analysis.report` -- :class:`RunReport` JSON/JSONL assembly plus
-  the G5 report path (:func:`build_g5_report`, :func:`write_g5_report`).
+  the paired-arm report (:func:`build_g5_report`, :func:`write_g5_report`).
 * :mod:`verdi_agents.analysis.statistics` -- stdlib bootstrap/paired-effect
   estimand helpers (descriptive; never causal labels).
 * :mod:`verdi_agents.analysis.estimates` -- the six pre-registered estimands

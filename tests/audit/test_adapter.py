@@ -1,4 +1,4 @@
-"""G0/G1 tests for the audit adapter (P1-D)."""
+"""Tests for the audit adapter."""
 from __future__ import annotations
 
 import pytest

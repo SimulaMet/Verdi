@@ -1,4 +1,4 @@
-"""Tests for longitudinal live probes (Lane E, Society V2).
+"""Tests for longitudinal live probes asked repeatedly during a society run.
 
 Covers: row count/channels, per-channel trajectories with no pooled key,
 yes/no/JSON/garbage parsing, per-channel grounding (persona in every channel;

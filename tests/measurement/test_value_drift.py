@@ -1,4 +1,4 @@
-"""G0/G1 tests for per-channel longitudinal drift (P1-D, construct validity)."""
+"""Tests for per-channel value drift over time (construct validity)."""
 from __future__ import annotations
 
 import pytest

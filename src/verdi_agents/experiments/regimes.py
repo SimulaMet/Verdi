@@ -1,9 +1,8 @@
-"""Frozen regime configuration for P2 controlled recovery experiments (WS-2).
+"""Define the fixed regime settings that make up each arm of a controlled recovery experiment.
 
 A *regime* fully describes one arm of the experiment: the adversary
 population size, the scheduler identity and the reflection/memory/detection
-toggles that distinguish the G0..G4 comparator arms (PREREGISTRATION.md
-"Comparators and controls").
+toggles that distinguish the comparator arms labelled "G0".."G4".
 
 The schema is frozen: :class:`~verdi_agents.schemas.ExperimentManifest` (schema
 version 1) declares ``extra="forbid"`` and has **no** ``metadata`` field,

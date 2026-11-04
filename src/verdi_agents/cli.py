@@ -80,28 +80,57 @@ def _run_main(argv: list[str]) -> int:
     return live_main(argv)
 
 
+def _positional_to_flag(argv: list[str], flag: str) -> list[str]:
+    """Let `cmd FILE ...` mean `cmd --flag FILE ...` (both spellings work)."""
+    if argv and not argv[0].startswith("-"):
+        return [flag, argv[0], *argv[1:]]
+    return argv
+
+
+def _pair_main(argv: list[str]) -> int:
+    from verdi_agents.experiments.paired_run import main as pair_main
+
+    return pair_main(_positional_to_flag(argv, "--config"))
+
+
+def _compare_main(argv: list[str]) -> int:
+    from verdi_agents.analysis.outcome_metrics import main as compare_main
+
+    return compare_main(_positional_to_flag(argv, "--pair-root"))
+
+
+def _sweep_main(argv: list[str]) -> int:
+    from verdi_agents.experiments.sweep import main as sweep_main
+
+    return sweep_main(argv)
+
+
+COMMANDS = {
+    "init": (_init_main, "create a folder with example scenarios and sweeps"),
+    "run": (_run_main, "run one society (verdi-agents run examples/starter.yaml)"),
+    "sweep": (_sweep_main, "rerun a scenario many times, changing only what you list"),
+    "pair": (_pair_main, "run the same society twice: fixed rules vs rules agents can change"),
+    "compare": (_compare_main, "measure and compare the two halves of a `pair` run"),
+}
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv[:1] == ["sweep"]:
-        from verdi_agents.experiments.sweep import main as sweep_main
-
-        return sweep_main(argv[1:])
-    if argv[:1] == ["init"]:
-        return _init_main(argv[1:])
-    if argv[:1] == ["run"]:
-        return _run_main(argv[1:])
-    parser = argparse.ArgumentParser(prog="verdi-agents", description="Verdi research testbed CLI",
-                                     epilog="commands:\n"
-                                            "  init    create a folder with example scenarios "
-                                            "and sweeps\n"
-                                            "  run     run one scenario "
-                                            "(verdi-agents run examples/starter.yaml)\n"
-                                            "  sweep   rerun a scenario many times, changing "
-                                            "only what you list (verdi-agents sweep --help)",
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    if argv and argv[0] in COMMANDS:
+        handler, _ = COMMANDS[argv[0]]
+        return handler(argv[1:])
+    width = max(len(name) for name in COMMANDS)
+    epilog = "commands:\n" + "\n".join(
+        f"  {name.ljust(width)}  {help_text}" for name, (_, help_text) in COMMANDS.items()
+    ) + "\n\nRun `verdi-agents <command> --help` for the options of one command."
+    parser = argparse.ArgumentParser(
+        prog="verdi-agents",
+        description="Simulate small societies of AI agents and watch how their values and "
+                    "rules change over time.",
+        epilog=epilog,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.parse_args(argv)
-    # No subcommand given: show usage (the old text pointed at a doc that
-    # does not exist).
     parser.print_help()
     return 0
 

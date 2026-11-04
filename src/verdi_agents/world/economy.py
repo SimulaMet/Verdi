@@ -1,7 +1,7 @@
 """Opt-in versioned constrained economy + objective task-success oracle.
 
-This module is the DETERMINISTIC core of the P0-B "meaningful shock and
-task environment" work: pure, stateless functions that enforce a finite
+This module is the DETERMINISTIC core of the economy and task
+environment: pure, stateless functions that enforce a finite
 economy (per-tick production caps, production input costs, end-of-tick
 consumption) and evaluate verifiable delivery objectives from committed
 world state alone. Nothing here calls a model, reads the wall clock, or

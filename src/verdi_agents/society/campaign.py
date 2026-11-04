@@ -1,8 +1,8 @@
-"""Society V2 campaign orchestrator (protocol: docs/SOCIETY_V2_PROTOCOL.md).
+"""Run a full society campaign where live model agents act, vote and are sanctioned.
 
-The *new* live-campaign driver. It composes the frozen ``pilot_v1`` building
+The live-campaign driver. It composes the frozen ``pilot_v1`` building
 blocks (WorldReducer, EventLog, GovernanceEngine, ProbeBank, the deterministic
-world validator/observation) with the Society V2 social package (private
+world validator/observation) with the society package (private
 AgentMemory, seeded task tape, real per-voter assembly, longitudinal probes)
 into a run loop where:
 
@@ -93,10 +93,10 @@ PROTOCOL_VERSION = "verdi.society/1"
 #: represent a genuine world-rule violation an agent deliberately attempted --
 #: the only codes that may drive a sanction. Format failures
 #: (missing_argument, empty_signal, non_positive_amount) and engine-internal
-#: codes (unknown_actor, unknown_kind) must never sanction: the Stage B seed-1
+#: codes (unknown_actor, unknown_kind) must never sanction: an earlier
 #: live run proved that a prompt/validator field mismatch manufactures 100%
 #: format-failure rejections, and sanctioning them mis-attributes an
-#: infrastructure bug to the agents (Tranche 11 lesson).
+#: infrastructure bug to the agents.
 SUBSTANTIVE_VIOLATION_CODES = frozenset({"overdraft", "insufficient_world", "unknown_recipient"})
 
 _REFLECTION_INSTRUCTION = (
@@ -130,7 +130,7 @@ class _ModelCall:
 
 @dataclass
 class SocietyResult:
-    """Everything a Society V2 run produces (artifacts + replay input)."""
+    """Everything a society run produces (artifacts + replay input)."""
 
     manifest: ExperimentManifest
     state: WorldState
@@ -143,16 +143,16 @@ class SocietyResult:
     sanction_events: list[dict[str, Any]] = field(default_factory=list)
     appeal_events: list[dict[str, Any]] = field(default_factory=list)
     restoration_events: list[dict[str, Any]] = field(default_factory=list)
-    #: Tranche 12i: agent-stated reasons keyed by ledger event_id (sidecar;
+    #: Agent-stated reasons keyed by ledger event_id (sidecar;
     #: keeps the hash-chained event ledger byte-identical to replay tapes).
     action_reasons: dict[int, str] = field(default_factory=dict)
-    #: Per-tick resource ledger (Tranche 12i): world pool + per-agent
+    #: Per-tick resource ledger: world pool + per-agent
     #: holdings, plot-ready for wealth curves. One entry per tick.
     resource_timeline: list[dict[str, Any]] = field(default_factory=list)
     tape: list[TapeStep] = field(default_factory=list)
     quarantined: list[tuple[int, str, str]] = field(default_factory=list)
     constitution_versions: list[str] = field(default_factory=list)
-    #: Tranche 12i: full constitution text (rules + policies + thresholds) at
+    #: Full constitution text (rules + policies + thresholds) at
     #: each version, so a scientist can read exactly what the law said at any
     #: point without reconstructing from amendment deltas.
     constitution_texts: list[dict[str, Any]] = field(default_factory=list)
@@ -161,7 +161,7 @@ class SocietyResult:
     #: Read-only checkpoint interviews of the actual agents (opt-in via the
     #: scenario's ``interviews`` block); empty for runs without it.
     interviews: list[dict[str, Any]] = field(default_factory=list)
-    #: P0-B: objective task-success outcomes (delivery objectives evaluated
+    #: Objective task-success outcomes (delivery objectives evaluated
     #: from committed state at their due tick). Empty when the scenario has no
     #: ``tasks`` block — legacy runs are unaffected.
     task_outcomes: list[dict[str, Any]] = field(default_factory=list)
@@ -182,7 +182,7 @@ class SocietyResult:
 # the orchestrator
 # --------------------------------------------------------------------------- #
 class SocietyCampaign:
-    """Runs one Society V2 experiment end to end.
+    """Runs one society experiment end to end.
 
     ``scenario`` is the parsed scenario dict (from the JSON file); ``run_dir``
     is where artifacts land; ``caller`` is any ``ModelCaller``. For the live
@@ -243,10 +243,10 @@ class SocietyCampaign:
         self._quarantined: list[tuple[int, str, str]] = []
         self._sanction_events: list[dict[str, Any]] = []
         self._appeal_events: list[dict[str, Any]] = []
-        # Tranche 12i: agent-stated reasons, keyed by ledger event_id.
+        # Agent-stated reasons, keyed by ledger event_id.
         # Deliberately a SIDE CAR (not in the event payload) so the
         # hash-chained event ledger and its frozen byte-identity replay
-        # tapes (pilot L1, G5 placebo arms) stay untouched.
+        # tapes (reference live run, counterfactual placebo arms) stay untouched.
         self._action_reasons: dict[int, str] = {}
         self._restoration_events: list[dict[str, Any]] = []
         self._resource_timeline: list[dict[str, Any]] = []
@@ -275,9 +275,9 @@ class SocietyCampaign:
         # condition against the deadline and the dismissal path is reachable.
         self._pending_appeals: list[dict[str, Any]] = []
         # Current loop tick, shared with the assembly-caller recorder
-        # (N1) so assembly calls are attributed to the right tick.
+        # so assembly calls are attributed to the right tick.
         self._tick: int = 0
-        # P0-B opt-in constrained economy + objective task oracle. Both are
+        # Opt-in constrained economy + objective task oracle. Both are
         # None unless the scenario carries an ``economy`` / ``tasks`` block;
         # legacy scenarios keep today's semantics exactly.
         self._economy_spec: EconomySpec | None = parse_economy_spec(scenario.get("economy"))
@@ -303,11 +303,11 @@ class SocietyCampaign:
         law = LawVersion(
             law_id="universal-law",
             version=sc["law_version"],
-            invariants=list(sc["law"]["invariants"]),  # Tranche 12k: from scenario file
+            invariants=list(sc["law"]["invariants"]),  # from scenario file
             effective_from_tick=0,
             checksum=_digest("law", sc["law_version"]),
         )
-        constitution_cfg = sc["constitution"]  # Tranche 12k: from scenario file
+        constitution_cfg = sc["constitution"]  # from scenario file
         validate_enforceable_rules(constitution_cfg["rules"])
         institutional_condition = sc.get("institutional_condition", "revisable")
         if institutional_condition not in ("fixed", "revisable"):
@@ -327,7 +327,7 @@ class SocietyCampaign:
             law, constitution, eligible_voters=agent_ids,
             amendments_enabled=(institutional_condition == "revisable"),
         )
-        # Tranche 12m: t0 sanction bootstrap. A scenario may declare an agent
+        # t0 sanction bootstrap. A scenario may declare an agent
         # already under sanction at t0 via ``under_sanction: true`` plus an
         # optional ``sanction: {duration_ticks: N}`` block. The flag alone
         # restricts the agent deterministically (no transfer/deposit, suspended
@@ -409,7 +409,7 @@ class SocietyCampaign:
         self._checkpoints["t00"] = initial_state
         _write_json(run_dir / "snapshots/t00.json", _state_dict(initial_state))
 
-        # P0-B: capture the baseline state at each delivery objective's start
+        # Capture the baseline state at each delivery objective's start
         # tick (default 0 => the t0 snapshot) so success/failure is a pure
         # state diff computed only from committed world state.
         for _obj in self._task_objectives:
@@ -433,7 +433,7 @@ class SocietyCampaign:
                         # Another sanction on this agent is still in force
                         # (e.g. a declared t0 sanction): keep the flag set.
                         continue
-                    # F2: duration-expired sanctions clear the world-state flag
+                    # Duration-expired sanctions clear the world-state flag
                     # at loop-top, before this tick's snapshot/tape, so the
                     # restored agent is eligible again from this tick on. (An
                     # upheld appeal expires the sanction earlier, so this only
@@ -475,7 +475,7 @@ class SocietyCampaign:
                     f"Everyone feels the pressure."
                 )
 
-            # P0-B: capture baselines for delivery objectives that start this
+            # Capture baselines for delivery objectives that start this
             # tick (start_tick > 0), from committed state before any action.
             for _obj in self._task_objectives:
                 if int(_obj["start_tick"]) == tick and tick > 0:
@@ -486,7 +486,7 @@ class SocietyCampaign:
                 self._current_shock_info = ""
             snapshot = state  # frozen start-of-tick state (concurrency base)
 
-            # P0-B: per-tick production accounting under an active economy —
+            # Per-tick production accounting under an active economy —
             # resets each tick; only consulted by the validator when the
             # economy block is present, so legacy runs are unaffected.
             # Keyed per ACTOR then resource: the cap is documented (economy.py,
@@ -634,7 +634,7 @@ class SocietyCampaign:
                     and self._economy_spec is not None
                     and pr.action.action_kind == "produce"
                 ):
-                    # P0-B: production has a finite credit input. The validator
+                    # Production has a finite credit input. The validator
                     # already checked the per-tick cap + affordability; here we
                     # apply the cost deduction as a deterministic state-only
                     # step (like rights_change / world_shock: no ledger event,
@@ -668,7 +668,7 @@ class SocietyCampaign:
                         },
                     ))
                 if not validation.accepted:
-                    # Tranche 11: only SUBSTANTIVE violations (the agent tried
+                    # Only SUBSTANTIVE violations (the agent tried
                     # an action the world rules genuinely forbid) feed the
                     # sanction queue, regardless of action kind -- an over-
                     # deposit (overdraft) and an over-withdraw
@@ -688,7 +688,7 @@ class SocietyCampaign:
                              "tick": tick, "reasons": [f"law:{c}" for c in codes]}
                         )
 
-            # G3 leak guard over every agent-visible surface this tick.
+            # Probe leak guard over every agent-visible surface this tick.
             self._assert_no_probe_leak(state, tick, memory, bank)
 
             # feed committed observations into private memory (feedback loop).
@@ -723,7 +723,7 @@ class SocietyCampaign:
                 sanction_ev = self._impose_sanction(v, governance, tick)
                 if sanction_ev.get("decision") == "accepted":
                     sanctioned_already.add(v["actor_id"])
-                    # F2: the sanction now has a real effect on world state.
+                    # The sanction has a real effect on world state.
                     # Flip under_sanction=True (state-only, no ledger event) so
                     # the deterministic validator (validate.py) and the tape
                     # eligibility filter both see it from the next tick on.
@@ -735,24 +735,24 @@ class SocietyCampaign:
                 if p["file_tick"] == tick:
                     upheld = self._file_and_adjudicate_appeal(p, governance, tick)
                     if upheld and not governance.sanctions.has_live_sanction(p["subject_id"]):
-                        # F2: an upheld appeal restores rights immediately, so
+                        # An upheld appeal restores rights immediately, so
                         # clear the world-state flag this tick.
                         state = self._commit_rights_change(state, p["subject_id"], False)
 
-            # P0-B: end-of-tick deterministic consumption (economy active only).
+            # End-of-tick deterministic consumption (economy active only).
             # Runs after all actions are committed, before the assembly tick, so
             # the ledger event lands at the same tape position in replay.
             if self._economy_spec is not None:
                 state = self._apply_end_of_tick_consumption(state, log)
                 self._live_state = state
 
-            # P0-B: evaluate delivery objectives due this tick from committed
+            # Evaluate delivery objectives due this tick from committed
             # state only (state diff vs the start-tick baseline snapshot).
             for _obj in self._objectives_due.get(tick, []):
                 state = self._evaluate_objective(_obj, state, log)
             self._live_state = state
 
-            # Tranche 12i: per-tick resource ledger (world pool + agent
+            # Per-tick resource ledger (world pool + agent
             # holdings), plot-ready for wealth/flow curves.
             self._resource_timeline.append({
                 "tick": tick,
@@ -764,7 +764,7 @@ class SocietyCampaign:
             })
 
             if tick in (5, 9, total_ticks - 1) or tick in self._assembly_ticks:
-                # The reducer advances state.tick per ACTION (pilot_v1 semantics),
+                # The reducer advances state.tick per ACTION (reference-run semantics),
                 # so the post-commit state here is labelled by the loop tick just
                 # completed (NOT by state.tick).
                 self._checkpoints[f"t{tick:02d}"] = state
@@ -804,7 +804,7 @@ class SocietyCampaign:
     # ledger commit
     # ------------------------------------------------------------------ #
     def _write_model_calls_lines(self, calls: list[_ModelCall]) -> None:
-        """Append completed-call records to model_calls.jsonl (Tranche 12i).
+        """Append completed-call records to model_calls.jsonl.
 
         The live stall watchdog measures liveness from this file's line
         growth (plus events.jsonl), so every COMPLETED model call must land
@@ -875,7 +875,7 @@ class SocietyCampaign:
         return state
 
     # ------------------------------------------------------------------ #
-    # P0-B: constrained economy + objective task oracle
+    # Constrained economy + objective task oracle
     # ------------------------------------------------------------------ #
     def _current_state(self) -> WorldState | None:
         """The campaign's live world state (read-only for prompt building)."""
@@ -1104,7 +1104,7 @@ class SocietyCampaign:
             # --- Public action generation (now informed by inner state) ---
             t_start = time.monotonic()
             ts_start = _utc_now_iso()
-            # P0-B: under an active economy the agent sees its CURRENT holdings
+            # Under an active economy the agent sees its CURRENT holdings
             # (production cost deductions from earlier same-tick produces are
             # already visible), not just the start-of-tick snapshot. Legacy runs
             # (no economy block) keep the snapshot exactly as before.
@@ -1119,7 +1119,7 @@ class SocietyCampaign:
             # Inform agents of actionable, currently-effective rules. Preserve
             # legacy prompts byte-for-byte when no typed rules are configured.
             executable = {k: v for k, v in (policy_rules or {}).items() if k in ENFORCEABLE_KEYS}
-            # P0-B: when a constrained economy is active, surface its typed
+            # When a constrained economy is active, surface its typed
             # production parameters so agents can plan against the real caps.
             # The CONSTITUTIONAL key (enacted via amendment, in policy_rules)
             # overrides the scenario block for the same resource: this is what
@@ -1340,7 +1340,7 @@ class SocietyCampaign:
             "abstentions": outcome.abstentions,
             "quarantined": list(assembly.quarantined),
         }
-        # Tranche 12h: accumulate the FULL meeting record (proposals with
+        # Accumulate the FULL meeting record (proposals with
         # texts, votes, outcome) for meetings.jsonl — one canonical file.
         self._meetings.append({
             "tick": tick,
@@ -1385,7 +1385,7 @@ class SocietyCampaign:
             event = event.model_copy(update={"prev_hash": log.last_hash()})
             log.append(event)
             self._tape.append(TapeStep(action=action, validation=validation, kind="governance", governance=gen_event))
-        # Tranche 11: every REJECTED proposal is ledgered — INCLUDING the ones
+        # Every REJECTED proposal is ledgered — INCLUDING the ones
         # shadowed in a mixed assembly that also enacted some. This loop runs
         # unconditionally (not gated on ``outcome``) and filters to rejected
         # proposals itself, so the enacted-amendment block above (which ledgeres
@@ -1394,7 +1394,7 @@ class SocietyCampaign:
         # rejected sibling is handled here. The deterministic engine's rejection
         # (law invariant, quorum, threshold, stale base version) is an observable
         # governance outcome, and tape replay must reproduce the ledger the live
-        # run produced (G3). The reducer's governance branch applies rule-version
+        # run produced. The reducer's governance branch applies rule-version
         # bookkeeping only when accepted — a rejected step advances
         # tick/event_cursor and leaves content untouched, exactly mirroring the
         # live run.
@@ -1429,14 +1429,13 @@ class SocietyCampaign:
     def _impose_sanction(self, v: dict[str, Any], governance: GovernanceEngine, tick: int) -> dict[str, Any]:
         """Impose an evidence-scoped sanction for a SUBSTANTIVE violation.
 
-        N2 honesty note: the sanctioned ``scope`` is ``["speaking"]`` — the
+        Honesty note: the sanctioned ``scope`` is ``["speaking"]`` — the
         governance-engine-recorded right restriction — while the campaign's
         DETERMINISTIC effect is suspension from the task tape (no task
         generation) plus validator blocking of ``transfer``/``deposit``
         (``SANCTION_BLOCKED_KINDS``, code ``under_sanction``). The two are
         mirrored, not equivalent: the scope string is the engine's audit
-        record, the flag is the world-state effect. Both are documented in
-        ``docs/SOCIETY_V2_PROTOCOL.md`` §1.4.
+        record, the flag is the world-state effect.
         """
         sanction = Sanction(
             sanction_id=f"san-soc-{v['actor_id']}-{v['tick']}",
@@ -1529,7 +1528,7 @@ class SocietyCampaign:
                     raise AssertionError(f"probe leak: item text surfaced in agent-visible state at tick {tick}")
 
     def _replay_fill(self, result: SocietyResult, initial_state: WorldState) -> None:
-        """G3: fold the FULL recorded tape (actions + governance steps) through a
+        """Replay check: fold the FULL recorded tape (actions + governance steps) through a
         fresh reducer+log and compare the final state hash + ledger bytes.
         Sanctions/appeals are governance metadata (not world transitions), so the
         action/governance tape fully determines the world state — equivalence holds.
@@ -1559,7 +1558,7 @@ class SocietyCampaign:
                             "world_resources": {**state.world_resources, _res: _nv},
                         })
                     continue
-                # P0-B: production input withdrawal + cost deduction
+                # Production input withdrawal + cost deduction
                 # (state-only, applied AFTER the surrounding produce commit,
                 # exactly as in the live run).
                 if step.kind == "production_cost" and step.production is not None:
@@ -1574,7 +1573,7 @@ class SocietyCampaign:
                         str(_prod["resource"]), float(_prod["amount"]),
                     )
                     continue
-                # P0-B: end-of-tick consumption (state-only mutation; the ledger
+                # End-of-tick consumption (state-only mutation; the ledger
                 # event is rebuilt from the recorded payload below). The live run
                 # applies consumption BEFORE advancing tick/event_cursor on its
                 # ledger event, so replay must mirror that order exactly.
@@ -1621,7 +1620,7 @@ class SocietyCampaign:
                 if step.kind == "governance" and step.governance is not None:
                     event = self._build_governance_ledger_event(before, state, step.action, step.validation, step.governance)
                 elif step.kind == "task_objective":
-                    # P0-B: task outcome events are record-only content-wise,
+                    # Task outcome events are record-only content-wise,
                     # but they advance tick/event_cursor by one (the ledgered
                     # bookkeeping contract). Rebuild from the recorded
                     # action/validation so the ledger bytes match the live run.
@@ -1654,7 +1653,7 @@ class SocietyCampaign:
             result.replay_matches = False
 
     # ------------------------------------------------------------------ #
-    # governance ledger event (shared live + replay, G3)
+    # governance ledger event (shared by live run and replay)
     # ------------------------------------------------------------------ #
     @staticmethod
     def _build_governance_ledger_event(
@@ -1687,7 +1686,7 @@ class SocietyCampaign:
 
     def _default_probe_phases(self) -> dict[int, str]:
         """Probe schedule: from the scenario's ``lifecycle`` block, or — if
-        that is absent (Tranche 12l minimal-config) — auto-derived as
+        that is absent (minimal config) — auto-derived as
         baseline@t0, pre/post around each assembly, and final@last tick."""
         lifecycle = self._scenario.get("lifecycle") or {}
         if not lifecycle:
@@ -1805,9 +1804,9 @@ async def _run_bounded(concurrency: int, coros: list) -> list:
 
 
 class _RecordingCaller:
-    """Timing wrapper (N1): append one ``_ModelCall`` per wrapped call.
+    """Timing wrapper: append one ``_ModelCall`` per wrapped call.
 
-    Society V2 protocol §Lane C2/throughput: EVERY model call appends one
+    EVERY model call appends one
     row to ``model_calls.jsonl``. Action + reflection calls are already
     timed at their campaign call sites (which own the quarantined flag and
     temperature); deliberation/vote calls happen inside ``Assembly`` and
@@ -1910,7 +1909,7 @@ def _utc_now_iso() -> str:
 
 
 def _constitution_dump(version: Any) -> dict[str, Any]:
-    """Full, human-readable snapshot of a ConstitutionVersion (Tranche 12i).
+    """Full, human-readable snapshot of a ConstitutionVersion.
 
     Captures rules, quorum, amendment_threshold, sanction/appeal policies,
     effective_from_tick and checksum so the exact text of the law at any
@@ -2009,7 +2008,7 @@ def write_model_calls(run_dir: Path, calls: list[_ModelCall]) -> None:
 
 
 def write_meetings(run_dir: Path, meetings: list[dict[str, Any]]) -> None:
-    """Tranche 12h: one canonical file with ALL assembly meeting records —
+    """One canonical file with ALL assembly meeting records —
     proposals (with full texts), votes, abstentions, quarantine, outcome.
     No duplication: timeline.md references this file instead of inlining."""
     if not meetings:
@@ -2020,7 +2019,7 @@ def write_meetings(run_dir: Path, meetings: list[dict[str, Any]]) -> None:
 
 
 def write_sanctions(run_dir: Path, result: SocietyResult) -> None:
-    """Tranche 12i: sanctions.jsonl — every sanction, appeal, and rights
+    """sanctions.jsonl — every sanction, appeal, and rights
     restoration event in one auditable stream, each line carrying the tick
     and full detail. Previously these were collected in memory and only
     surfaced as counts in metrics.json, losing the individual records."""
@@ -2039,7 +2038,7 @@ def write_sanctions(run_dir: Path, result: SocietyResult) -> None:
 
 
 def write_action_reasons(run_dir: Path, result: SocietyResult) -> None:
-    """Tranche 12i: action_reasons.jsonl — the agent's stated reason for each
+    """action_reasons.jsonl — the agent's stated reason for each
     ledgered action, keyed by event_id. Kept as a SIDE CAR (not in the event
     payload) so the hash-chained event ledger and its frozen byte-identity
     replay tapes stay untouched while a scientist can still join
@@ -2054,7 +2053,7 @@ def write_action_reasons(run_dir: Path, result: SocietyResult) -> None:
 
 
 def write_resource_timeline(run_dir: Path, result: SocietyResult) -> None:
-    """Tranche 12i: resources.jsonl — per-tick world + per-agent balances,
+    """resources.jsonl — per-tick world + per-agent balances,
     a plot-ready time series for studying how resources flow over the
     campaign (previously only final balances were persisted)."""
     if not result.resource_timeline:
@@ -2066,7 +2065,7 @@ def write_resource_timeline(run_dir: Path, result: SocietyResult) -> None:
 
 def write_constitution_history(run_dir: Path, versions: list[str], meetings: list[dict[str, Any]] | None = None,
                                texts: list[dict[str, Any]] | None = None) -> None:
-    """Tranche 12h: include the amendment payload (what actually changed)
+    """Include the amendment payload (what actually changed)
     alongside each version, so the history is human-readable without
     cross-referencing meetings.jsonl."""
     # Map enacted_version -> proposal details from meetings
@@ -2081,7 +2080,7 @@ def write_constitution_history(run_dir: Path, versions: list[str], meetings: lis
             entry: dict[str, Any] = {"version": v}
             if v in version_payloads:
                 entry["amendments"] = version_payloads[v]
-            # Tranche 12i: full resulting text (rules + policies) so the
+            # Full resulting text (rules + policies) so the
             # law at each version is readable without reconstructing.
             if texts and i < len(texts):
                 entry["constitution"] = texts[i]
@@ -2122,7 +2121,7 @@ def write_timeline(run_dir: Path, result: SocietyResult) -> None:
     ]
     for ev in result.events:
         lines.append(f"- event {ev.event_id} tick={ev.tick} kind={ev.kind}")
-    # Tranche 12h: assembly details live in meetings.jsonl (one canonical
+    # Assembly details live in meetings.jsonl (one canonical
     # file). timeline.md is a thin human-readable index, not a duplicate.
     if result.meetings:
         lines += ["", "## Assemblies (see meetings.jsonl for full texts + votes)"]

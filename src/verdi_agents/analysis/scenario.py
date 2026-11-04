@@ -1,7 +1,7 @@
 """Deterministic scenario + task-tape loading into frozen v1 schemas.
 
 The scenario JSON describes the world at tick 0 (agents, resources,
-versions, seed) and the pilot lifecycle map. The task tape is a separate,
+versions, seed) and the lifecycle map. The task tape is a separate,
 content-addressed file: its ``tape_hash`` is the sha256 of the canonical
 (sorted-key, compact) JSON of the tape *excluding* the hash field itself,
 and is what ``ExperimentManifest.task_tape_hash`` must carry.
@@ -33,7 +33,7 @@ __all__ = [
 def load_scenario(path: str | Path) -> dict[str, Any]:
     """Load a scenario definition from a ``.json`` or ``.yml``/``.yaml`` file.
 
-    Tranche 12l: YAML is a superset of JSON, so a single authoring format
+    YAML is a superset of JSON, so a single authoring format
     works for humans (comments, no braces) while JSON stays fully supported
     for existing scenario files. ``.json`` files are parsed with the stdlib
     JSON parser (no behavior change); ``.yml``/``.yaml`` use PyYAML.
@@ -97,7 +97,7 @@ def canonical_tape_hash(payload: dict[str, Any]) -> str:
 def build_t0_state(scenario: dict[str, Any]) -> WorldState:
     """Build the frozen tick-0 WorldState from a scenario dict.
 
-    Tranche 12k: the scenario is the single source of truth for the world's
+    The scenario is the single source of truth for the world's
     rules. Optional ``constitution`` and ``law`` blocks are normalized into
     the returned state (with defaults identical to the historical hardcoded
     values), so a scenario file fully defines the simulation it drives.
@@ -109,7 +109,7 @@ def build_t0_state(scenario: dict[str, Any]) -> WorldState:
         raise ScenarioLoadError("scenario contains duplicate agent ids")
     _check_values(scenario, set(agent_ids))
     _normalize_governance(scenario)
-    # Tranche 12m: an agent entry may carry a `sanction: {duration_ticks: N}`
+    # An agent entry may carry a `sanction: {duration_ticks: N}`
     # block (a scenario-declared t0 sanction with auto-expiry). That is campaign
     # metadata, not frozen world state, so strip it before building WorldState.
     # The campaign reads it from the scenario dict directly.

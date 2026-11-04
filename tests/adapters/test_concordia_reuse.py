@@ -1,4 +1,4 @@
-"""Tests for the Concordia deep-reuse adapter (todo D).
+"""Tests for the Concordia deep-reuse adapter.
 
 These are skip-guarded: they run only when ``gdm-concordia`` is installed. The
 module under test is lazy and dependency-free at import, so importing it always

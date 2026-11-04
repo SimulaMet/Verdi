@@ -1,17 +1,17 @@
-"""G4 offline remainder (P2 WS-5).
+"""Offline checks for the trace audit that need no SimpleAudit or live model.
 
-Proves the parts of gate G4 (ACCEPTANCE.md) that are verifiable WITHOUT
+Proves the parts of the trace-audit check that are verifiable WITHOUT
 SimpleAudit installed and WITHOUT a live model endpoint:
 
 1. Absence path: with SimpleAudit absent, the bridge degrades to the
    documented ``SimpleAuditNotInstalledError`` (the offline blocker).
-2. Adapter contract: spans carry ``name`` (NOT ``span_name`` — LESSONS.md
-   known bug), and audit correlation is by sealed ``event_id``, never by
+2. Adapter contract: spans carry ``name`` (NOT ``span_name`` — a
+   past bug), and audit correlation is by sealed ``event_id``, never by
    positional index.
 3. Judge/scorer contract (offline rubric path only, no LLM): match vs
    divergence ordering, frozen score range, input immutability,
    determinism — all checked against a local reference.
-4. G4 residual: the recorded pilot's RunReport carries the audit/judge
+4. Remaining gap: the recorded reference run's RunReport carries the audit/judge
    fields the gate requires, and its limitations already mark live
    verification as not measured (see the PENDING/OFFLINE assertion for the
    integration note on making that explicit).
@@ -58,15 +58,15 @@ def test_simpleaudit_absence_degrades_to_installed_error() -> None:
     # It is an ImportError subclass so generic import handling still works.
     assert isinstance(excinfo.value, ImportError)
     message = str(excinfo.value)
-    # Names the missing package and states installation is required for live G4.
+    # Names the missing package and states installation is required for a live audit.
     assert "simpleaudit" in message.lower()
     assert "not installed" in message
-    # Actionable remediation for the live-G4 path.
+    # Actionable remediation for the live audit path.
     assert "PYTHONPATH" in message or "VERDI_SIMPLEAUDIT_PATH" in message
 
 
 # -------------------------------------------------------------------------- #
-# 2. Adapter contract (offline, InMemoryTraceSource as in the pilot)
+# 2. Adapter contract (offline, InMemoryTraceSource as in the reference run)
 # -------------------------------------------------------------------------- #
 def _span(span_id: str, trace_id: str, name: str, agent_id: str) -> dict[str, Any]:
     """Normalized SimpleAudit span shape: key is ``name``, not ``span_name``."""
@@ -106,7 +106,7 @@ def test_spans_emit_name_key_not_span_name_and_adapter_reads_it() -> None:
 
         fetched = source.fetch("t-1")
         # Contract: the normalized span key is "name" — a "span_name" key is
-        # silently dropped by the adapter (LESSONS.md span-key regression).
+        # silently dropped by the adapter (a past span-key regression).
         assert all("name" in s for s in fetched)
         assert all("span_name" not in s for s in fetched)
 
@@ -278,10 +278,10 @@ def test_score_probe_rejects_unknown_response_and_bad_judge() -> None:
 
 
 # -------------------------------------------------------------------------- #
-# 4. G4 residual documentation
+# 4. Remaining-gap documentation
 # -------------------------------------------------------------------------- #
 def test_pilot_report_carries_g4_audit_and_judge_fields() -> None:
-    """RunReport/PilotRun contain the audit + judge fields G4 requires."""
+    """RunReport/PilotRun contain the audit + judge fields the trace audit requires."""
     pilot = run_pilot()
     report = pilot.report
     assert report is not None
@@ -314,9 +314,9 @@ def test_pilot_report_carries_g4_audit_and_judge_fields() -> None:
     assert "value_drift_by_channel" in report.metrics
     assert report.manifest["probe_bank_version"]
 
-    # G4 residual: live verification is explicitly NOT measured.
+    # Remaining gap: live verification is explicitly NOT measured.
     #
-    # INTEGRATION NOTE (orchestrator): the current limitations text says
+    # NOTE: the current limitations text says
     # "no live Qwen/vLLM interaction was measured" and the manifest pins
     # simpleaudit_version=None, which together document the residual, but no
     # line names the SimpleAudit live verification as PENDING/OFFLINE. If

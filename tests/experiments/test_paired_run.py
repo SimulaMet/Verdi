@@ -1,4 +1,4 @@
-"""Offline tests for the P0-C paired fixed-vs-revisable runner.
+"""Offline tests for the paired runner that compares fixed and revisable rules.
 
 Uses a scripted fake caller (pattern from tests/society/test_campaign.py):
 producers produce food, depositors top up the commons, assembly voters vote

@@ -59,7 +59,7 @@ def test_retry_once_then_fail_on_503():
 
 
 def test_524_origin_timeout_is_retried():
-    """LESSONS 12g: C-1 attempt 6 died on an un-retried HTTP 524
+    """Regression: an earlier live run died on an un-retried HTTP 524
     (Cloudflare origin-timeout from a slow 27B origin). 524 must retry
     like 502/503 and recover on the next attempt."""
     records: list[dict] = []

@@ -1,4 +1,4 @@
-"""Offline tests for verdi_agents.experiments.pair_audit (ADR-014 §2/§4/§5/§6).
+"""Offline tests for verdi_agents.experiments.pair_audit (audits and report for paired runs).
 
 No network, no .env reads. Real-run-root tests skip when the gitignored
 production run root is absent; a synthetic 2-pair mini-run carries the
@@ -103,7 +103,7 @@ def _report_inputs(mini_run_root=None):
 
 
 # --------------------------------------------------------------------------- #
-# Sealed sample manifest (ADR-014 §2)
+# Sealed sample manifest
 # --------------------------------------------------------------------------- #
 
 
@@ -148,7 +148,7 @@ def test_sample_manifest_mini_run(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Bias / leakage audits (ADR-014 §4): clean mini-run passes, corruptions fail
+# Bias / leakage audits (B1..B4): clean mini-run passes, corruptions fail
 # --------------------------------------------------------------------------- #
 
 
@@ -160,9 +160,9 @@ def test_audits_pass_on_clean_mini_run(mini_run_root):
 
 
 def test_b1_scope_string_and_bounds_flag(mini_run_root):
-    # Reviewer F2: B1 must carry the frozen scope string and the
+    # The self-report audit (B1) must carry its fixed scope string and the
     # bounds_check_implemented=false flag so the report cannot be misread
-    # as the full ADR B1.
+    # as a full self-report check.
     res = audit_self_report(mini_run_root)
     assert res["scope"] == B1_SCOPE
     assert res["bounds_check_implemented"] is False
@@ -273,7 +273,7 @@ def test_b3_asymmetric_quarantine_fails_symmetry(mini_run_root):
 
 
 def test_b4_n_suffix_rows_counts_actual_rows(mini_run_root):
-    # Reviewer MED-1: n_suffix_rows is the ACTUAL count of tape rows with
+    # n_suffix_rows is the ACTUAL count of tape rows with
     # tick >= 13 (mini-run: 1 per pair x 2 pairs = 2), not a
     # distinct-value estimate.
     res = audit_prompt_invariance(mini_run_root)
@@ -282,7 +282,7 @@ def test_b4_n_suffix_rows_counts_actual_rows(mini_run_root):
 
 @requires_real_run_root
 def test_b4_n_suffix_rows_real_run_root():
-    # Reviewer MED-1: the real run root has 470 suffix tape rows (9 pairs
+    # The real run root has 470 suffix tape rows (9 pairs
     # x 47 + pair_0's 27 suffix rows). The former
     # sum(distinct values)//3 estimate reported 25.
     res = audit_prompt_invariance(REAL_G5_RUN_ROOT)
@@ -290,7 +290,7 @@ def test_b4_n_suffix_rows_real_run_root():
 
 
 def test_b2_method_text_discloses_json_escaping(mini_run_root):
-    # Reviewer F5: B2's method string must disclose that JSON-escaped
+    # The leakage audit's (B2) method string must disclose that JSON-escaped
     # forms defeat verbatim containment.
     res = audit_leakage(mini_run_root)
     assert "JSON-escaped forms" in res["method"]
@@ -313,7 +313,7 @@ def test_b4_prompt_drift_fails_invariance(mini_run_root):
 
 
 # --------------------------------------------------------------------------- #
-# Identification diagnostics (ADR-014 §5)
+# Identification diagnostics
 # --------------------------------------------------------------------------- #
 
 
@@ -349,7 +349,7 @@ def test_permutation_null_real_run_root_symmetry():
         assert block["contains_zero_mean"] or abs(block["min"] + block["max"]) <= 1e-12
     fp = res["per_estimand"]["false_punishment_rate"]
     assert fp["magnitudes_equal"] is True
-    # Reviewer F4 (corrected reasoning): the fixed seed 0 makes the 200
+    # The fixed seed 0 makes the 200
     # draws DETERMINISTIC. A permutation mean is exactly 0.0 iff exactly
     # 5 of the 10 signs are negative; 57 of the 200 recorded draws have
     # exactly 5 negative signs, so 0.0 appears in exactly those 57. The
@@ -389,7 +389,7 @@ def test_leave_one_pair_out_and_permutation_minimal(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Report (ADR-014 §6)
+# Report
 # --------------------------------------------------------------------------- #
 
 
@@ -417,7 +417,7 @@ def test_full_report_real_run_root(tmp_path):
     }
     assert report["identification"]["not_claimed"] == list(NOT_CLAIMED)
     assert report["limitations"] == list(FROZEN_LIMITATIONS)
-    # Reviewer F3: the ADR-014 §5 overstatement is NOT inherited.
+    # The report must not repeat the design's overstated identification claim.
     assert ADR5_OVERSTATEMENT_LIMITATION in report["limitations"]
     framing = report["judge"]["framing"]
     assert framing["judge_shown_engine_outcome"] is True
@@ -435,7 +435,7 @@ def test_full_report_real_run_root(tmp_path):
 
 
 def test_deviations_from_contract_frozen_verbatim(tmp_path):
-    # Reviewer MED-2 / F1: the top-level deviations block is a frozen list,
+    # The top-level deviations block is a fixed list,
     # carried verbatim into every report.
     inputs = _report_inputs(mini_run_root=make_mini_run_root(tmp_path / "m"))
     report = build_g5_close_report(
@@ -453,7 +453,7 @@ def test_deviations_from_contract_frozen_verbatim(tmp_path):
 
 
 def test_adr5_overstatement_limitation_verbatim():
-    # Reviewer F3: the exact frozen wording, tested verbatim.
+    # The exact fixed wording, tested verbatim.
     assert ADR5_OVERSTATEMENT_LIMITATION == (
         "ADR-014 §5's 'evidence the contrast is tied to the manipulation' "
         "phrasing is deliberately not inherited by the report; the "
@@ -550,7 +550,7 @@ def test_report_rejects_unfrozen_not_claimed_block(mini_run_root):
 
 def test_no_key_material_in_tape_and_report(mini_run_root):
     fake_key = "sk-fakekey99aabbccddeeff"
-    # The key-material scanner (judge_live behavior) must raise on the tape
+    # The key-material scanner (same behavior as in verdi_agents.audit.judge) must raise on the tape
     # text that would carry a fake key ...
     with pytest.raises(AssertionError):
         _assert_no_key_material(f'"raw": "verdict {fake_key} end"', "fake tape")
@@ -642,14 +642,14 @@ def test_build_judge_section_agreement_and_enumeration():
 
 
 # --------------------------------------------------------------------------- #
-# build_judge_section: reviewer F1 (code_judge), F7 (row_provenance),
-# F8 (engine-outcome n<=1 flag)
+# build_judge_section: code_judge, row_provenance, and the
+# engine-outcome n<=1 flag
 # --------------------------------------------------------------------------- #
 
 
 def test_judge_section_code_judge_recorded_unavailable():
-    # Reviewer F1 / MED-2: null-free, explicit record that the code-judge
-    # stance comparison is not possible on the G5 run root.
+    # Null-free, explicit record that the code-judge stance comparison
+    # is not possible on the paired-arms run root.
     manifest = {"run_root": "x", "n_rows": 1, "manifest_sha256": "0" * 64}
     section = build_judge_section([GOOD_VERDICT_ROW], manifest)
     assert section["code_judge"] == {
@@ -665,7 +665,7 @@ def test_judge_section_code_judge_recorded_unavailable():
 
 
 def test_judge_section_row_provenance_computed_from_sample(tmp_path):
-    # Reviewer F7: counts are computed from the sample, never hardcoded.
+    # Counts are computed from the sample, never hardcoded.
     root = make_mini_run_root(tmp_path / "m")
     manifest = build_sample_manifest(root)
     # Mini sample: pair_0 all 3 rows (ticks 1, 2, 13) + pair_1 tick 13
@@ -681,8 +681,9 @@ def test_judge_section_row_provenance_computed_from_sample(tmp_path):
 
 @requires_real_run_root
 def test_judge_section_row_provenance_real_run_root():
-    # Reviewer F7: on the real sealed sample, 470 fresh suffix rows and 34
-    # L1-replayed prefix rows (counts computed, not hardcoded).
+    # On the real sealed sample: 470 freshly generated suffix rows and 34
+    # prefix rows replayed from the original live run (counts computed,
+    # not hardcoded).
     manifest = build_sample_manifest(REAL_G5_RUN_ROOT)
     section = build_judge_section([GOOD_VERDICT_ROW], manifest)
     prov = section["row_provenance"]
@@ -691,8 +692,8 @@ def test_judge_section_row_provenance_real_run_root():
 
 
 def test_judge_section_engine_outcome_n1_flag(tmp_path):
-    # Reviewer F8: data-driven flag on any engine-outcome class with
-    # n <= 1 (G4 convention); no class/event is hardcoded.
+    # Data-driven flag on any engine-outcome class with n <= 1 (too few
+    # rows to be statistically meaningful); no class/event is hardcoded.
     root = make_mini_run_root(tmp_path / "m")
     manifest = build_sample_manifest(root)
     good = dict(GOOD_VERDICT_ROW)
@@ -731,7 +732,7 @@ def test_judge_section_engine_outcome_n1_flag(tmp_path):
 
 @requires_real_run_root
 def test_judge_section_engine_outcome_breakdown_real_run_root():
-    # Reviewer F8: the real tape maps 503 accepted / 1 rejected
+    # The real tape maps 503 accepted / 1 rejected
     # (pair_0 event 42); the n=1 rejected class carries the flag.
     from verdi_agents.experiments.pair_judge import MockJudgeClient, run_g5_judge
 

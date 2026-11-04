@@ -180,7 +180,7 @@ def generate_tick_tape(
             # argument field names (validate.py: transfer takes
             # to/resource/units). An earlier version used "amount" here,
             # which leaked into live runs as 100% missing_argument
-            # rejections (Tranche 11 lesson).
+            # rejections.
             constraints = {"resource": resource, "units": amount, "to": target}
             counterpart_ids = [target]
             public_observations = [f"transfer {amount} {resource} to {target}"]

@@ -1,7 +1,7 @@
 """Tests for src/verdi_agents/society/prompting.py.
 
-Contains the acceptance-critical prompt-observable feedback test
-(docs/SOCIETY_V2_PROTOCOL.md, section 3): a later agent's prompt MUST
+Contains the acceptance-critical prompt-observable feedback test:
+a later agent's prompt MUST
 change when an earlier committed event changes.
 """
 from __future__ import annotations

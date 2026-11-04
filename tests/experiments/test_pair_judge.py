@@ -1,7 +1,7 @@
-"""Offline tests for verdi_agents.experiments.pair_judge (ADR-014 §3/§6).
+"""Offline tests for verdi_agents.experiments.pair_judge, the LLM judge for paired runs.
 
-All network is mocked via :class:`MockJudgeClient` (ADR-012
-``_RecordingJudgeClient`` pattern). No network, no .env reads.
+All network is mocked via :class:`MockJudgeClient` (same pattern as
+``_RecordingJudgeClient`` in verdi_agents.audit.judge). No network, no .env reads.
 """
 from __future__ import annotations
 
@@ -127,7 +127,7 @@ def test_run_g5_judge_mock_tape_and_meta(mini_run_root):
     }
     first = sample_rows[0]
     assert first["prompt"][0]["content"] == JUDGE_SYSTEM_PROMPT
-    # judge is SHOWN the engine outcome (ADR-014 §3 disclosure)
+    # the judge is SHOWN the engine outcome (this is disclosed in the report)
     assert "engine_outcome: decision=accepted" in first["prompt"][1]["content"]
     assert "MODEL RESPONSE (sealed, verbatim)" in first["prompt"][1]["content"]
     assert first["model"] == "mock-judge"
@@ -182,7 +182,7 @@ def test_run_g5_judge_cap_abort(mini_run_root):
 
 
 def test_run_g5_judge_cap_abort_records_meta(mini_run_root):
-    # Reviewer MED-4 / F6: on cap breach the run meta is written best-effort
+    # On cap breach the run meta is written best-effort
     # with status "cap_aborted" BEFORE the abort raises.
     out_dir = mini_run_root.parent / "judge_out_cap"
     with pytest.raises(Exception, match="hard call cap"):
@@ -202,7 +202,7 @@ def test_run_g5_judge_cap_abort_records_meta(mini_run_root):
 
 
 def test_mock_client_max_calls_enforced():
-    # Reviewer MED-3: MockJudgeClient.max_calls is the tripwire that would
+    # MockJudgeClient.max_calls is the tripwire that would
     # have caught a client-internal double-call. The 1st call succeeds;
     # the 2nd raises.
     import asyncio
@@ -224,7 +224,7 @@ def test_mock_client_max_calls_enforced():
 
 
 def test_endpoint_config_zero_retries(monkeypatch):
-    # Reviewer HIGH-1: the effective endpoint config MUST carry
+    # The effective endpoint config MUST carry
     # max_retries=0 so client-internal retries cannot blow the hard cap.
     from verdi_agents.config import ModelEndpointConfig
     from verdi_agents.experiments.pair_judge import _resolve_endpoint_config

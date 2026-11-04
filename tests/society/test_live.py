@@ -1,4 +1,4 @@
-"""Offline tests for the Society V2 live entrypoint (mocked transport).
+"""Offline tests for the live society-run entrypoint (mocked transport).
 
 No network: the pooled ModelClient runs against httpx.MockTransport.
 Verifies env resolution, the pre-run smoke call, end-to-end live wiring,

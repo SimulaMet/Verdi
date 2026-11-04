@@ -25,8 +25,7 @@ GUIDE = REPO_ROOT / "docs" / "RESEARCHER_GUIDE.md"
 
 #: The exact one-line command the guide must teach researchers.
 CLI_COMMAND = (
-    "python -m verdi_agents.experiments.paired_run --config "
-    "examples/paired_institutional_recovery.yaml"
+    "verdi-agents pair examples/paired_institutional_recovery.yaml"
 )
 
 

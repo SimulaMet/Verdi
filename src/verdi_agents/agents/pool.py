@@ -1,8 +1,7 @@
 """Bounded async worker pool: dispatch policy calls, never exceed max_concurrency.
 
 Concurrency is enforced with an asyncio.Semaphore sized from the vLLM
-throughput-derived cap in ModelEndpointConfig (docs/ARCHITECTURE.md, GPU
-execution section). The pool never mutates world state; it only returns
+throughput-derived cap in ModelEndpointConfig. The pool never mutates world state; it only returns
 per-task policy results.
 """
 from __future__ import annotations

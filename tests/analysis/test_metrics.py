@@ -1,4 +1,4 @@
-"""Metric definition tests (P1-E)."""
+"""Tests for the metric definitions."""
 from __future__ import annotations
 
 import pytest

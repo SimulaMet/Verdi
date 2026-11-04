@@ -1,17 +1,17 @@
-"""L1 live-model pilot (ADR-010): run the pilot_v1 slice against the live Qwen endpoint.
+"""Run the reference scenario (``pilot_v1``) against a live model endpoint.
 
 - Deterministic scaffolding (scheduler, reducer, governance, law) is
-  identical to the recorded pilot; the live model drives PROPOSALS only.
+  identical to the recorded run; the live model drives PROPOSALS only.
 - temperature 0, JSON-mode structured proposals via AgentPolicy.
 - Every model call is captured verbatim by PilotDriver into live_tape.jsonl.
 - Endpoint configuration comes exclusively from environment variables
   (VERDI_VLLM_*); no model name, URL, or key is hardcoded here.
 
 The real live run is deliberately NOT a pytest test: it is a script-style
-invocation (see docs or state/STATUS.md) so CI never performs network
+invocation so CI never performs network
 calls. Budget: <=120 model calls, concurrency 1 in the run loop.
 
-Reproducibility contract (ADR-010): "reproducible from recorded tape"
+Reproducibility contract: "reproducible from recorded tape"
 means ``run_pilot_from_live_tape(tape)`` reproduces the run's ledger
 byte-for-byte; the live endpoint itself is NOT bit-reproducible.
 """
@@ -29,12 +29,12 @@ from verdi_agents.reference_run.driver import PilotDriver, PilotRun
 class _ClientFactory:
     """Marker + zero-arg builder for fresh :class:`ModelClient` instances.
 
-    The pilot dispatch loop runs one ``asyncio.run(...)`` per dispatch, so
+    The reference-run dispatch loop runs one ``asyncio.run(...)`` per dispatch, so
     each dispatch gets its own event loop. An ``httpx.AsyncClient`` binds to
     the loop it is used in, therefore a single long-lived client would be
     reused across (closed) loops and fail. A factory lets the adapter build
     one client per dispatch inside that dispatch's loop and close it in the
-    same loop (retries remain per-request per docs/ARCHITECTURE.md).
+    same loop (retries remain per-request).
     """
 
     def __init__(self, config) -> None:
@@ -57,10 +57,10 @@ class LiveModelAdapter:
     tests) or a zero-arg factory returning one (the live path). The factory
     form builds one :class:`ModelClient` per dispatch inside that dispatch's
     event loop and closes it in the same loop, which is required because the
-    pilot runs one ``asyncio.run`` per dispatch (see _ClientFactory).
+    reference run uses one ``asyncio.run`` per dispatch (see _ClientFactory).
 
     Engineering note: one pooled connection per dispatch, no cross-call
-    pooling; acceptable at concurrency-1 / <=120 calls (ADR-010); would
+    pooling; acceptable at concurrency-1 / <=120 calls; would
     need pooling for high-throughput use.
     """
 
@@ -112,7 +112,7 @@ class LiveModelAdapter:
 
 
 class TapeReplayCaller:
-    """Offline ModelCaller that replays a captured live tape (ADR-010).
+    """Offline ModelCaller that replays a captured live tape.
 
     Wraps a :class:`~verdi_agents.agents.recorded.RecordedModel` over the
     ``response_raw`` of every captured call (in ``seq`` order) and exposes
@@ -178,11 +178,11 @@ def run_pilot_from_live_tape(
     repo_root: str | Path | None = None,
     out_dir: str | Path | None = None,
 ) -> PilotRun:
-    """ADR-010 first-class replay: drive the pilot from a captured live tape.
+    """Replay a run offline: drive the reference run from a captured live tape.
 
     Loads ``tape_path`` (the ``live_tape.jsonl`` of a previous live run),
     replays its ``response_raw`` responses in ``seq`` order through
-    :class:`TapeReplayCaller`, and drives the pilot in live mode with
+    :class:`TapeReplayCaller`, and drives the reference run in live mode with
     capture OFF (no new live_tape.jsonl is written; the run's ledger is
     written to ``out_dir`` when given). Fully offline: no network, no
     endpoint configuration required.
@@ -207,14 +207,14 @@ def run_live_pilot(
     max_calls: int = 120,
     concurrency_1: bool = True,
 ) -> PilotRun:
-    """Drive one live pilot_v1 run against the env-configured endpoint.
+    """Drive one live ``pilot_v1`` run against the env-configured endpoint.
 
     Raises RuntimeError when the endpoint is not configured. Asserts the
-    ADR-010 budget (``max_calls``) after the run completes.
+    call budget (``max_calls``) after the run completes.
     """
     if not concurrency_1:
         raise ValueError(
-            "ADR-010 fixes run-loop concurrency at 1; refusing to run"
+            "the live reference run requires run-loop concurrency 1; refusing to run"
         )
     config = model_endpoint_from_env()
     if config is None:
@@ -232,7 +232,7 @@ def run_live_pilot(
     pilot = driver.run(out_dir)
     if adapter.call_count > max_calls:
         raise AssertionError(
-            f"budget exceeded: {adapter.call_count} model calls > {max_calls} (ADR-010)"
+            f"budget exceeded: {adapter.call_count} model calls > {max_calls}"
         )
     return pilot
 

@@ -39,7 +39,7 @@ from verdi_agents.experiments.pair_judge import _load_dotenv_into_environ
 from verdi_agents.society.campaign import PROTOCOL_VERSION, SocietyCampaign
 
 DEFAULT_CONCURRENCY = 4
-# Per-model-call liveness watchdog. Calibrated per Tranche 12d review F1:
+# Per-model-call liveness watchdog. Calibration:
 # per-call beats (model_calls.jsonl, written after every COMPLETED model
 # call) reset the deadline continuously, so the window only needs to outlast
 # a SINGLE stuck call: VERDI_REQUEST_TIMEOUT (180s) x (max_retries+1) (6) =
@@ -47,10 +47,10 @@ DEFAULT_CONCURRENCY = 4
 # that with margin; shorter windows could trip while the client is still
 # legitimately retrying a dead call. The old events-only 600s design
 # false-fired on whole assembly ticks (zero ledger writes until finalize)
-# and killed the live C-1 run at t15 — see state/LESSONS.md Tranche 12d.
+# and killed a 24-agent live run at its first assembly (t15).
 DEFAULT_STALL_TIMEOUT_SECONDS = 1200
 _HEARTBEAT_INTERVAL_SECONDS = 20
-#: Tranche 12i: model_calls.jsonl is the single per-call log (timestamps +
+#: model_calls.jsonl is the single per-call log (timestamps +
 #: tokens + duration + context). The old progress.jsonl beat file is gone;
 #: liveness is measured from model_calls.jsonl line growth.
 _MODEL_CALLS_FILE = "model_calls.jsonl"
@@ -68,8 +68,8 @@ def _progress_count(run_dir: Path) -> int:
 
     A full assembly tick appends nothing to events.jsonl until its very end
     (deliberation + voting + finalize all precede the ledger commit), so
-    event count alone false-fires on legitimately long ticks (Tranche 12d
-    review F1: killed the live C-1 run at its first assembly, t15).
+    event count alone false-fires on legitimately long ticks (it once
+    killed a 24-agent live run at its first assembly, t15).
     model_calls.jsonl gains a line after every COMPLETED model call (all
     purposes: action, reflection, assembly, probe), so the deadline now
     resets continuously during long ticks while still tripping on a stuck
@@ -86,7 +86,7 @@ async def _stall_watchdog(run_dir: Path, stall_timeout_seconds: float,
 
     A hung endpoint can hold a socket open without ever responding, which
     parks the whole campaign on one in-flight call while httpx's timeout
-    (which only fires on read activity) never triggers (Tranche 12a lesson).
+    (which only fires on read activity) never triggers.
     This watchdog watches wall-clock progress of the COMBINED event +
     per-model-call beat count: it writes a heartbeat to run_meta on a short
     interval, and if that count does not grow for ``stall_timeout_seconds``
@@ -205,7 +205,7 @@ async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency
             return 2
         print(f"smoke OK: model={smoke['model']} trace={smoke['trace_id']}")
 
-        # Tranche 12d F1 / 12i: model_calls.jsonl (written per completed
+        # model_calls.jsonl (written per completed
         # call by the campaign) is the liveness signal, so long assembly
         # ticks (zero event writes until finalize) don't false-fire the
         # watchdog. No wrapper needed — the campaign writes the file.
@@ -324,7 +324,7 @@ def _guard_artifacts_clean(run_dir: Path) -> None:
 def _write_run_meta(run_dir: Path, obj: dict) -> None:
     """Merge ``obj`` into run_meta.json atomically.
 
-    Tranche 12d review F2: the watchdog and the main flow are two writers; a
+    The watchdog and the main flow are two writers; a
     temp-file + os.replace keeps the file whole under any interleave (a crash
     mid-write can no longer truncate it) even though, on a single event loop,
     the synchronous read-modify-write is already GIL-atomic per call.
@@ -344,7 +344,7 @@ def _write_run_meta(run_dir: Path, obj: dict) -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run a Society V2 live campaign.")
+    parser = argparse.ArgumentParser(description="Run a live society campaign.")
     parser.add_argument("--scenario", required=True, type=Path, help="scenario JSON path")
     parser.add_argument("--run-dir", required=True, type=Path, help="artifact output directory")
     parser.add_argument("--seed", type=int, default=None, help="run seed (default: scenario run_seed)")

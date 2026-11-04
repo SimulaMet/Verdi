@@ -1,9 +1,8 @@
-"""Matched treatment/placebo pairs (P2 WS-2).
+"""Build and validate matched treatment/placebo pairs that share one origin and task tape.
 
 A *matched pair* couples one treatment run and one placebo run that share
-the SAME sealed snapshot and the SAME remaining task tape
-(PREREGISTRATION.md "Comparators and controls"): only the treatment may
-differ.  The pair is validated on two identity fields:
+the SAME sealed snapshot and the SAME remaining task tape: only the
+treatment may differ.  The pair is validated on two identity fields:
 
 * ``origin_state_hash`` -- the canonical state hash of the sealed snapshot
   at the branch point (from each run's manifest, set by
@@ -12,11 +11,11 @@ differ.  The pair is validated on two identity fields:
   up to the branch point (see :func:`tape_hash`).  The prefix ledger bytes
   uniquely determine the sealed origin: the chain starts at genesis, so two
   ledgers with identical bytes have identical final hashes -- which is
-  exactly the "same origin, same tape" invariant the pilot replay and the
-  WS-1 branch contract rely on.
+  exactly the "same origin, same tape" invariant that reference-run replay
+  and branching (:mod:`verdi_agents.world.branch`) rely on.
 
 Runs are carried as plain dicts (the manifest dicts produced by the
-pilot + branch pipeline, including ``branch_origin`` / ``treatment_seed``),
+reference-run + branch pipeline, including ``branch_origin`` / ``treatment_seed``),
 so this module stays schema-free and integrator-owned schemas are never
 modified.
 """
@@ -54,7 +53,7 @@ def tape_hash(log_or_path) -> str:
     The prefix ledger bytes uniquely determine the sealed origin (the chain
     starts at genesis), so two manifests with matching tape hashes certify
     "same origin snapshot + same remaining tape" -- exactly the invariant
-    the pilot replay and the WS-1 branch contract rely on.
+    that reference-run replay and branching rely on.
     """
     if isinstance(log_or_path, (str, Path)):
         payload = Path(log_or_path).read_bytes()

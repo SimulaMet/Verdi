@@ -1,4 +1,4 @@
-"""Shared builders for analysis tests (P1-E)."""
+"""Shared builders for analysis tests."""
 from __future__ import annotations
 
 import json

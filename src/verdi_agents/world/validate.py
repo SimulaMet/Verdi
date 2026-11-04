@@ -1,6 +1,6 @@
-"""Deterministic action validator (Lane W).
+"""Deterministic action validator.
 
-Replaces the pilot's hardcoded ``accepted=True``. Pure and deterministic:
+Replaces the reference run's hardcoded ``accepted=True``. Pure and deterministic:
 no model call, no wall clock, no RNG. Inspects the committed
 :class:`WorldState` and the :class:`ProposedAction` and returns a
 :class:`ValidationResult`. Never mutates state; a rejection must be

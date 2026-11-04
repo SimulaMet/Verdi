@@ -1,39 +1,36 @@
-"""ADR-014 G5-close (Qwen-only): sealed sample, bias/leakage audits,
-identification diagnostics, and the byte-stable G5-close report.
+"""Audit a finished counterfactual-pairs run and write its final judged report.
 
-Implements the FROZEN contract in
-``docs/ADR-014-G5-CLOSE-QWEN-ONLY-PROPOSAL.md`` (sections 2, 4, 5, 6):
+Builds a fixed judge sample from the paired run, runs offline bias and
+leakage audits, computes identification diagnostics, and writes one
+byte-stable report:
 
 * :func:`build_sealed_sample` / :func:`build_sample_manifest` — the 504-row
   sealed judge sample as a pure, byte-stable function of the run root
   (pair_0 all 81 rows + pairs 1..9 suffix rows only, 47 each).
-* :func:`audit_self_report` (B1), :func:`audit_leakage` (B2),
-  :func:`audit_quarantine_symmetry` (B3), :func:`audit_prompt_invariance`
-  (B4) — offline, pure audits over the sealed tapes; each returns a dict
+* :func:`audit_self_report`, :func:`audit_leakage`,
+  :func:`audit_quarantine_symmetry`, :func:`audit_prompt_invariance`
+  — offline, pure audits over the sealed tapes; each returns a dict
   with ``passed: bool`` and detail. No model calls.
 * :func:`identification_diagnostics` — leave-one-pair-out spread over the
-  six PREREG contrasts and the seeded (seed 0) permutation null baseline,
-  both offline diagnostics. NO causal/randomization claim (see
-  ``NOT_CLAIMED`` and the ADR-014 §5 framing).
+  six pre-registered contrasts and the seeded (seed 0) permutation null
+  baseline, both offline diagnostics. NO causal/randomization claim (see
+  ``NOT_CLAIMED``).
 * :func:`build_g5_close_report` / :func:`causal_word_guard` /
-  :func:`write_g5_close_report` — the single report with frozen sections
+  :func:`write_g5_close_report` — the single report with fixed sections
   ``judge, bias_audits, identification, context, limitations,
-  deviations_from_contract`` and the frozen causal-word guard.
+  deviations_from_contract`` and the causal-word guard.
 
-Framing (ADR-014 §3, carried verbatim into the report's ``judge.framing``):
-the judge is SHOWN the engine outcome; the measured quantity is
-judge-to-engine SELF-CONSISTENCY on G5 paired data, not an independent
-compliance verdict. Blinding is satisfied by the deterministic code judge
-only. Same-family self-judgment is disclosed. Advisor-only.
+Framing (carried verbatim into the report's ``judge.framing``): the judge is
+SHOWN the engine outcome, so the measured quantity is judge-to-engine
+SELF-CONSISTENCY on the paired data, not an independent compliance verdict.
+Only the deterministic code judge is blind. Same-family self-judgment is
+disclosed. The judge is advisory only.
 
-Contract deviation note (recorded per worker instructions, ADR-014 is NOT
-edited): the task brief asked for ``build_sample_manifest`` to return the
-five fields ``{n_rows, pairs, rows, manifest_sha256}``; this module adds a
-sixth field ``run_root`` (the run-root path string) because the ADR-014
-§2 seal wording requires the manifest to record the run root it is a pure
-function of. The four contract-mandated fields are present with the
-contract-mandated semantics; ``manifest_sha256`` hashes the canonical
-serialization of ``rows`` exactly as specified.
+Design note: ``build_sample_manifest`` returns the four specified fields
+``{n_rows, pairs, rows, manifest_sha256}`` plus a fifth field ``run_root``
+(the run-root path string), so the manifest records which run root it was
+computed from. ``manifest_sha256`` hashes the canonical serialization of
+``rows`` only.
 """
 from __future__ import annotations
 
@@ -48,27 +45,27 @@ from typing import Any
 
 from verdi_agents.audit.judge import _assert_no_key_material, wilson_ci_95
 
-#: ADR-014 §2: pair_0 contributes ALL rows; other pairs suffix-only.
+#: pair_0 contributes ALL rows to the judge sample; other pairs suffix-only.
 FULL_CONTEXT_PAIR = 0
-#: ADR-013: R_p spans lifecycle ticks 13..29 (suffix boundary).
+#: The shared suffix tape R_p spans lifecycle ticks 13..29 (suffix boundary).
 SUFFIX_TICK_MIN = 13
-#: ADR-014 §2: the sealed sample size (81 + 9*47).
+#: The sealed sample size (81 + 9*47).
 EXPECTED_SAMPLE_ROWS = 504
 N_PAIRS = 10
 
-#: ADR-014 §4 B2: post-branch governance ground-truth strings the model was
+#: Leakage audit: post-branch governance ground-truth strings the model was
 #: never told (pre-sealing containment check).
 ADJUDICATION_GROUND_TRUTH_STRINGS = ("appeal_upheld", "rights_restored", "appeal_dismissed")
 
-#: ADR-014 §5: the deliberate not-claimed block, stated verbatim in the
-#: report (frozen).
+#: What the report deliberately does NOT claim, stated verbatim in the
+#: report (fixed text).
 NOT_CLAIMED: tuple[str, ...] = (
     "causal or average-treatment-effect statement",
     "external validity beyond the pilot scenario",
     "population generalization",
 )
 
-#: ADR-014 §5: the frozen limitations block (report carries these verbatim).
+#: The fixed limitations block (the report carries these verbatim).
 ADR5_OVERSTATEMENT_LIMITATION = (
     "ADR-014 §5's 'evidence the contrast is tied to the manipulation' "
     "phrasing is deliberately not inherited by the report; the permutation "
@@ -87,9 +84,9 @@ FROZEN_LIMITATIONS: tuple[str, ...] = (
     ADR5_OVERSTATEMENT_LIMITATION,
 )
 
-#: Frozen, verbatim record of the contract deviations this module makes.
-#: The ADR-014 body is NOT edited; these are handled here, in the report's
-#: top-level ``deviations_from_contract`` block (reviewer MED-2 / F1).
+#: Fixed, verbatim record of where this module departs from the original
+#: design. These are reported in the report's top-level
+#: ``deviations_from_contract`` block.
 DEVIATIONS_FROM_CONTRACT: tuple[str, ...] = (
     "run_root manifest field omitted from the report: the sealed manifest "
     "carries an advisory run_root path field, deliberately excluded from "
@@ -116,9 +113,9 @@ DEVIATIONS_FROM_CONTRACT: tuple[str, ...] = (
     "(bounds_check_implemented=false)",
 )
 
-#: B1 scope string (reviewer F2): states exactly what B1's task_id /
-#: action_kind clauses actually measure, so the report cannot be misread
-#: as the full ADR B1.
+#: Scope string for the self-report audit: states exactly what its task_id /
+#: action_kind checks actually measure, so the report cannot be misread
+#: as a full self-report-vs-behavior audit.
 B1_SCOPE = (
     "structural parse/row consistency only: parse_and_validate_action "
     "forces task_id/actor_id, so concordance measures plumbing "
@@ -127,7 +124,7 @@ B1_SCOPE = (
     "is false)"
 )
 
-# Frozen causal-word guard (ADR-014 §5): the word "causal" may appear at
+# Causal-word guard: the word "causal" may appear at
 # most CAUSAL_WORD_MAX_OCCURRENCES times in json.dumps(report), and every
 # occurrence must be part of a NEGATED framing — its surrounding
 # CAUSAL_WORD_CONTEXT_WINDOW chars must contain one of these tokens.
@@ -144,7 +141,7 @@ CAUSAL_WORD_ALLOWED_CONTEXTS: tuple[str, ...] = (
     "without causal",
 )
 
-#: ADR-014 §5: estimand statement carried into the report verbatim.
+#: Estimand statement carried into the report verbatim.
 ESTIMAND_STATEMENT = (
     "within-pair contrast T-P on the six PREREG v1.0 estimands: the effect "
     "of the adjudication manipulation on ledger-derived outcomes holding "
@@ -178,7 +175,7 @@ def _load_jsonl(path: Path) -> list[dict[str, Any]]:
 
 
 def pair_dirs(run_root: str | Path) -> list[Path]:
-    """Sorted ``pair_<k>`` directories of a g5_pairs run root."""
+    """Sorted ``pair_<k>`` directories of a counterfactual-pairs run root."""
     run_root = Path(run_root)
     dirs = sorted(run_root.glob("pair_*"), key=lambda p: int(p.name.split("_")[1]))
     if not dirs:
@@ -198,12 +195,12 @@ def pair_tape_rows(run_root: Path, pdir: Path) -> list[dict[str, Any]]:
 
 
 # --------------------------------------------------------------------------- #
-# Sealed sample (ADR-014 §2): pure, byte-stable function of the run root
+# Sealed sample: pure, byte-stable function of the run root
 # --------------------------------------------------------------------------- #
 
 
 def build_sealed_sample(run_root: str | Path) -> list[dict[str, Any]]:
-    """The frozen sealed judge sample (ADR-014 §2).
+    """The fixed, sealed judge sample.
 
     pair_0: ALL rows (81 in the production run); pairs 1..9: suffix rows
     only (``lifecycle_tick >= 13``, 47 each). Selection is
@@ -245,7 +242,7 @@ def build_sealed_sample(run_root: str | Path) -> list[dict[str, Any]]:
 
 
 def build_sample_manifest(run_root: str | Path) -> dict[str, Any]:
-    """Sealed sample manifest: pure function of the run root (ADR-014 §2).
+    """Sealed sample manifest: pure function of the run root.
 
     Returns ``{run_root, n_rows, pairs, rows, manifest_sha256}`` where
     ``rows`` is the sealed sample (see :func:`build_sealed_sample`) and
@@ -264,7 +261,7 @@ def build_sample_manifest(run_root: str | Path) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# Bias / leakage audits (ADR-014 §4): offline, pure, no model calls
+# Bias / leakage audits: offline, pure, no model calls
 # --------------------------------------------------------------------------- #
 
 
@@ -274,7 +271,7 @@ def _declared_action_kind(prompt: str) -> str | None:
 
 
 def audit_self_report(run_root: str | Path) -> dict[str, Any]:
-    """B1 — self-report vs observed behavior (ADR-014 §4).
+    """Self-report audit: declared action vs observed behavior.
 
     For every row of every pair tape, cross-check ``parsed_action``
     against the task declared in the prompt: ``parsed_action.task_id``
@@ -283,12 +280,12 @@ def audit_self_report(run_root: str | Path) -> dict[str, Any]:
     No self-report value is treated as ground truth. Reports per-pair and
     overall concordance counts plus the divergence list.
 
-    SCOPE (reviewer F2): the task_id / action_kind clauses are STRUCTURAL —
+    SCOPE: the task_id / action_kind checks are STRUCTURAL —
     ``parse_and_validate_action`` already forces ``task_id`` / ``actor_id``
     — so concordance measures plumbing consistency, not
-    self-report-vs-behavior. The returned dict carries the frozen
+    self-report-vs-behavior. The returned dict carries the fixed
     ``scope`` string (``B1_SCOPE``) and ``bounds_check_implemented:
-    False`` so the report cannot be misread as the full ADR B1.
+    False`` so the report cannot be misread as a full self-report audit.
     """
     per_pair: dict[str, Any] = {}
     divergences: list[dict[str, Any]] = []
@@ -344,20 +341,20 @@ def _prompt_body_head(prompt: str, n: int = _PROMPT_LEAK_FRAG_LEN) -> str:
 
 
 def audit_leakage(run_root: str | Path) -> dict[str, Any]:
-    """B2 — leakage audit (ADR-014 §4): verbatim containment only.
+    """Leakage audit: verbatim containment only.
 
     (i) no ``response_raw`` contains any post-prefix adjudication
     ground-truth string (``appeal_upheld`` / ``rights_restored`` /
     ``appeal_dismissed``) — the pre-sealing check, since responses
     predate the folded adjudication;
     (ii) no key material in any row (``prompt`` + ``response_raw``),
-    reusing ``judge_live._assert_no_key_material``;
+    reusing ``judge._assert_no_key_material``;
     (iii) within-tape ordering leak: for every pair of rows (i < j)
     within a pair tape, the first 64 chars of row j's prompt body (after
     the leading '[prompt:...]'' token line) are not a substring of row i's
     ``response_raw``.
 
-    Paraphrase-level leakage is OUT OF SCOPE (documented, ADR-014 §8).
+    Paraphrase-level leakage is OUT OF SCOPE.
     """
     gt_hits: list[dict[str, Any]] = []
     key_findings: list[str] = []
@@ -412,7 +409,7 @@ def audit_leakage(run_root: str | Path) -> dict[str, Any]:
 
 
 def audit_quarantine_symmetry(run_root: str | Path) -> dict[str, Any]:
-    """B3 — quarantine/retry bias (ADR-014 §4).
+    """Quarantine/retry bias audit.
 
     Per-pair quarantine counts and reasons; passed iff all pairs are
     identical (all 0 in the production run root).
@@ -435,7 +432,7 @@ def audit_quarantine_symmetry(run_root: str | Path) -> dict[str, Any]:
 
 
 def audit_prompt_invariance(run_root: str | Path) -> dict[str, Any]:
-    """B4 — prompt invariance across pairs (ADR-014 §4).
+    """Prompt-invariance audit: suffix prompts must match across pairs.
 
     For suffix rows (``lifecycle_tick >= 13``), the tuple
     ``(actor_id, lifecycle_tick, task_id, prompt)`` must be identical
@@ -474,7 +471,7 @@ def audit_prompt_invariance(run_root: str | Path) -> dict[str, Any]:
     return {
         "audit": "B4_prompt_invariance",
         "passed": not drifts,
-        # MED-1: actual count of tape rows with tick >= SUFFIX_TICK_MIN
+        # Actual count of tape rows with tick >= SUFFIX_TICK_MIN
         # across all pairs (470 on the real run root), NOT a distinct-value
         # estimate.
         "n_suffix_rows": n_suffix_rows,
@@ -485,7 +482,7 @@ def audit_prompt_invariance(run_root: str | Path) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# Identification diagnostics (ADR-014 §5): offline, no model calls
+# Identification diagnostics: offline, no model calls
 # --------------------------------------------------------------------------- #
 
 
@@ -507,7 +504,7 @@ def _estimand_names(estimates: Mapping[str, float]) -> list[str]:
 
 
 def leave_one_pair_out(run_root: str | Path) -> dict[str, Any]:
-    """Recompute the six T-P contrasts with each pair dropped (ADR-014 §5a).
+    """Recompute the six T-P contrasts with each pair dropped.
 
     Per estimand: 10 leave-one-pair-out means (one per dropped pair) and
     their pstdev spread.
@@ -538,7 +535,7 @@ def leave_one_pair_out(run_root: str | Path) -> dict[str, Any]:
 
 
 def permutation_null(run_root: str | Path) -> dict[str, Any]:
-    """Seeded permutation null baseline (ADR-014 §5b; diagnostic, NOT randomization).
+    """Seeded permutation null baseline (a diagnostic, NOT randomization).
 
     Exact math: for each of the 10 pairs and each of the six estimands the
     within-pair delta d_p is fixed. Each of ``N_PERMS = 200`` permutations
@@ -619,7 +616,7 @@ def permutation_null(run_root: str | Path) -> dict[str, Any]:
 
 
 def identification_diagnostics(run_root: str | Path) -> dict[str, Any]:
-    """The ADR-014 §5 identification block (offline diagnostics only)."""
+    """The report's identification block (offline diagnostics only)."""
     return {
         "estimand_statement": ESTIMAND_STATEMENT,
         "assumptions": list(ESTIMAND_ASSUMPTIONS),
@@ -632,7 +629,7 @@ def identification_diagnostics(run_root: str | Path) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# Report (ADR-014 §6): frozen sections, causal-word guard, byte-stable write
+# Report: fixed sections, causal-word guard, byte-stable write
 # --------------------------------------------------------------------------- #
 
 
@@ -643,9 +640,9 @@ def build_g5_close_report(
     identification: Mapping[str, Any],
     context: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """The single G5-close report (pure function of its inputs).
+    """The single paired-run audit report (pure function of its inputs).
 
-    Sections, exactly (ADR-014 §6): ``judge``, ``bias_audits``,
+    Sections, exactly: ``judge``, ``bias_audits``,
     ``identification``, ``context``, ``limitations``. Double-build
     byte-stability is asserted by the caller/tests (the report is a pure
     function of its inputs; :func:`write_g5_close_report` asserts it
@@ -654,7 +651,7 @@ def build_g5_close_report(
     id_block = dict(identification)
     # Guard the NOT-claimed block verbatim (frozen).
     assert tuple(id_block.get("not_claimed") or ()) == NOT_CLAIMED, (
-        "identification.not_claimed must carry the frozen ADR-014 block verbatim"
+        "identification.not_claimed must carry the fixed NOT_CLAIMED block verbatim"
     )
     report: dict[str, Any] = {
         "judge": dict(judge_section),
@@ -662,7 +659,7 @@ def build_g5_close_report(
         "identification": id_block,
         "context": dict(context),
         "limitations": list(FROZEN_LIMITATIONS),
-        # MED-2 / reviewer F1: frozen, verbatim record of contract gaps.
+        # Fixed, verbatim record of departures from the original design.
         "deviations_from_contract": list(DEVIATIONS_FROM_CONTRACT),
     }
     report.setdefault(
@@ -699,7 +696,7 @@ def _without_model_text(obj: Any) -> Any:
 
 
 def causal_word_guard(report: Mapping[str, Any]) -> None:
-    """Frozen causal-word guard (ADR-014 §5).
+    """Causal-word guard: limit and require negation of the word "causal".
 
     Raises AssertionError if the number of case-insensitive "causal"
     occurrences in ``json.dumps(report)`` exceeds
@@ -728,9 +725,8 @@ def causal_word_guard(report: Mapping[str, Any]) -> None:
 def write_g5_close_report(report: Mapping[str, Any], path: str | Path) -> None:
     """Write the report byte-stably: ``json.dumps(indent=2, sort_keys=True)``
     + trailing newline, after asserting no key material and JSON
-    round-trip stability (reviewer LOW-1: the real on-disk property is
-    that a reload-and-redump of the written text is byte-identical; the
-    former same-dict re-dump assert was a tautology)."""
+    round-trip stability (a reload-and-redump of the written text must be
+    byte-identical)."""
     text = json.dumps(report, indent=2, sort_keys=True) + "\n"
     # Round-trip stability: canonical re-serialization of the parsed text
     # must be byte-identical (what a consumer reading the file sees).
@@ -740,13 +736,13 @@ def write_g5_close_report(report: Mapping[str, Any], path: str | Path) -> None:
 
 
 def _row_provenance(sample_manifest: Mapping[str, Any]) -> dict[str, Any]:
-    """Row provenance (reviewer F7): computed from the sample, never hardcoded.
+    """Row provenance: computed from the sample, never hardcoded.
 
     ``g5_fresh_suffix_rows`` = sample rows with ``lifecycle_tick >= 13``;
     ``l1_replayed_prefix_rows`` = sample rows with
     ``lifecycle_tick <= SUFFIX_TICK_MIN - 1``. The recorded ``prefix_sha256``
     is the sha256 of the canonical serialization of the sample's prefix
-    rows (sample-derived, not the L1 event-ledger tape hash — see the
+    rows (sample-derived, not the origin run's event-ledger tape hash — see the
     note and the ``deviations_from_contract`` record).
     """
     prefix_rows = [
@@ -775,11 +771,11 @@ def _row_provenance(sample_manifest: Mapping[str, Any]) -> dict[str, Any]:
 def _engine_outcome_breakdown(
     judged: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """Per-engine-outcome judged-row counts (reviewer F8).
+    """Per-engine-outcome judged-row counts.
 
     Any outcome class with ``n <= 1`` gets the data-driven flag
-    ``{"n": <n>, "statistically_meaningful": False, "note": ...}`` (G4
-    convention); no class or event is hardcoded.
+    ``{"n": <n>, "statistically_meaningful": False, "note": ...}`` (same
+    convention as earlier reports); no class or event is hardcoded.
     """
     counts: dict[str, int] = {}
     for r in judged:
@@ -813,10 +809,10 @@ def build_judge_section(
     judge_tape: Sequence[Mapping[str, Any]],
     sample_manifest: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """The report's ``judge`` section from the judge tape (ADR-014 §3/§6).
+    """The report's ``judge`` section from the judge tape.
 
     ``judge_tape`` is the list of verdict rows produced by
-    ``g5_judge_live.run_g5_judge``: one row per sealed sample row with
+    ``pair_judge.run_g5_judge``: one row per sealed sample row with
     ``row_id``, ``pair_index``, ``arm_relevant``, ``quarantined`` and
     ``verdict`` (``{stance, rationale, confidence}`` or None when
     quarantined). Agreement = judge stance agrees with the engine outcome
@@ -854,7 +850,7 @@ def build_judge_section(
             pos: _agreement([r for r in judged if r.get("arm_relevant") == pos])
             for pos in ("prefix", "suffix")
         },
-        # Reviewer F1 / MED-2: explicit null-free record that the
+        # Explicit null-free record that the
         # code-judge stance comparison is not possible on this run root.
         "code_judge": {
             "available": False,
@@ -864,9 +860,9 @@ def build_judge_section(
                 "L1 all-81 sample (ADR-012)"
             ),
         },
-        # Reviewer F7: row provenance, counts computed from the sample.
+        # Row provenance, counts computed from the sample.
         "row_provenance": _row_provenance(sample_manifest),
-        # Reviewer F8: per-engine-outcome breakdown, data-driven n<=1 flag.
+        # Per-engine-outcome breakdown, data-driven n<=1 flag.
         "engine_outcome_breakdown": _engine_outcome_breakdown(judged),
         "disagreements": disagreements,
         "quarantined_judge_rows": [

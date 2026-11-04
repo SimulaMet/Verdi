@@ -1,4 +1,4 @@
-"""L2 G4 live audit over a captured L1 live run (ADR-011).
+"""Audit a captured live run: match each model call to its ledger event and grade it.
 
 Runs the existing :class:`~verdi_agents.audit.adapter.AuditAdapter` over the
 already-captured live tape (``live_tape.jsonl``) with **sealed-event_id
@@ -6,7 +6,7 @@ correlation** (never positional): each tape record is mapped to the ledger
 event id of the dispatch outcome (``action_accepted`` / ``action_rejected``)
 for the same ``(actor_id, task_id)``, deterministically derived from the
 sealed ledger. An ambiguous tape record is an error — there is no silent
-fallback (LESSONS.md correlation rule).
+fallback.
 
 Where SimpleAudit is reused and where it is deliberately not forced:
 
@@ -20,7 +20,7 @@ Where SimpleAudit is reused and where it is deliberately not forced:
   they require a live :class:`~simpleaudit.targets.Target` (an HTTP
   endpoint, a judge LLM client, regenerated transcripts). Re-running them
   over the captured tape would burn budget and violate the "no new model
-  calls" contract for this tranche. This module documents that choice per
+  calls" rule for this audit. This module documents that choice per
   the "use SimpleAudit where it fits; never force it" rule.
 
 The judge remains an **advisor**: every row of the report also carries the
@@ -334,7 +334,7 @@ def sample_disclosure(
     mapping: dict[int, list[dict[str, Any]]],
     sample_seqs: list[int],
 ) -> dict[str, Any]:
-    """Compute the honest sample disclosure (independent-review fix, F1/F2).
+    """Compute the honest sample disclosure.
 
     Every value is derived from the data, not hardcoded: judged/unjudged
     counts from ``len(sample)``/``len(tape)``, the in-sample accepted/
@@ -374,7 +374,7 @@ def sample_disclosure(
 
 
 def sample_disclosure_limitations(d: dict[str, Any]) -> list[str]:
-    """Limitation strings computed from :func:`sample_disclosure` (F1/F2)."""
+    """Limitation strings computed from :func:`sample_disclosure`."""
     lines: list[str] = []
     lines.append(
         f"Judge coverage: {d['judged']} judged / {d['unjudged']} unjudged of "
@@ -526,7 +526,7 @@ def audit_live_run(
     sample_size: int = DEFAULT_SAMPLE_SIZE,
     scorer_factory: Callable[..., RubricScorer] = RubricScorer,
 ) -> dict[str, Any]:
-    """Run the G4 audit over a captured live run and write a deterministic report.
+    """Run the trace audit over a captured live run and write a deterministic report.
 
     - Correlation: each sealed dispatch event <-> exactly one span, by
       sealed event id (never positional). Every sealed dispatch event must

@@ -1,4 +1,4 @@
-"""Lane W tests: agent_observation + validate_action (pure, deterministic)."""
+"""Tests for agent_observation + validate_action (pure, deterministic)."""
 from __future__ import annotations
 
 import pytest

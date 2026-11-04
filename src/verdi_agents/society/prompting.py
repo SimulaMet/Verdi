@@ -2,8 +2,7 @@
 
 Every social prompt embeds the agent's ``AgentMemory.render_history_summary``
 output, which is derived from committed events only. Static prompts that
-ignore committed state are a protocol violation
-(docs/SOCIETY_V2_PROTOCOL.md, section 0 gap 2 and section 3).
+ignore committed state are a protocol violation.
 
 The builder is pure: no clock, no network, no hidden-probe content
 (probes live in a separate package and are never referenced here).

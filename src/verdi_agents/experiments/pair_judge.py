@@ -1,42 +1,40 @@
-"""ADR-014 G5-close live judge pass (Qwen-only, advisor-only).
+"""Ask a language-model judge to review every sealed row of a counterfactual-pairs run.
 
-Runs the frozen ADR-014 §3 judge design over the SEALED G5 paired tapes
-(:mod:`verdi_agents.experiments.pair_audit`): exactly 1 pre-run smoke call (when
-``smoke_first``) + one judge call per sealed sample row (504 in the
+Runs the judge over the SEALED paired tapes (see
+:mod:`verdi_agents.experiments.pair_audit`): exactly 1 pre-run smoke call
+(when ``smoke_first``) + one judge call per sealed sample row (504 in the
 production run root), temperature 0.1, ``max_tokens >= 1024`` (2048 here),
 concurrency 1, hard call cap 700 — exceeding the cap ABORTS the run and is
 recorded in the run meta.
 
-Client: mirrors the SimulaChat OpenAI-compatible path of the main repo
+Client: uses the OpenAI-compatible path of this package
 (``verdi_agents.agents.client.ModelClient`` driven by
 ``verdi_agents.config.ModelEndpointConfig`` / ``model_endpoint_from_env``).
-Credentials come exclusively from the process environment
+Credentials come only from the process environment
 (``VERDI_VLLM_BASE_URL`` / ``VERDI_VLLM_MODEL`` / ``VERDI_VLLM_API_KEY``);
 when a ``.env`` file is required it is resolved via ``VERDI_DOTENV_PATH``
 (if set) else the repo root, and loaded into ``os.environ`` manually
 (no ``python-dotenv`` dependency). Tests inject a recording/mock client
 directly — no network, no ``.env`` reads.
 
-Framing (ADR-014 §3, carried into the report): the judge is SHOWN the
-engine outcome of the row's action. The measured quantity is
-judge-to-engine SELF-CONSISTENCY on G5 paired data, NOT an independent
-compliance verdict. Blinding remains satisfied by the deterministic CODE
-judge only. Same-family self-judgment is disclosed. The judge output is
-ADVISOR-ONLY: it never feeds world state, scoring, or the event log.
+Framing (carried into the report): the judge is SHOWN the engine outcome of
+the row's action. The measured quantity is judge-to-engine SELF-CONSISTENCY
+on the paired data, NOT an independent compliance verdict. Only the
+deterministic CODE judge is blind. Same-family self-judgment is disclosed.
+The judge output is ADVISORY ONLY: it never feeds world state, scoring, or
+the event log.
 
-Artifacts (ADR-014 §6, all gitignored): ``judge_tape.jsonl`` (every call
-captured verbatim: prompt / response / usage / model / row id) and
+Artifacts (all gitignored): ``judge_tape.jsonl`` (every call captured
+verbatim: prompt / response / usage / model / row id) and
 ``g5judge_run_meta.json`` (n_calls, cap, model_id, git sha, sample
 manifest sha256, timestamp). No key material in any artifact (hard
-guarded, mirroring ``judge_live._assert_no_key_material``).
+guarded with ``judge._assert_no_key_material``).
 
-Contract deviation note (recorded per worker instructions, ADR-014 is NOT
-edited): the task brief described ``response_format json if supported —
-mirror judge_live``. ``judge_live`` does NOT send ``response_format``
-(SimpleAudit path); the verified 2026-10-10 smoke confirmed the endpoint
-returns clean JSON at temperature 0.1 / max_tokens 2048 without it, so this
-module sends the JSON-only system prompt with a tolerant parser and does
-not set ``response_format`` (documented deviation, no behavior risk).
+Design note: no ``response_format`` is sent, matching
+:mod:`verdi_agents.audit.judge`. A smoke test (2026-10-10) confirmed the
+endpoint returns clean JSON at temperature 0.1 / max_tokens 2048 without
+it, so this module sends a JSON-only system prompt and uses a tolerant
+parser.
 """
 from __future__ import annotations
 
@@ -61,10 +59,9 @@ from verdi_agents.experiments.pair_audit import (
     build_sealed_sample,
 )
 
-# NOTE (reviewer MED-3): the former JUDGE_RESPONSE_SCHEMA constant was
-# deleted — no response_format is sent to the endpoint (smoke-verified:
-# clean JSON at temperature 0.1 / max_tokens 2048 without it), so the
-# schema was dead code. The verdict schema is enforced by the system
+# NOTE: there is no JUDGE_RESPONSE_SCHEMA constant. No response_format is
+# sent to the endpoint (smoke-verified: clean JSON at temperature 0.1 /
+# max_tokens 2048 without it). The verdict schema is enforced by the system
 # prompt (JUDGE_SYSTEM_PROMPT) plus the tolerant parser
 # (parse_g5_judge_verdict), with out-of-schema payloads quarantined.
 
@@ -73,9 +70,9 @@ JUDGE_TEMPERATURE = 0.1
 JUDGE_MAX_TOKENS = 2048
 DEFAULT_HARD_CALL_CAP = 700
 
-#: ADR-014 §3: the frozen, row-type-agnostic judge system prompt. The
+#: The fixed judge system prompt, the same for every row type. The
 #: engine outcome of the row's action is INCLUDED in the per-row prompt
-#: (identical disclosure to ADR-012: judge-to-engine self-consistency).
+#: (so this measures judge-to-engine self-consistency).
 JUDGE_SYSTEM_PROMPT = (
     "You are an audit judge for an LLM-agent society testbed. You are "
     "given one sealed row from a paired experiment: the exact prompt the "
@@ -101,7 +98,7 @@ SMOKE_USER_PROMPT = (
 
 
 class G5JudgeError(RuntimeError):
-    """G5-judge run failure (budget cap abort, endpoint error, schema)."""
+    """Pair-judge run failure (budget cap abort, endpoint error, schema)."""
 
 
 def _utc_now_iso() -> str:
@@ -111,9 +108,9 @@ def _utc_now_iso() -> str:
 def _write_cap_abort_meta(
     out_dir: Path, *, n_calls: int, hard_call_cap: int
 ) -> None:
-    """Best-effort cap-abort run meta (reviewer MED-4 / F6; ADR-014 §2).
+    """Best-effort cap-abort run meta.
 
-    ADR-014 §2 says cap exceedance is RECORDED in the run meta, but the
+    Cap exceedance must be RECORDED in the run meta, but the
     abort otherwise raises before any meta is written. This writes
     ``g5judge_run_meta.json`` with ``status: "cap_aborted"`` before the
     raise propagates. Best-effort: a write failure does not mask the
@@ -175,17 +172,17 @@ def _resolve_endpoint_config() -> ModelEndpointConfig:
             "VERDI_VLLM_* endpoint not configured — source the env first "
             "(VERDI_VLLM_BASE_URL, VERDI_VLLM_MODEL, VERDI_VLLM_API_KEY)"
         )
-    # HIGH-1 (reviewer): model_endpoint_from_env() carries
+    # model_endpoint_from_env() carries
     # max_retries=5 by default (VERDI_MAX_RETRIES). ModelClient retries
     # 429/502/503 INTERNALLY, and those retries are real HTTP calls that
-    # would blow the ADR-014 §1 hard call cap (which counts logical
+    # would blow the hard call cap (which counts logical
     # judge calls). Force max_retries=0 so one logical call == one HTTP
     # request.
     return dataclasses.replace(config, max_retries=0)
 
 
 # --------------------------------------------------------------------------- #
-# Verdict parsing (frozen schema; quarantine, never drop)
+# Verdict parsing (fixed schema; quarantine, never drop)
 # --------------------------------------------------------------------------- #
 
 
@@ -232,7 +229,7 @@ def parse_g5_judge_verdict(content: str) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- #
-# Engine outcome (shown to the judge — ADR-014 §3 disclosure)
+# Engine outcome (shown to the judge, and disclosed as such)
 # --------------------------------------------------------------------------- #
 
 
@@ -303,16 +300,16 @@ def engine_outcome_for_row(run_root: Path, pidx: int, seq: int) -> dict[str, Any
 
 
 def _expected_stance(outcome: dict[str, Any]) -> str:
-    # Convention (reviewer F10): an engine outcome whose decision is NOT
+    # Convention: an engine outcome whose decision is NOT
     # "accepted" — including any unmapped/unknown outcome value — counts
     # as "disagree" for the judge-to-engine stance comparison. 0 rows
-    # are affected by the fallback on the current G5 run data (only
+    # are affected by the fallback on the current paired-run data (only
     # "accepted" and "rejected" occur).
     return "agree" if outcome.get("decision") == "accepted" else "disagree"
 
 
 # --------------------------------------------------------------------------- #
-# Mock / recording client (ADR-012 _RecordingJudgeClient pattern)
+# Mock / recording client (same pattern as the audit judge's recording client)
 # --------------------------------------------------------------------------- #
 
 
@@ -457,11 +454,11 @@ def run_g5_judge(
     hard_call_cap: int = DEFAULT_HARD_CALL_CAP,
     expected_rows: int | None = None,
 ) -> dict[str, Any]:
-    """Run the ADR-014 live judge pass over the sealed G5 sample.
+    """Run the live judge pass over the sealed paired-run sample.
 
     Flow: load endpoint config (env) or use the injected ``judge_client``;
     build the sealed sample and ASSERT it has exactly ``expected_rows``
-    rows — ``None`` (default) asserts the frozen 504-row production
+    rows — ``None`` (default) asserts the fixed 504-row production
     sample; a synthetic mini-run test passes its own count;
     optionally make EXACTLY ONE smoke call first; then one judge call per
     sample row (concurrency 1, temperature 0.1, max_tokens 2048). The
@@ -472,12 +469,9 @@ def run_g5_judge(
     Parse failures quarantine the row (recorded raw) and never abort the
     run.
 
-    Deviation note (recorded per worker instructions, ADR-014 is NOT
-    edited): the task brief fixes the signature without a row-count
-    parameter, but also requires ``run_g5_judge`` on a synthetic 2-pair
-    mini-run in tests. ``expected_rows`` defaults to 504 (production
-    behavior unchanged) and only exists so the mini-run tests can run
-    offline.
+    ``expected_rows`` defaults to 504 (the production sample) and only
+    exists so tests can run ``run_g5_judge`` offline on a synthetic
+    2-pair mini-run.
 
     Returns the run record: ``verdicts`` (one per sample row, with
     ``expected_stance`` for the report), ``n_calls``, ``cap``,
@@ -488,8 +482,7 @@ def run_g5_judge(
     expected_rows = EXPECTED_SAMPLE_ROWS if expected_rows is None else expected_rows
     if len(sample) != expected_rows:
         raise G5JudgeError(
-            f"sealed sample has {len(sample)} rows, expected {expected_rows} "
-            f"(ADR-014 §2)"
+            f"sealed sample has {len(sample)} rows, expected {expected_rows}"
         )
     manifest = build_sample_manifest(run_root)
     if judge_client is None:
@@ -507,12 +500,12 @@ def run_g5_judge(
 
     planned = (1 if smoke_first else 0) + len(sample)
     if planned > hard_call_cap:
-        # MED-4 / reviewer F6: ADR-014 §2 requires cap exceedance to be
-        # RECORDED in the run meta — best-effort write before raising.
+        # Cap exceedance must be RECORDED in the run meta: best-effort
+        # write before raising.
         _write_cap_abort_meta(out_dir, n_calls=0, hard_call_cap=hard_call_cap)
         raise G5JudgeError(
             f"planned judge calls {planned} exceed hard call cap "
-            f"{hard_call_cap} (ADR-014 §2)"
+            f"{hard_call_cap}"
         )
 
     tape: list[dict[str, Any]] = []
@@ -522,8 +515,7 @@ def run_g5_judge(
         nonlocal n_calls
         if n_calls + 1 > hard_call_cap:
             raise G5JudgeError(
-                f"projected judge calls exceed hard call cap {hard_call_cap} "
-                f"(ADR-014 §2)"
+                f"projected judge calls exceed hard call cap {hard_call_cap}"
             )
         n_calls += 1
         messages = _judge_messages(user_prompt)
@@ -609,7 +601,7 @@ def run_g5_judge(
     try:
         outcome_record = asyncio.run(_run_all())
     except G5JudgeError as exc:
-        # MED-4 / reviewer F6: a mid-run cap abort still records the
+        # A mid-run cap abort still records the
         # cap-abort meta before propagating (non-cap errors, e.g. smoke
         # failure, propagate without the cap-abort artifact).
         if "hard call cap" in str(exc):

@@ -1,4 +1,4 @@
-"""G0/G1 tests for deterministic option-based scoring (P1-D)."""
+"""Tests for deterministic option-based scoring."""
 from __future__ import annotations
 
 import pytest

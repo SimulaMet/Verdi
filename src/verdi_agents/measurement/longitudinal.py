@@ -1,6 +1,6 @@
-"""Longitudinal hidden probes with live (judge-pool) responses (Society V2, Lane E).
+"""Hidden value probes asked repeatedly over a run, answered by a live model.
 
-Design rules (docs/SOCIETY_V2_PROTOCOL.md, Lane E):
+Design rules:
 - Probes are OUT-OF-BAND from OTHER agents and from the world's hidden
   ground truth: a probe prompt never contains another agent's data and is
   never written into agent-visible memory or public signals. It DOES ground
@@ -19,7 +19,7 @@ Design rules (docs/SOCIETY_V2_PROTOCOL.md, Lane E):
   :func:`channel_trajectories` returns per-channel trajectories only and has
   no combined cross-channel score in its API surface.
 - Live responses come from a judge-pool caller (a ``ModelCaller``-shaped
-  object whose ``generate_structured`` is awaited); the pilot's deterministic
+  object whose ``generate_structured`` is awaited); the reference run's deterministic
   stand-ins (``probe_response_for``) are untouched — this module composes
   :class:`ProbeBank` and :func:`score_probe` instead of replacing them.
 - Every ``ProbeResult`` is replayable from the captured response: scoring is

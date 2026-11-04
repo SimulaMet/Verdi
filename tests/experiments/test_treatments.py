@@ -126,7 +126,7 @@ def test_placebo_deterministic_across_seeds():
 # rights restoration
 # --------------------------------------------------------------------------- #
 def test_rights_restoration_reports_unapplied_when_no_restoration_in_tape():
-    tape = _base_tape()  # the pilot's shape: sanction -> appeal -> dismissed
+    tape = _base_tape()  # the reference run's shape: sanction -> appeal -> dismissed
     fingerprint_before = _tape_fingerprint(tape)
     outcome = rights_restoration_treatment(_Spec(), tape, seed=0)
     assert isinstance(outcome, TreatmentOutcome)

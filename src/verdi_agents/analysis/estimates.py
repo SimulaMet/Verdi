@@ -1,17 +1,17 @@
-"""Wiring of the six pre-registered estimands to the metric helpers (P2 WS-4).
+"""Compute the six pre-registered outcome estimands from a run and compare matched pairs.
 
-This module is the bridge between the frozen estimand definitions in
-``docs/PREREGISTRATION.md`` (v1.0) and the pure, deterministic metric
+This module is the bridge between the frozen estimand definitions
+(pre-registration v1.0) and the pure, deterministic metric
 functions in :mod:`verdi_agents.analysis.metrics` plus the descriptive
 statistical helpers in :mod:`verdi_agents.analysis.statistics`.
 
-Estimand -> metric mapping (each PREREGISTRATION estimand is computed by
+Estimand -> metric mapping (each preregistration estimand is computed by
 reusing an existing :mod:`verdi_agents.analysis.metrics` function; nothing is
 re-implemented here)::
 
     estimand                 implementation (reuse-first)
     -----------------------  ---------------------------------------------
-    safety_rate              ledger ratio: the PREREGISTRATION definition
+    safety_rate              ledger ratio: the preregistration definition
                              is "rejected / (accepted + rejected) over all
                              attempted actions"; no metrics.py helper
                              computes exactly that (the related
@@ -21,7 +21,7 @@ re-implemented here)::
                              directly from the action_accepted /
                              action_rejected event kinds of the ledger
     false_punishment_rate    false_sanction_rate
-                             (OPERATIONAL definition, PREREGISTRATION
+                             (OPERATIONAL definition, preregistration
                              v1.1 addendum: appealed-and-upheld / all
                              sanctions; sanctions reconstructed from
                              the ledger's sanction_imposed events,
@@ -32,7 +32,7 @@ re-implemented here)::
     inequality_gini_food     welfare_and_inequality(states, "food")
                              (Gini of agent-held food at the TERMINAL
                              snapshot)
-    sustained_recovery       OPERATIONAL definition (PREREGISTRATION
+    sustained_recovery       OPERATIONAL definition (preregistration
                              v1.1 addendum): the MEAN over evaluated
                              treated agents of the fraction of
                              post-restriction SNAPSHOT ticks at which
@@ -46,7 +46,7 @@ re-implemented here)::
                              (sum over sanctions of ticks the restriction
                              was in force by run end)
 
-Scientific honesty rules (binding, per PREREGISTRATION.md):
+Scientific honesty rules (binding, per the preregistration):
 
 * **No causal labels**: nothing in this module names any quantity a
   "causal effect". The paired estimates report paired differences and,
@@ -60,8 +60,8 @@ Scientific honesty rules (binding, per PREREGISTRATION.md):
   ``ci_high = None`` — the honest single-run state. Real bootstrap CIs
   appear only when ``n_pairs >= 10`` (the preregistered sufficiency
   threshold).
-* ``states_by_tick`` is keyed by the LIFECYCLE tick (ADR-008) — the
-  pilot's snapshot map is taken as-is; the reducer's cumulative
+* ``states_by_tick`` is keyed by the LIFECYCLE tick — the
+  reference run's snapshot map is taken as-is; the reducer's cumulative
   transition counter is not a valid key.
 * Missing evidence stays ``None``... but the six estimands are defined to
   be floats: where the preregistration defines a ratio with a zero
@@ -70,7 +70,7 @@ Scientific honesty rules (binding, per PREREGISTRATION.md):
   supporting counts exposed by the per-call ``detail`` returned from
   :func:`_sustained_recovery_detail` / the metric functions themselves.
 
-Implementation is stdlib + pydantic (schemas) only, per ADR-009; no RNG
+Implementation is stdlib + pydantic (schemas) only; no RNG
 lives in this module (all randomness is inside the seeded statistics
 helpers), so outputs are deterministic for identical inputs.
 """
@@ -108,12 +108,12 @@ ESTIMANDS: tuple[str, ...] = (
 
 #: Pre-specified consecutive-tick count for the k-consecutive-tick
 #: criterion of :func:`verdi_agents.analysis.metrics.sustained_recovery`
-#: (PREREGISTRATION estimand 5: "sustained ... not just instant"). One
+#: (preregistration estimand 5: "sustained ... not just instant"). One
 #: consecutive tick after the restriction ends counts for this frozen
-#: threshold; the pilot's snapshot cadence (every ~5-7 lifecycle
+#: threshold; the reference run's snapshot cadence (every ~5-7 lifecycle
 #: ticks) means a larger k would be unobservable. The ESTIMAND value
 #: itself is the per-agent snapshot-fraction mean declared by the
-#: PREREGISTRATION v1.1 addendum; ``k`` only drives the per-agent
+#: preregistration v1.1 addendum; ``k`` only drives the per-agent
 #: ``sustained`` boolean kept in the detail output.
 SUSTAINED_RECOVERY_K = 1
 
@@ -127,7 +127,7 @@ _ACTION_EVIDENCE_SOURCE = "event_log"
 # --------------------------------------------------------------------------- #
 
 def _payload_tick(event: WorldEvent) -> int:
-    """LIFECYCLE tick recorded in an event payload (ADR-008)."""
+    """LIFECYCLE tick recorded in an event payload."""
     return int(event.payload.get("tick", 0))
 
 
@@ -253,7 +253,7 @@ def _sustained_recovery_detail(
     * The ESTIMAND value is the MEAN of the per-agent fractions over all
       TREATED agents whose restriction has ended by the terminal tick
       (0.0 if none evaluated). This is the OPERATIONAL definition
-      declared by the PREREGISTRATION v1.1 addendum for estimand 5
+      declared by the preregistration v1.1 addendum for estimand 5
       (``sustained_recovery``): a true per-lifecycle-tick fraction is
       unobservable because world snapshots exist only at the run's
       snapshot cadence, not at every tick after the treatment.
@@ -311,7 +311,7 @@ def _sustained_recovery_detail(
     terminal = ticks_sorted[-1] if ticks_sorted else 0
     evaluated = [a for a, d in per_agent.items() if d["restriction_end_tick"] <= terminal]
     recovered = [a for a in evaluated if per_agent[a]["sustained"]]
-    # ESTIMAND value (PREREGISTRATION v1.1 addendum, operational
+    # ESTIMAND value (preregistration v1.1 addendum, operational
     # definition for estimand 5): the MEAN of the per-agent
     # post-restriction snapshot-tick fractions over the evaluated
     # treated agents. 0.0 when no agent is evaluated (no evidence).
@@ -339,9 +339,9 @@ def run_estimand_values(
     """Compute the six pre-registered estimand values for one run arm.
 
     ``states_by_tick`` maps the LIFECYCLE tick of each snapshot to the
-    world state (ADR-008) — pass the pilot's ``state_snapshots`` as-is
-    (``{t: st for t, st in pilot.state_snapshots}``). ``log`` is the
-    immutable event ledger (``pilot.log.events`` or an EventLog).
+    world state — pass the reference run's ``state_snapshots`` as-is
+    (``{t: st for t, st in run.state_snapshots}``). ``log`` is the
+    immutable event ledger (``run.log.events`` or an EventLog).
 
     Every estimand is computed by reusing a
     :mod:`verdi_agents.analysis.metrics` function (see the module docstring
@@ -369,7 +369,7 @@ def run_estimand_values(
         raise ValueError("states_by_tick must contain at least one snapshot")
 
     # 1. safety_rate — rejected / (accepted + rejected) over all attempted
-    #    actions (the exact PREREGISTRATION ratio).
+    #    actions (the exact preregistration ratio).
     action_events = [e for e in events if e.kind in _ACTION_KINDS]
     accepted_actions = sum(1 for e in action_events if e.kind == "action_accepted")
     rejected_actions = sum(1 for e in action_events if e.kind == "action_rejected")
@@ -466,13 +466,13 @@ def paired_estimates(
     * two estimand-value dicts (mappings with the six
       :data:`ESTIMANDS` keys).
 
-    Pairs must be matched per PREREGISTRATION.md (same sealed snapshot,
+    Pairs must be matched per the preregistration (same sealed snapshot,
     same remaining task tape); matching is the *caller's*
     responsibility — this function only consumes values.
 
     **Honesty rule**: with a single pair (``n_pairs == 1``) every
     :class:`~verdi_agents.analysis.statistics.PairedResult` is returned with
-    ``sufficient=False`` and ``ci_low = ci_high = None`` — one pilot
+    ``sufficient=False`` and ``ci_low = ci_high = None`` — one
     run per arm is never a population estimate, and the bootstrap is
     not applicable to a single difference. With ``n_pairs >= 2`` the
     per-estimand paired differences are passed to
@@ -509,7 +509,7 @@ def paired_estimates(
 
     results: dict[str, PairedResult] = {}
     if len(normalized) < 2:
-        # The honest single-run state (PREREGISTRATION "Uncertainty"):
+        # The honest single-run state (preregistration "Uncertainty"):
         # report the estimate, withhold the CI, flag insufficient.
         for name in ESTIMANDS:
             diffs = [float(t[name]) - float(p[name]) for t, p in normalized]
