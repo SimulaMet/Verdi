@@ -15,4 +15,17 @@ def test_cli_runs() -> None:
         check=False,
     )
     assert result.returncode == 0
-    assert "verdi CLI scaffold" in result.stdout
+    assert "usage: verdi" in result.stdout
+    for command in ("init", "run", "sweep"):
+        assert command in result.stdout
+    assert "IMPLEMENTATION_PLAN" not in result.stdout
+
+
+def test_run_respects_run_dir_equals_form(monkeypatch) -> None:
+    import verdi.cli as cli
+    import verdi.society.live as live
+
+    seen: list[list[str]] = []
+    monkeypatch.setattr(live, "main", lambda argv: seen.append(argv) or 0)
+    assert cli.main(["run", "examples/starter.yaml", "--run-dir=out/mine"]) == 0
+    assert seen == [["--scenario", "examples/starter.yaml", "--run-dir=out/mine"]]

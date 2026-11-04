@@ -677,8 +677,25 @@ def build_g5_close_report(
             "manifest_sha256": sample_manifest.get("manifest_sha256"),
         },
     )
-    causal_word_guard(report)
+    # The guard polices the report's OWN wording; verbatim model-authored
+    # text (judge rationales, quarantined raw payloads) is quoted evidence,
+    # and one judge saying "causally" must not make the report unbuildable.
+    causal_word_guard(_without_model_text(report))
     return report
+
+
+#: Keys whose values are verbatim model output, excluded from the causal guard.
+#: ("error" on quarantined rows embeds the model's invalid stance verbatim.)
+_MODEL_TEXT_KEYS = frozenset({"rationale", "raw", "error"})
+
+
+def _without_model_text(obj: Any) -> Any:
+    if isinstance(obj, Mapping):
+        return {k: (None if k in _MODEL_TEXT_KEYS else _without_model_text(v))
+                for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_without_model_text(v) for v in obj]
+    return obj
 
 
 def causal_word_guard(report: Mapping[str, Any]) -> None:

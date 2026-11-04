@@ -75,7 +75,7 @@ def _run_main(argv: list[str]) -> int:
     if argv and not argv[0].startswith("-"):
         scenario, rest = argv[0], argv[1:]
         argv = ["--scenario", scenario, *rest]
-        if "--run-dir" not in rest:
+        if not any(a == "--run-dir" or a.startswith("--run-dir=") for a in rest):
             argv += ["--run-dir", str(Path("runs") / Path(scenario).stem)]
     return live_main(argv)
 
@@ -100,9 +100,9 @@ def main(argv: list[str] | None = None) -> int:
                                             "only what you list (verdi sweep --help)",
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.parse_args(argv)
-    print("verdi CLI scaffold — see docs/IMPLEMENTATION_PLAN.md")
-    print("Commands: verdi init [dir]  |  verdi run <scenario.yaml>  |  "
-          "verdi sweep <file.yaml>  (see docs/SWEEPS.md)")
+    # No subcommand given: show usage (the old text pointed at a doc that
+    # does not exist).
+    parser.print_help()
     return 0
 
 
