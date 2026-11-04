@@ -1,4 +1,4 @@
-"""Offline tests for the P0-C paired fixed-vs-revisable runner.
+"""Offline tests for the paired runner that compares fixed and revisable rules.
 
 Uses a scripted fake caller (pattern from tests/society/test_campaign.py):
 producers produce food, depositors top up the commons, assembly voters vote
@@ -15,8 +15,8 @@ from typing import Any
 import pytest
 import yaml
 
-from verdi.agents.client import ModelResult
-from verdi.experiments.paired_run import (
+from verdi_agents.agents.client import ModelResult
+from verdi_agents.experiments.paired_run import (
     build_arm_scenarios,
     load_paired_config,
     run_pair,
@@ -366,7 +366,7 @@ def test_build_arm_scenarios_asserts_identity():
 
 def test_cli_main_validates_before_endpoint(tmp_path, monkeypatch):
     """main() must reject a bad config BEFORE any endpoint resolution."""
-    from verdi.experiments import paired_run
+    from verdi_agents.experiments import paired_run
 
     base_file = _write_base(tmp_path)
     bad_cfg = tmp_path / "bad.yaml"
@@ -396,7 +396,7 @@ def test_example_config_is_valid_and_self_consistent():
     assert config["seeds"] == [42]
     assert (repo_root / config["base_scenario"]).exists()
     # Identity holds for the real smoke scenario too.
-    from verdi.analysis.scenario import load_scenario
+    from verdi_agents.analysis.scenario import load_scenario
     base = load_scenario(repo_root / config["base_scenario"])
     built = build_arm_scenarios(base, config["arms"])
     minus_a = {k: v for k, v in built["fixed"].items() if k != "institutional_condition"}

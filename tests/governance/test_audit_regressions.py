@@ -1,11 +1,11 @@
-"""Regression tests for defects found in the 2026-11 system audit (AUDIT.md)."""
+"""Regression tests for previously fixed bugs."""
 from __future__ import annotations
 
 import pytest
 
-from verdi.governance import ConstitutionStore, SanctionEngine, UniversalLaw
-from verdi.governance.appeals import AppealEngine
-from verdi.governance.constitution import ProposalNotInVoteError
+from verdi_agents.governance import ConstitutionStore, SanctionEngine, UniversalLaw
+from verdi_agents.governance.appeals import AppealEngine
+from verdi_agents.governance.constitution import ProposalNotInVoteError
 
 from .conftest import CONSTITUTION, LAW, make_sanction, make_vote
 

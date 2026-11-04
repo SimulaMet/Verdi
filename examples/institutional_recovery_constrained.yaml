@@ -1,4 +1,4 @@
-# Verdi institutional-recovery CONSTRAINED economy example (P0-B).
+# A society with a scarce economy, used to study recovery after a shock.
 #
 # A fully specified opt-in constrained economy demonstrating every knob:
 # role-aware consumption, per-resource production caps + credit costs, a
@@ -12,7 +12,7 @@
 # under study is constitutional enactment (e.g. amending
 # max_produce_units_per_tick); the exogenous circumstances are identical.
 model:
-  base_url: https://simulachat.sushant.pp.ua/api/v1
+  base_url: http://localhost:8000/v1
   name: default
   # key: MODEL_API_KEY from .env
 

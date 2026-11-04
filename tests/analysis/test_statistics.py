@@ -1,4 +1,4 @@
-"""Tests for verdi.analysis.statistics (P2 WS-3, G5 statistical sanity).
+"""Tests for verdi_agents.analysis.statistics (paired estimates and bootstrap CIs).
 
 All tests are deterministic: fixed seeds and fixed synthetic data only.
 No LLM, no network, stdlib only.
@@ -10,7 +10,7 @@ import statistics
 
 import pytest
 
-from verdi.analysis.statistics import (
+from verdi_agents.analysis.statistics import (
     PairedResult,
     bootstrap_ci,
     null_control_passes,
@@ -38,7 +38,7 @@ def test_bootstrap_ci_different_seed_may_differ():
 
 
 def test_bootstrap_ci_percentiles_match_statistics_quantiles():
-    """P2 review F4: the CI endpoints must match the stdlib
+    """The CI endpoints must match the stdlib
     ``statistics.quantiles(means, n=200, method="inclusive")`` convention
     to 1 ulp (abs diff <= 1e-12 * max(1, |value|)).
 
@@ -204,18 +204,18 @@ def test_bootstrap_coverage_sanity_true_shift_one():
 
 
 def test_module_imports_are_stdlib_only():
-    """Guard ADR-009: WS-3 must not import numpy/scipy or verdi internals."""
-    import verdi.analysis.statistics as mod
+    """The statistics module must not import numpy/scipy or verdi internals."""
+    import verdi_agents.analysis.statistics as mod
 
     for value in vars(mod).values():
         module = str(getattr(value, "__module__", ""))
         assert not module.startswith("numpy"), "numpy referenced"
         assert not module.startswith("scipy"), "scipy referenced"
-    # The module's own import statements are stdlib-only (ADR-009).
+    # The module's own import statements are stdlib-only.
     import inspect
 
     source = inspect.getsource(mod)
     assert "import numpy" not in source
     assert "import scipy" not in source
-    assert "verdi.experiments" not in source
+    assert "verdi_agents.experiments" not in source
     assert math.isfinite(bootstrap_ci([1.0, 2.0], seed=0)[0])

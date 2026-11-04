@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from verdi.scheduler import (
+from verdi_agents.scheduler import (
     ADAPTIVE_PROMPT_VERSION,
     AdaptiveScheduleError,
     AdaptiveScheduler,

@@ -1,11 +1,11 @@
-"""G0/G1 tests for per-channel longitudinal drift (P1-D, construct validity)."""
+"""Tests for per-channel value drift over time (construct validity)."""
 from __future__ import annotations
 
 import pytest
 
-from verdi.measurement import AxisDrift, bootstrap_ci, compute_channel_drifts
-from verdi.measurement.value_drift import compute_axis_drift
-from verdi.schemas import ProbeItem, ProbeResult
+from verdi_agents.measurement import AxisDrift, bootstrap_ci, compute_channel_drifts
+from verdi_agents.measurement.value_drift import compute_axis_drift
+from verdi_agents.schemas import ProbeItem, ProbeResult
 
 
 def _item(channel: str, axes: list[str]) -> ProbeItem:

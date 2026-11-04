@@ -25,8 +25,8 @@ recover from disruption.
 
 Adapted from [INSTITUTIONAL_RECOVERY.md](INSTITUTIONAL_RECOVERY.md):
 
-- **No validated causal finding exists yet.** A live end-to-end smoke run has
-  not been executed as part of this branch; treat all results as provisional.
+- **No validated causal finding exists yet.** Treat all results as provisional
+  until they hold up over repeated runs.
 - **Seeding does not make LLM outputs deterministic.** Seeds make the
   *simulator* reproducible (scheduling, order, world state), but model
   generations are still stochastic. Paired repetitions across seeds — not a
@@ -35,7 +35,7 @@ Adapted from [INSTITUTIONAL_RECOVERY.md](INSTITUTIONAL_RECOVERY.md):
   enforceable policy keys (`max_transfer_units`, `max_withdraw_units`,
   `min_commons_reserve`, `max_produce_units_per_tick`) change real behavior.
   Prose changes about fairness or rights stay descriptive metadata.
-- **Probe self-reports are exploratory**, not evidence that actions complied
+- **Value-check self-reports are exploratory**, not evidence that actions complied
   with a value. Primary outcomes should come from committed world state
   (delivery objectives), not agent claims.
 - **Future-dated version bookkeeping** for multiple overlapping amendments
@@ -49,23 +49,23 @@ Adapted from [INSTITUTIONAL_RECOVERY.md](INSTITUTIONAL_RECOVERY.md):
 
 ### Prerequisites
 
-- Python 3.10+ (CI uses 3.11)
-- An OpenAI-compatible model endpoint (Qwen on vLLM in the examples)
+- Python 3.10+
+- A language model server that speaks the OpenAI API (for example vLLM or Ollama)
 
 ```bash
-python -m venv .venv && source .venv/bin/activate
-pip install -e .
+pip install verdi-agents
+verdi-agents init my-study && cd my-study
 ```
 
 ### Configure the endpoint
 
-Copy the example environment file and fill in your values. **Never commit
-real secrets**; `.env` is gitignored. See [.env.example](../.env.example):
+`verdi-agents init` created a `.env` file. Put your key in it (**never share or
+commit this file**). The model name and server address go in the scenario's
+`model:` block.
 
 ```bash
-cp .env.example .env
-# edit .env: set MODEL_API_KEY. Model name + base_url live in the scenario `model:` block.
-source .env
+# edit .env: set MODEL_API_KEY
+# edit examples/institutional_recovery_constrained.yaml: set model.base_url and model.name
 ```
 
 | Variable | Meaning |
@@ -76,7 +76,7 @@ source .env
 ### Run the paired experiment — ONE command
 
 ```bash
-python -m verdi.experiments.paired_run --config examples/paired_institutional_recovery.yaml
+verdi-agents pair examples/paired_institutional_recovery.yaml
 ```
 
 That's the whole workflow. The runner:
@@ -99,7 +99,7 @@ runs/paired-institutional-recovery/
 ├── fixed-seed42/
 │   ├── report.html             # open this first
 │   ├── scenario_resolved.yaml  # the exact frozen scenario used
-│   ├── events.jsonl            # immutable event ledger
+│   ├── events.jsonl            # event log: every action, in order
 │   └── ...                     # metrics.json, timeline.md, etc.
 └── revisable-seed42/
     ├── report.html
@@ -113,8 +113,7 @@ you which pairs are trustworthy.
 Optional CLI overrides (no config edit needed):
 
 ```bash
-python -m verdi.experiments.paired_run \
-  --config examples/paired_institutional_recovery.yaml \
+verdi-agents pair examples/paired_institutional_recovery.yaml \
   --seeds 42,7,99 \
   --output-root runs/my-experiment \
   --concurrency 4
@@ -153,7 +152,7 @@ Unknown keys are rejected with a readable error listing allowed keys.
 | `constitution.rules` | Initial typed rules: `quorum_rule`, `max_withdraw_units`, `min_commons_reserve`, … plus `quorum` and `amendment_threshold` |
 | `economy` | Opt-in constrained economy (versioned): per-resource `production_limit_per_tick`, `production_cost`, `consumption_per_tick`. Absent → unlimited free production |
 | `tasks.deliveries` | Objective delivery goals evaluated from committed world state alone (`objective_id`, `start_tick`, `due_tick`, `resource`, `amount`, `target_pool`) |
-| `institutional_condition` | Do NOT edit by hand for comparisons — the paired runner sets it per arm |
+| `institutional_condition` | Do NOT edit by hand for comparisons: `verdi-agents pair` sets it for each half |
 
 ### "What if" recipes
 
@@ -214,7 +213,7 @@ interpret differences carefully — the intervention is *enactment*, not
 |----------|---------------------|
 | `runs/paired-institutional-recovery/<arm>-seed<N>/report.html` | What happened in one run, interactively: society, resources, governance, constitution history |
 | `pair_manifest.json` | Which pairs completed/failed/stalled; final state hashes; replay integrity |
-| Per-run `events.jsonl` / `metrics.json` / `timeline.md` | Raw evidence behind any aggregate: ledgers, counts, tick-by-tick story |
+| Per-run `events.jsonl` / `metrics.json` / `timeline.md` | Raw evidence behind any aggregate: event log, counts, tick-by-tick story |
 | Per-run `scenario_resolved.yaml` | The exact frozen scenario — reproducibility proof |
 | `comparison.html`, `metrics.json`, `metrics.csv` | Cross-condition comparison and machine-readable outcomes after running the metrics command |
 
@@ -222,14 +221,14 @@ After the paired run completes, generate the comparison report and
 machine-readable metrics with:
 
 ```bash
-python -m verdi.analysis.outcome_metrics --pair-root runs/paired-institutional-recovery
+verdi-agents compare runs/paired-institutional-recovery
 ```
 
 This writes `comparison.html`, `metrics.json`, and `metrics.csv`
 at the paired output root. The comparison includes objective completion,
 committed and attempted resource flows, exclusion episodes, institutional
 mechanisms, and recovery measurements where there is enough recorded
-evidence. Inspect the individual `events.jsonl` ledgers for provenance.
+evidence. Inspect the individual `events.jsonl` event logs to see where a number came from.
 
 Interpretation guardrails:
 

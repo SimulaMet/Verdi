@@ -1,11 +1,11 @@
-"""Deterministic task/world generators for scheduler stress tests (WS-7).
+"""Deterministic task/world generators for scheduler stress tests.
 
 Test-support only. Reuses ``make_agent`` / ``make_task`` from ``conftest.py``
 so Task / AgentState construction stays identical to the unit tests.
 """
 from __future__ import annotations
 
-from verdi.schemas import AgentState, WorldState
+from verdi_agents.schemas import AgentState, WorldState
 
 from .conftest import make_agent, make_task
 

@@ -1,11 +1,11 @@
-"""G0/G1 tests for deterministic option-based scoring (P1-D)."""
+"""Tests for deterministic option-based scoring."""
 from __future__ import annotations
 
 import pytest
 
-from verdi.measurement import JudgeProtocol, RubricScorer, score_probe
-from verdi.measurement.probes import ProbeBank
-from verdi.schemas import ProbeItem
+from verdi_agents.measurement import JudgeProtocol, RubricScorer, score_probe
+from verdi_agents.measurement.probes import ProbeBank
+from verdi_agents.schemas import ProbeItem
 
 
 def _item() -> ProbeItem:

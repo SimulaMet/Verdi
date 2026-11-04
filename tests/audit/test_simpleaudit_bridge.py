@@ -5,8 +5,8 @@ import sys
 
 import pytest
 
-import verdi.audit.simpleaudit_bridge as bridge
-from verdi.audit.simpleaudit_bridge import (
+import verdi_agents.audit.simpleaudit_bridge as bridge
+from verdi_agents.audit.simpleaudit_bridge import (
     SimpleAuditNotInstalledError,
     SimpleAuditTraceSource,
     build_simpleaudit_trace_source,
@@ -27,7 +27,7 @@ def test_module_import_does_not_import_simpleaudit() -> None:
     # has no side effect: importing it must never import simpleaudit.
     import importlib
 
-    fresh_name = "verdi.audit.simpleaudit_bridge"
+    fresh_name = "verdi_agents.audit.simpleaudit_bridge"
     original = sys.modules.get(fresh_name)
     sys.modules.pop(fresh_name, None)
     sys.modules.pop("simpleaudit", None)

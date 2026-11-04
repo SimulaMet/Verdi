@@ -1,4 +1,4 @@
-"""Shared builders for analysis tests (P1-E)."""
+"""Shared builders for analysis tests."""
 from __future__ import annotations
 
 import json
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from verdi.schemas import (
+from verdi_agents.schemas import (
     Appeal,
     EvidenceReference,
     ProbeResult,
@@ -16,8 +16,8 @@ from verdi.schemas import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-SCENARIO = REPO_ROOT / "experiments" / "scenarios" / "pilot_v1.json"
-TAPE = REPO_ROOT / "experiments" / "task_tape" / "pilot_v1.json"
+SCENARIO = REPO_ROOT / "tests" / "fixtures" / "reference_run" / "scenarios" / "pilot_v1.json"
+TAPE = REPO_ROOT / "tests" / "fixtures" / "reference_run" / "task_tape" / "pilot_v1.json"
 
 
 def probe(agent: str, tick: int, channel: str, vector: dict[str, float], pid: str | None = None) -> ProbeResult:
@@ -60,7 +60,7 @@ def event(eid: int, tick: int, kind: str, decision: str, payload: dict, prev: st
 
 
 def world_state(tick: int, resources_by_agent: dict[str, dict[str, float]]) -> WorldState:
-    from verdi.schemas import AgentState, ValueProfile
+    from verdi_agents.schemas import AgentState, ValueProfile
 
     values = ValueProfile(integrity=0.5, fairness=0.5, cooperation=0.5, autonomy=0.5, solidarity=0.5)
     agents = {

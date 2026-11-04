@@ -1,11 +1,11 @@
-"""Regression tests for defects found in the 2026-11 system audit (AUDIT.md)."""
+"""Regression tests for previously fixed bugs."""
 from __future__ import annotations
 
 import pytest
 
-from verdi.schemas import AgentState, ProposedAction, ValueProfile, WorldState
-from verdi.world.reducer import InvariantViolationError, WorldReducer
-from verdi.world.validate import validate_action
+from verdi_agents.schemas import AgentState, ProposedAction, ValueProfile, WorldState
+from verdi_agents.world.reducer import InvariantViolationError, WorldReducer
+from verdi_agents.world.validate import validate_action
 
 _VALUES = ValueProfile(
     integrity=0.8, fairness=0.9, cooperation=0.7, autonomy=0.5, solidarity=0.85
@@ -56,9 +56,9 @@ def test_non_string_resource_is_rejected_not_crashing(kind, args):
 def test_branch_from_a_prefix_ending_in_a_rejected_event():
     from tests.world.helpers import accepted, action, initial_world, rejected_double_spend
 
-    from verdi.world.branch import BranchSpec, branch_from_snapshot
-    from verdi.world.log import EventLog
-    from verdi.world.replay import TapeStep, replay
+    from verdi_agents.world.branch import BranchSpec, branch_from_snapshot
+    from verdi_agents.world.log import EventLog
+    from verdi_agents.world.replay import TapeStep, replay
 
     log = EventLog()
     state, _ = replay(log, initial_world(), [
@@ -78,7 +78,7 @@ def test_branch_from_a_prefix_ending_in_a_rejected_event():
 def test_snapshot_store_rejects_traversal_and_tampering(tmp_path):
     from tests.world.helpers import initial_world
 
-    from verdi.world.snapshot import SnapshotError, SnapshotStore
+    from verdi_agents.world.snapshot import SnapshotError, SnapshotStore
 
     store = SnapshotStore(tmp_path)
     digest = store.save(initial_world())
@@ -104,7 +104,7 @@ def test_produce_policy_cap_is_cumulative_per_tick_without_economy():
 
 
 def test_role_only_consumption_override_is_rejected():
-    from verdi.world.economy import parse_economy_spec
+    from verdi_agents.world.economy import parse_economy_spec
 
     with pytest.raises(ValueError, match="consumption_per_tick"):
         parse_economy_spec({"version": 1, "consumption_per_tick": {"food": 1},
@@ -128,7 +128,7 @@ def test_boolean_amount_is_not_a_quantity(kind, args):
 
 
 def test_duplicate_objective_ids_are_rejected():
-    from verdi.world.economy import parse_task_objectives
+    from verdi_agents.world.economy import parse_task_objectives
 
     with pytest.raises(ValueError, match="duplicate objective_id"):
         parse_task_objectives({"deliveries": [

@@ -6,8 +6,13 @@ import json
 import pytest
 from tests.analysis.conftest import SCENARIO, TAPE
 
-from verdi.analysis import LoadedScenario, ScenarioLoader, ScenarioLoadError, canonical_tape_hash
-from verdi.schemas import ExperimentManifest
+from verdi_agents.analysis import (
+    LoadedScenario,
+    ScenarioLoader,
+    ScenarioLoadError,
+    canonical_tape_hash,
+)
+from verdi_agents.schemas import ExperimentManifest
 
 
 def _stored_hash() -> str:

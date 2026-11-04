@@ -3,8 +3,8 @@ import json
 
 import pytest
 
-from verdi.agents import ModelClient
-from verdi.agents.client import ModelError
+from verdi_agents.agents import ModelClient
+from verdi_agents.agents.client import ModelError
 
 from .fakes import chat_transport, completion_body, make_config
 
@@ -59,7 +59,7 @@ def test_retry_once_then_fail_on_503():
 
 
 def test_524_origin_timeout_is_retried():
-    """LESSONS 12g: C-1 attempt 6 died on an un-retried HTTP 524
+    """Regression: an earlier live run died on an un-retried HTTP 524
     (Cloudflare origin-timeout from a slow 27B origin). 524 must retry
     like 502/503 and recover on the next attempt."""
     records: list[dict] = []

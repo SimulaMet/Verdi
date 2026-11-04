@@ -6,17 +6,17 @@ from dataclasses import replace
 import pytest
 from tests.world.helpers import initial_world
 
-from verdi.experiments.treatments import (
+from verdi_agents.experiments.treatments import (
     TreatmentOutcome,
     placebo_treatment,
     rights_restoration_treatment,
 )
-from verdi.schemas import ProposedAction, ValidationResult
-from verdi.world.branch import BranchSpec, branch_from_snapshot
-from verdi.world.canonical import canonical_sha256
-from verdi.world.log import EventLog
-from verdi.world.reducer import WorldReducer
-from verdi.world.replay import TapeStep
+from verdi_agents.schemas import ProposedAction, ValidationResult
+from verdi_agents.world.branch import BranchSpec, branch_from_snapshot
+from verdi_agents.world.canonical import canonical_sha256
+from verdi_agents.world.log import EventLog
+from verdi_agents.world.reducer import WorldReducer
+from verdi_agents.world.replay import TapeStep
 
 
 class _Spec:
@@ -126,7 +126,7 @@ def test_placebo_deterministic_across_seeds():
 # rights restoration
 # --------------------------------------------------------------------------- #
 def test_rights_restoration_reports_unapplied_when_no_restoration_in_tape():
-    tape = _base_tape()  # the pilot's shape: sanction -> appeal -> dismissed
+    tape = _base_tape()  # the reference run's shape: sanction -> appeal -> dismissed
     fingerprint_before = _tape_fingerprint(tape)
     outcome = rights_restoration_treatment(_Spec(), tape, seed=0)
     assert isinstance(outcome, TreatmentOutcome)

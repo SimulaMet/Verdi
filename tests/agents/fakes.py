@@ -5,7 +5,7 @@ import json
 
 import httpx
 
-from verdi.config import ModelEndpointConfig
+from verdi_agents.config import ModelEndpointConfig
 
 
 def make_config(**overrides) -> ModelEndpointConfig:

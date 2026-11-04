@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from verdi.governance import ConstitutionStore, UniversalLaw
-from verdi.governance.constitution import UnknownProposalError
+from verdi_agents.governance import ConstitutionStore, UniversalLaw
+from verdi_agents.governance.constitution import UnknownProposalError
 
 from .conftest import CONSTITUTION, LAW, make_vote
 
@@ -122,7 +122,7 @@ def test_effective_at_current_tick_allowed():
 
 
 def test_double_vote_rejected_deterministically():
-    from verdi.governance.constitution import DuplicateVoteError
+    from verdi_agents.governance.constitution import DuplicateVoteError
 
     store = _store()
     store.propose("p1", "a1", 10, "tweak", {"tax_rate": 0.2})

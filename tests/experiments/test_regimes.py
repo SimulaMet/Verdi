@@ -6,15 +6,15 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from verdi.experiments.regimes import (
+from verdi_agents.experiments.regimes import (
     REGIME_LABELS,
     RegimeConfig,
     load_regime,
     manifest_metadata,
 )
 
-REGIMES_DIR = Path(__file__).resolve().parents[2] / "src" / "verdi" / "experiments" / "regimes"
-REGIME_FILES = ("g0_baseline.json", "g1_single_adversary.json", "g3_detection_on.json")
+REGIMES_DIR = Path(__file__).resolve().parents[2] / "src" / "verdi_agents" / "experiments" / "regimes"
+REGIME_FILES = ("baseline.json", "single_adversary.json", "detection_on.json")
 
 
 def test_fixture_regimes_validate():
@@ -29,9 +29,9 @@ def test_fixture_regimes_validate():
 
 
 def test_fixture_regimes_cover_required_casemix():
-    g0 = load_regime(REGIMES_DIR / "g0_baseline.json")
-    g1 = load_regime(REGIMES_DIR / "g1_single_adversary.json")
-    g3 = load_regime(REGIMES_DIR / "g3_detection_on.json")
+    g0 = load_regime(REGIMES_DIR / "baseline.json")
+    g1 = load_regime(REGIMES_DIR / "single_adversary.json")
+    g3 = load_regime(REGIMES_DIR / "detection_on.json")
     # baseline: no adversary, everything off
     assert g0.adversary_count == 0
     assert (g0.reflection, g0.memory, g0.detection) == (False, False, False)
@@ -76,7 +76,7 @@ def test_regime_is_frozen_and_no_extra_fields():
 
 
 def test_manifest_metadata_round_trips_without_schema_change():
-    config = load_regime(REGIMES_DIR / "g3_detection_on.json")
+    config = load_regime(REGIMES_DIR / "detection_on.json")
     metadata = manifest_metadata(config)
     assert metadata["regime_label"] == config.regime
     assert RegimeConfig.model_validate(metadata["regime"]) == config

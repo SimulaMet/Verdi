@@ -1,9 +1,9 @@
-"""Estimand wiring tests (P2 WS-4, tests/analysis).
+"""Tests that each preregistered estimand is computed from the right metric.
 
 Covers:
-* ``run_estimand_values`` maps the six PREREGISTRATION estimands to the
+* ``run_estimand_values`` maps the six preregistered estimands to the
   metrics.py functions (checked against hand-computed values on a small
-  synthetic run, and against the pilot's metric outputs);
+  synthetic run, and against the reference run's metric outputs);
 * ``paired_estimates`` single-pair honesty (sufficient=False, CI withheld)
   and multi-pair behavior (real CIs from n_pairs >= 10, insufficient flag
   for 2-9 pairs).
@@ -18,12 +18,12 @@ from tests.analysis.conftest import (  # noqa: F401  (builders)
     world_state,
 )
 
-from verdi.analysis.estimates import (
+from verdi_agents.analysis.estimates import (
     ESTIMANDS,
     paired_estimates,
     run_estimand_values,
 )
-from verdi.analysis.statistics import PairedResult
+from verdi_agents.analysis.statistics import PairedResult
 
 # --------------------------------------------------------------------------- #
 # synthetic ledger: 4 action events (1 rejected), 1 sanction, 1 upheld appeal
@@ -72,7 +72,7 @@ def test_run_estimand_values_maps_all_six():
     assert values["false_punishment_rate"] == pytest.approx(1.0)
     # terminal snapshot tick 6: mean(3, 7), gini of [3, 7]
     assert values["welfare_mean_food"] == pytest.approx(5.0)
-    from verdi.analysis.metrics import gini
+    from verdi_agents.analysis.metrics import gini
 
     assert values["inequality_gini_food"] == pytest.approx(gini([3.0, 7.0]))
     # restriction end = tick 4 (rights_restored); post ticks 5, 6 both meet
@@ -151,13 +151,13 @@ def test_run_dict_missing_estimates_raises():
 
 
 def test_paired_estimates_empty_raises():
-    # SF2b: an empty pair sequence is a caller bug, not an estimate.
+    # An empty pair sequence is a caller bug, not an estimate.
     with pytest.raises(ValueError, match="at least one matched pair"):
         paired_estimates([])
 
 
 # --------------------------------------------------------------------------- #
-# SF1: sustained_recovery operational definition (PREREGISTRATION v1.1)
+# sustained_recovery operational definition (preregistered, v1.1)
 # --------------------------------------------------------------------------- #
 
 def _single_sanction_events(sid="s1", subject="a-01", end=4):
@@ -172,7 +172,7 @@ def _single_sanction_events(sid="s1", subject="a-01", end=4):
 
 
 def test_sustained_recovery_single_crossing_disagrees_with_k_boolean():
-    # SF1 fail-before/pass-after: the agent meets the pre-sanction level
+    # Fails under the old formula, passes under the new one: the agent meets the pre-sanction level
     # at only ONE of three post-restriction snapshot ticks (ticks 6, 7, 9;
     # food 1, 1, 3; pre-sanction level 3).
     #   OLD formula: k=1 consecutive-crossing boolean -> no 2 consecutive
@@ -197,7 +197,7 @@ def test_sustained_recovery_single_crossing_disagrees_with_k_boolean():
 
 
 def test_sustained_recovery_mean_of_per_agent_fractions():
-    # SF1: two treated agents, each with post-restriction snapshot ticks
+    # Two treated agents, each with post-restriction snapshot ticks
     # {5,6,7,8}. a-01 meets its pre-sanction level at tick 5 only (1/4);
     # a-02 meets at ticks 6 and 8 (2/4).
     #   NEW formula (v1.1 operational): estimand = mean(1/4, 2/4) = 3/8.
@@ -232,12 +232,12 @@ def test_sustained_recovery_mean_of_per_agent_fractions():
 
 
 # --------------------------------------------------------------------------- #
-# SF2: false_punishment_rate operational definition (PREREGISTRATION v1.1)
+# false_punishment_rate operational definition (preregistered, v1.1)
 # --------------------------------------------------------------------------- #
 
 def _sanction_with_restoration_but_dismissed_appeal():
     # A sanction whose appeal was DISMISSED but whose rights were later
-    # restored (rights_restored event): under the PREREG v1.0 ideal
+    # restored (rights_restored event): under the preregistered v1.0 ideal
     # definition ("upheld-then-reversed OR appealed-and-restored") this
     # sanction counts in the numerator via the restoration leg; under
     # the v1.1 OPERATIONAL definition (appealed-and-upheld / all) it
@@ -258,7 +258,7 @@ def _sanction_with_restoration_but_dismissed_appeal():
 
 
 def test_false_punishment_rate_restoration_leg_disagrees():
-    # SF2: restored-but-appeal-dismissed sanction. In the v1.0 ledger
+    # Restored-but-appeal-dismissed sanction. In the v1.0 ledger
     # schema there is NO sanction state distinct from "upheld appeal":
     # the only reversal evidence is a `rights_restored` event, which
     # this synthetic run carries alongside a DISMISSED appeal.

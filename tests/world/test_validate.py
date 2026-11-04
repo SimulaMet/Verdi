@@ -1,6 +1,6 @@
-"""Regression tests for the validator/reducer deposit invariant (Tranche 11 follow-up).
+"""Regression tests for the validator/reducer deposit invariant.
 
-The live Stage B seed-1 (fix1) run crashed with
+An earlier 12-agent live run crashed with
 ``InvariantViolationError: negative balance: agent=b01 resource=credits
 value=-2.0`` because ``validate_action`` accepted a ``deposit`` that exceeded
 the agent's holdings: the deposit/withdraw branch checked only the WORLD pool
@@ -9,9 +9,9 @@ passed validation and the reducer's final non-negative assertion failed.
 """
 from __future__ import annotations
 
-from verdi.schemas import AgentState, ProposedAction, ValueProfile, WorldState
-from verdi.world.reducer import WorldReducer
-from verdi.world.validate import validate_action
+from verdi_agents.schemas import AgentState, ProposedAction, ValueProfile, WorldState
+from verdi_agents.world.reducer import WorldReducer
+from verdi_agents.world.validate import validate_action
 
 _VALUES = ValueProfile(
     integrity=0.8, fairness=0.9, cooperation=0.7, autonomy=0.5, solidarity=0.85

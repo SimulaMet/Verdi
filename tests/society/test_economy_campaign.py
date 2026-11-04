@@ -1,4 +1,4 @@
-"""P0-B: offline (fake ModelCaller) campaign tests for the constrained
+"""Offline (fake ModelCaller) campaign tests for the constrained
 economy + objective task-success oracle.
 
 Shows, with a fully scripted caller and no LLM:
@@ -18,9 +18,9 @@ import json
 from pathlib import Path
 from typing import Any
 
-from verdi.agents.client import ModelResult
-from verdi.analysis.scenario import load_scenario
-from verdi.society.campaign import SocietyCampaign
+from verdi_agents.agents.client import ModelResult
+from verdi_agents.analysis.scenario import load_scenario
+from verdi_agents.society.campaign import SocietyCampaign
 
 
 # --------------------------------------------------------------------------- #
@@ -121,7 +121,7 @@ def _scenario() -> dict[str, Any]:
     sc = load_scenario("tests/fixtures/scenarios/institutional_recovery_smoke.yaml")
     # The smoke file carries min_commons_reserve {food: 12.0}: withdrawals are
     # constitutionally floored at 12. This test drives deposits, never
-    # withdrawals, but drop the floor so the run exercises ONLY the P0-B
+    # withdrawals, but drop the floor so the run exercises ONLY the economy
     # machinery (cap/cost/consumption/objectives) in isolation.
     sc["constitution"]["rules"].pop("min_commons_reserve", None)
     return sc

@@ -1,9 +1,9 @@
-"""Tests for src/verdi/society/memory.py."""
+"""Tests for src/verdi_agents/society/memory.py."""
 from __future__ import annotations
 
 import pytest
 
-from verdi.society import AgentMemory
+from verdi_agents.society import AgentMemory
 
 
 def test_version_bumps_on_appends():
@@ -50,7 +50,7 @@ def test_per_agent_privacy():
 
 def test_consolidation_triggers_when_window_overflows():
     """Consolidation triggers when overflow >= 4 entries (batched, not every tick)."""
-    from verdi.society.memory import _RECENT_WINDOW
+    from verdi_agents.society.memory import _RECENT_WINDOW
     mem = AgentMemory()
     # Below threshold: window + 3 overflow → no consolidation yet
     for i in range(_RECENT_WINDOW + 3):
@@ -75,7 +75,7 @@ def test_consolidation_triggers_when_window_overflows():
 
 def test_consolidation_preserves_recent_content():
     """After consolidation, recent entries are untouched."""
-    from verdi.society.memory import _RECENT_WINDOW
+    from verdi_agents.society.memory import _RECENT_WINDOW
     mem = AgentMemory()
     for i in range(_RECENT_WINDOW + 2):
         mem.append_reflection("a1", f"memory {i}")

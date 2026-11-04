@@ -1,11 +1,11 @@
-"""G0/G1 tests for the hidden probe bank (P1-D, G3 isolation defense)."""
+"""Tests for the hidden probe bank and its isolation from the agents."""
 from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
 
-from verdi.measurement import ProbeBank
-from verdi.schemas import ProbeItem
+from verdi_agents.measurement import ProbeBank
+from verdi_agents.schemas import ProbeItem
 
 
 def _bank() -> ProbeBank:

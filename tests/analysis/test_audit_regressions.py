@@ -1,4 +1,4 @@
-"""Regression tests for defects found in the 2026-11 system audit (AUDIT.md)."""
+"""Regression tests for previously fixed bugs."""
 from __future__ import annotations
 
 import json
@@ -6,7 +6,7 @@ import json
 import pytest
 import yaml
 
-from verdi.analysis.outcome_metrics import recovery_time
+from verdi_agents.analysis.outcome_metrics import recovery_time
 
 
 def test_recovery_time_maps_outcomes_to_due_ticks_in_evaluation_order(tmp_path):
@@ -50,7 +50,7 @@ def _imposed(sid, subject, tick):
 
 
 def test_open_exclusion_ends_at_last_lifecycle_tick_not_ledger_tick(tmp_path):
-    from verdi.analysis.outcome_metrics import exclusion_episodes
+    from verdi_agents.analysis.outcome_metrics import exclusion_episodes
 
     _write_run(tmp_path, [_imposed("s1", "grace", 19)], range(20), [1, 50, 104])
     # bounded by the last LIFECYCLE tick (19), not the ledger counter (104 -> 85)
@@ -58,7 +58,7 @@ def test_open_exclusion_ends_at_last_lifecycle_tick_not_ledger_tick(tmp_path):
 
 
 def test_overlapping_exclusions_are_merged(tmp_path):
-    from verdi.analysis.outcome_metrics import exclusion_episodes
+    from verdi_agents.analysis.outcome_metrics import exclusion_episodes
 
     _write_run(tmp_path, [
         _imposed("s1", "dave", 0), _imposed("s2", "dave", 2),
@@ -71,7 +71,7 @@ def test_overlapping_exclusions_are_merged(tmp_path):
 
 
 def test_comparative_report_marks_undefined_baseline_not_evaluable(tmp_path):
-    from verdi.analysis.comparative_report import _recovery_row
+    from verdi_agents.analysis.comparative_report import _recovery_row
 
     (tmp_path / "events.jsonl").write_text(
         json.dumps({"event_id": 1, "tick": 31, "kind": "task_completed"}) + "\n")
@@ -82,7 +82,7 @@ def test_comparative_report_marks_undefined_baseline_not_evaluable(tmp_path):
 
 
 def test_completion_due_tick_is_lifecycle_tick_not_ledger_tick(tmp_path):
-    from verdi.analysis.outcome_metrics import completion_rate
+    from verdi_agents.analysis.outcome_metrics import completion_rate
 
     rows = [
         {"event_id": 0, "tick": 55, "kind": "action_accepted",
@@ -104,7 +104,7 @@ def _scenario(**extra):
     import copy
     from pathlib import Path
 
-    from verdi.analysis.scenario import load_scenario
+    from verdi_agents.analysis.scenario import load_scenario
 
     sc = copy.deepcopy(load_scenario(Path(__file__).resolve().parents[2] / "examples" / "starter.yaml"))
     sc.update(extra)
@@ -122,7 +122,7 @@ def _scenario(**extra):
     (lambda sc: sc.update(agents=[]), "no agents"),
 ])
 def test_bad_scenario_values_fail_at_load_time(mutate, message):
-    from verdi.analysis.scenario import ScenarioLoadError, build_t0_state
+    from verdi_agents.analysis.scenario import ScenarioLoadError, build_t0_state
 
     sc = _scenario()
     mutate(sc)
@@ -131,7 +131,7 @@ def test_bad_scenario_values_fail_at_load_time(mutate, message):
 
 
 def test_completion_due_tick_counts_consumption_ticks_when_economy_active(tmp_path):
-    from verdi.analysis.outcome_metrics import completion_rate
+    from verdi_agents.analysis.outcome_metrics import completion_rate
 
     rows = [{"event_id": i, "tick": i + 1, "kind": "consumption"} for i in range(11)]
     # every tick-10 action was quarantined: no soc-t10 task id in the ledger

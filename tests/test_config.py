@@ -1,5 +1,5 @@
 
-from verdi.config import model_endpoint_from_env
+from verdi_agents.config import model_endpoint_from_env
 
 
 def test_config_from_env(monkeypatch) -> None:

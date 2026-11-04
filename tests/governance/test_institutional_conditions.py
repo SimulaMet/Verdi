@@ -1,7 +1,7 @@
 """Fixed vs revisable procedures keep the same meeting and voting machinery."""
 from __future__ import annotations
 
-from verdi.governance import ConstitutionStore, UniversalLaw
+from verdi_agents.governance import ConstitutionStore, UniversalLaw
 
 from .conftest import CONSTITUTION, LAW, make_vote
 

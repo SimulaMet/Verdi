@@ -1,4 +1,4 @@
-"""Regression tests for defects found in the 2026-11 system audit (AUDIT.md)."""
+"""Regression tests for previously fixed bugs."""
 from __future__ import annotations
 
 import threading
@@ -6,8 +6,8 @@ import time
 
 import pytest
 
-from verdi.analysis.comparative_report import _institution_rows
-from verdi.experiments import sweep as sw
+from verdi_agents.analysis.comparative_report import _institution_rows
+from verdi_agents.experiments import sweep as sw
 
 from .test_sweep import STARTER, _no_real_env  # noqa: F401 - autouse fixture
 
@@ -81,8 +81,8 @@ def test_ctrl_c_does_not_start_queued_runs(tmp_path):
 def test_interview_post_pass_audit_returns_summary(tmp_path, monkeypatch):
     # audit_from_file is synchronous; wrapping its dict in asyncio.run crashed
     # every post-pass audit with "a coroutine was expected".
-    import verdi.audit.interview_audit as ia
-    from verdi.experiments.interview_experiment import _audit_run
+    import verdi_agents.audit.interview_audit as ia
+    from verdi_agents.experiments.interviews import _audit_run
 
     (tmp_path / "interviews.jsonl").write_text("{}\n")
     monkeypatch.setattr(ia, "audit_from_file", lambda *a, **k: {"provenance_rows": 1})
@@ -95,7 +95,7 @@ def test_interview_post_pass_audit_returns_summary(tmp_path, monkeypatch):
     ("Yes.", "yes"), ('"no"', "no"), ("Yes, I would.", "yes"),
 ])
 def test_probe_parser_accepts_punctuated_yes_no(reply, choice):
-    from verdi.measurement.longitudinal import _parse_choice
+    from verdi_agents.measurement.longitudinal import _parse_choice
 
     assert _parse_choice(reply, ["yes", "no"]) == (choice, False)
 
@@ -106,13 +106,13 @@ def test_probe_parser_accepts_punctuated_yes_no(reply, choice):
     ("I rate it 7 out of 10", ("0", True)),
 ])
 def test_probe_parser_likert_takes_last_in_range_integer(reply, expected):
-    from verdi.measurement.longitudinal import _parse_choice
+    from verdi_agents.measurement.longitudinal import _parse_choice
 
     assert _parse_choice(reply, [str(i) for i in range(6)]) == expected
 
 
 def test_paired_run_without_output_root_fails_readably(tmp_path):
-    from verdi.experiments.paired_run import run_pair
+    from verdi_agents.experiments.paired_run import run_pair
 
     config = {"experiment_id": "x", "base_scenario": STARTER, "arms": ["fixed"],
               "seeds": [1], "total_ticks_override": None, "output_root": None}
@@ -141,13 +141,13 @@ def test_rerun_moves_previous_attempt_aside_instead_of_appending(tmp_path):
     ("Answer: 3 (scale 0-5)", "3"),
 ])
 def test_probe_parser_likert_ignores_scale_and_denominator(reply, choice):
-    from verdi.measurement.longitudinal import _parse_choice
+    from verdi_agents.measurement.longitudinal import _parse_choice
 
     assert _parse_choice(reply, [str(i) for i in range(6)]) == (choice, False)
 
 
 def test_paired_run_rerun_sets_previous_attempt_aside(tmp_path, monkeypatch):
-    import verdi.experiments.paired_run as pr
+    import verdi_agents.experiments.paired_run as pr
 
     calls = []
 
@@ -169,7 +169,7 @@ def test_paired_run_rerun_sets_previous_attempt_aside(tmp_path, monkeypatch):
 
 
 def test_causal_guard_ignores_verbatim_model_text():
-    from verdi.experiments.g5_close import _without_model_text, causal_word_guard
+    from verdi_agents.experiments.pair_audit import _without_model_text, causal_word_guard
 
     report = {"judge": {"rows": [{"rationale": "The proposal is causally linked.",
                                   "raw": "causal causal causal"}]}}
@@ -179,7 +179,7 @@ def test_causal_guard_ignores_verbatim_model_text():
 
 
 def test_nearest_event_returns_latest_event_by_lifecycle_tick():
-    from verdi.measurement.interview_values import _nearest_event
+    from verdi_agents.measurement.interview_values import _nearest_event
 
     events = [
         {"event_id": 0, "tick": 1, "actor_id": "e", "kind": "a",
@@ -200,13 +200,13 @@ def test_nearest_event_returns_latest_event_by_lifecycle_tick():
     ("Answer: 4 — 10x more", "4"),
 ])
 def test_probe_parser_likert_answer_leads_over_trailing_reasoning(reply, choice):
-    from verdi.measurement.longitudinal import _parse_choice
+    from verdi_agents.measurement.longitudinal import _parse_choice
 
     assert _parse_choice(reply, [str(i) for i in range(6)]) == (choice, False)
 
 
 def test_causal_guard_ignores_model_stance_in_error_field():
-    from verdi.experiments.g5_close import _without_model_text, causal_word_guard
+    from verdi_agents.experiments.pair_audit import _without_model_text, causal_word_guard
 
     causal_word_guard(_without_model_text(
         {"rows": [{"error": "invalid stance 'causally_compliant'"}]}))

@@ -1,4 +1,4 @@
-"""Scheduler stress fixture (WS-7): SeededScheduler stability under scale.
+"""Scheduler stress tests: SeededScheduler stability under scale.
 
 Pin, with deliberately adversarial (colliding-key) loads:
 1. byte-identical determinism across scheduler instances and run orderings;
@@ -7,13 +7,13 @@ Pin, with deliberately adversarial (colliding-key) loads:
 4. scoped world-state sensitivity (a single agent's state moves only its
    own tasks, and the unperturbed world always yields the unperturbed order).
 
-Test-only workstream: source bugs are findings, not fixes.
+These tests only check behavior; they do not change the scheduler.
 """
 from __future__ import annotations
 
 import time
 
-from verdi.scheduler import SeededScheduler
+from verdi_agents.scheduler import SeededScheduler
 
 from .conftest import make_agent, make_task
 from .fixtures_stress import (

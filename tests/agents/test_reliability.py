@@ -1,8 +1,8 @@
-"""P3 reliability soak for the ModelClient retry path (WS-6).
+"""Reliability soak tests for the ModelClient retry path.
 
 Deterministic, offline, no wall-clock sleep: ``asyncio.sleep`` is replaced by a
 recorder and the backoff RNG is seeded per scenario. Expected values are
-recomputed from ``verdi.agents.client`` constants (``_BACKOFF_BASE``,
+recomputed from ``verdi_agents.agents.client`` constants (``_BACKOFF_BASE``,
 ``_BACKOFF_CAP``, ``_backoff_delay``), never hardcoded.
 """
 from __future__ import annotations
@@ -14,8 +14,8 @@ import random
 import httpx
 import pytest
 
-from verdi.agents import ModelClient
-from verdi.agents.client import _BACKOFF_BASE, _BACKOFF_CAP, ModelError, _backoff_delay
+from verdi_agents.agents import ModelClient
+from verdi_agents.agents.client import _BACKOFF_BASE, _BACKOFF_CAP, ModelError, _backoff_delay
 
 from .fakes import completion_body, make_config
 

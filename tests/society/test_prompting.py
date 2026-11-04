@@ -1,13 +1,13 @@
-"""Tests for src/verdi/society/prompting.py.
+"""Tests for src/verdi_agents/society/prompting.py.
 
-Contains the acceptance-critical prompt-observable feedback test
-(docs/SOCIETY_V2_PROTOCOL.md, section 3): a later agent's prompt MUST
+Contains the acceptance-critical prompt-observable feedback test:
+a later agent's prompt MUST
 change when an earlier committed event changes.
 """
 from __future__ import annotations
 
-from verdi.schemas import AgentState, RightsState, Task, ValueProfile, WorldState
-from verdi.society import SOCIAL_PROMPT_VERSION, AgentMemory, build_social_prompt
+from verdi_agents.schemas import AgentState, RightsState, Task, ValueProfile, WorldState
+from verdi_agents.society import SOCIAL_PROMPT_VERSION, AgentMemory, build_social_prompt
 
 _VALUES = ValueProfile(
     integrity=0.5, fairness=0.5, cooperation=0.5, autonomy=0.5, solidarity=0.5

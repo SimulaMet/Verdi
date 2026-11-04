@@ -1,6 +1,0 @@
-{
-  "regime": "g0_baseline.json",
-  "tape_ref": "experiments/task_tape/pilot_v1.json",
-  "task_tape_hash": "37c18e7870aff031f66ae6bf80104cbea83ab81ebd7e1e7e780c8c32e3db2e7b",
-  "notes": "Baseline arm: G0 no-adversary regime over the recorded pilot_v1 task tape. The tape is referenced (not duplicated) to avoid copying the ~37KB pilot tape; task_tape_hash is the sha256 of the canonical JSON body of experiments/task_tape/pilot_v1.json (tape_hash key excluded) and must match ScenarioLoader.tape_hash for the tape to be considered the same recorded tape."
-}

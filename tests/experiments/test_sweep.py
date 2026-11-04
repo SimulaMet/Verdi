@@ -14,9 +14,9 @@ from pathlib import Path
 import pytest
 import yaml
 
-from verdi.analysis.scenario import build_t0_state
-from verdi.experiments import sweep as sw
-from verdi.society.campaign import SocietyCampaign
+from verdi_agents.analysis.scenario import build_t0_state
+from verdi_agents.experiments import sweep as sw
+from verdi_agents.society.campaign import SocietyCampaign
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO_ROOT / "tests"))
@@ -213,7 +213,7 @@ def test_shipped_example_sweeps_validate(name, tmp_path, capsys):
 
 
 def test_verdi_cli_routes_sweep(capsys, tmp_path):
-    from verdi.cli import main
+    from verdi_agents.cli import main
     assert main(["sweep", "--scenario", STARTER, "--output", str(tmp_path), "--dry-run"]) == 0
     assert "Sweep:" in capsys.readouterr().out
 

@@ -1,10 +1,10 @@
-"""Metric definition tests (P1-E)."""
+"""Tests for the metric definitions."""
 from __future__ import annotations
 
 import pytest
 from tests.analysis.conftest import appeal, event, probe, sanction, world_state
 
-from verdi.analysis.metrics import (
+from verdi_agents.analysis.metrics import (
     attempted_vs_executed_violations,
     false_sanction_rate,
     gini,

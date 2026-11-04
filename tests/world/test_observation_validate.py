@@ -1,11 +1,11 @@
-"""Lane W tests: agent_observation + validate_action (pure, deterministic)."""
+"""Tests for agent_observation + validate_action (pure, deterministic)."""
 from __future__ import annotations
 
 import pytest
 
-from verdi.schemas import AgentState, ProposedAction, RightsState, ValueProfile, WorldState
-from verdi.world.observation import agent_observation
-from verdi.world.validate import validate_action
+from verdi_agents.schemas import AgentState, ProposedAction, RightsState, ValueProfile, WorldState
+from verdi_agents.world.observation import agent_observation
+from verdi_agents.world.validate import validate_action
 
 
 def _values() -> ValueProfile:

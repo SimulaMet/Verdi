@@ -3,8 +3,8 @@ from __future__ import annotations
 
 import pytest
 
-from verdi.governance import AppealEngine, SanctionEngine
-from verdi.governance.appeals import AppealError
+from verdi_agents.governance import AppealEngine, SanctionEngine
+from verdi_agents.governance.appeals import AppealError
 
 from .conftest import make_appeal, make_sanction
 

@@ -2,7 +2,7 @@
 # institutional_recovery_constrained.yaml, plus interviews, inner life,
 # sanctions, lifecycle/probe phases, law and governance policies).
 #
-#   python -m verdi.society.live --scenario examples/full.yaml --run-dir runs/full
+#   verdi-agents run examples/full.yaml        # results in runs/full/
 #
 # This is a documented REFERENCE, not a validated study. A test loads it and
 # runs it offline so it cannot drift from the engine. Delete blocks you do not
@@ -12,7 +12,7 @@
 
 # ---- Model (OpenAI-compatible endpoint) -------------------------------------
 model:
-  base_url: https://simulachat.sushant.pp.ua/api/v1
+  base_url: http://localhost:8000/v1
   name: default
   # api_key_env: MODEL_API_KEY   # optional: env var holding the key (default shown)
   # timeout_seconds: 120         # optional

@@ -10,9 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from verdi.agents.client import ModelResult
-from verdi.analysis.scenario import build_t0_state, load_scenario
-from verdi.society.campaign import SocietyCampaign
+from verdi_agents.agents.client import ModelResult
+from verdi_agents.analysis.scenario import build_t0_state, load_scenario
+from verdi_agents.society.campaign import SocietyCampaign
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLES = ["starter.yaml", "full.yaml"]

@@ -1,4 +1,4 @@
-"""Offline tests for the Society V2 live entrypoint (mocked transport).
+"""Offline tests for the live society-run entrypoint (mocked transport).
 
 No network: the pooled ModelClient runs against httpx.MockTransport.
 Verifies env resolution, the pre-run smoke call, end-to-end live wiring,
@@ -13,9 +13,9 @@ from typing import Any
 import httpx
 import pytest
 
-from verdi.agents.client import ModelClient
-from verdi.config import ModelEndpointConfig
-from verdi.society import live as live_module
+from verdi_agents.agents.client import ModelClient
+from verdi_agents.config import ModelEndpointConfig
+from verdi_agents.society import live as live_module
 
 SCENARIO = Path("tests/fixtures/scenarios/society_v2_stageA.json")
 
@@ -136,7 +136,7 @@ def test_main_end_to_end_with_mock_transport(tmp_path: Path, monkeypatch: pytest
     # free of key material under the broad patterns.
     for path in run_dir.rglob("*"):
         if path.is_file() and path != report:
-            from verdi.audit.judge_live import _assert_no_key_material
+            from verdi_agents.audit.judge import _assert_no_key_material
             _assert_no_key_material(path.read_text(encoding="utf-8", errors="replace"), str(path))
     # The derived report embeds the plotly.js open-source bundle (which trips
     # the broad sk-*/api_key= patterns), so it is guarded PRECISELY: it must

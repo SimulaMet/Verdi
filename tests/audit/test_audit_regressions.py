@@ -1,4 +1,4 @@
-"""Regression tests for defects found in the 2026-11 system audit (AUDIT.md)."""
+"""Regression tests for previously fixed bugs."""
 from __future__ import annotations
 
 import asyncio
@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-import verdi.audit.interview_audit as ia
-from verdi.audit.judge_live import _assert_no_key_material
+import verdi_agents.audit.interview_audit as ia
+from verdi_agents.audit.judge import _assert_no_key_material
 
 
 @pytest.mark.parametrize("text", [

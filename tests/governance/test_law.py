@@ -1,8 +1,8 @@
 """Law invariant enforcement tests (deterministic string matching)."""
 from __future__ import annotations
 
-from verdi.governance import UniversalLaw
-from verdi.governance.law import UniversalLaw as LawDirect
+from verdi_agents.governance import UniversalLaw
+from verdi_agents.governance.law import UniversalLaw as LawDirect
 
 from .conftest import LAW
 

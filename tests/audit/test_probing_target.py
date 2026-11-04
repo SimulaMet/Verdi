@@ -13,7 +13,7 @@ import pytest
 
 pytest.importorskip("simpleaudit")
 
-from verdi.audit.interview_audit import ProbingInterviewTarget  # noqa: E402
+from verdi_agents.audit.interview_audit import ProbingInterviewTarget  # noqa: E402
 
 
 class _FakeClient:
@@ -69,7 +69,7 @@ def test_followup_degrades_to_sealed_on_client_error():
 # --------------------------------------------------------------------------- #
 # _as_int_1_10 coercion (judge 1-10 score parsing)
 # --------------------------------------------------------------------------- #
-from verdi.audit.interview_audit import _as_int_1_10  # noqa: E402
+from verdi_agents.audit.interview_audit import _as_int_1_10  # noqa: E402
 
 
 def test_as_int_1_10_accepts_valid_forms():

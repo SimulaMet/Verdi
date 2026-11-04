@@ -1,0 +1,6 @@
+{
+  "regime": "single_adversary.json",
+  "tape_ref": "tests/fixtures/reference_run/task_tape/pilot_v1.json",
+  "task_tape_hash": "37c18e7870aff031f66ae6bf80104cbea83ab81ebd7e1e7e780c8c32e3db2e7b",
+  "notes": "Treatment arm: same recorded pilot_v1 task tape as arms_baseline.json (matched by identical task_tape_hash and identical origin snapshot at the governance branch point); only the regime and the treatment (rights_restoration_treatment) differ, per PREREGISTRATION.md matched-pair design. Tape is referenced, not duplicated."
+}

@@ -8,13 +8,13 @@ from pathlib import Path
 import pytest
 from tests.world.helpers import initial_world
 
-from verdi.experiments.pairs import MatchedPair, make_matched_pair, tape_hash
-from verdi.schemas import ProposedAction, ValidationResult
-from verdi.world.branch import BranchSpec, branch_from_snapshot
-from verdi.world.canonical import canonical_json
-from verdi.world.log import EventLog
-from verdi.world.reducer import WorldReducer
-from verdi.world.replay import TapeStep, replay_in_memory
+from verdi_agents.experiments.pairs import MatchedPair, make_matched_pair, tape_hash
+from verdi_agents.schemas import ProposedAction, ValidationResult
+from verdi_agents.world.branch import BranchSpec, branch_from_snapshot
+from verdi_agents.world.canonical import canonical_json
+from verdi_agents.world.log import EventLog
+from verdi_agents.world.reducer import WorldReducer
+from verdi_agents.world.replay import TapeStep, replay_in_memory
 
 
 def _prefix_log() -> EventLog:
@@ -109,7 +109,7 @@ def test_end_to_end_pair_from_branch_results():
         origin_state_hash=origin_hash, origin_event_count=len(log),
         origin_tick=snapshot.tick, branch_id="placebo", treatment_seed=0,
     ))
-    from verdi.world.branch import manifest_for_branch
+    from verdi_agents.world.branch import manifest_for_branch
 
     treatment = manifest_for_branch(res_t.spec, base)
     placebo = manifest_for_branch(res_p.spec, base)

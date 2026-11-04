@@ -1,7 +1,7 @@
-"""Shared fixtures for the G5-close tests (offline only, no network, no .env).
+"""Shared fixtures for the pair-judge and pair-audit tests (offline, no network, no .env).
 
-The REAL run root constant is resolved against the MAIN repo root ONLY here
-in tests (per worker contract); src code never hardcodes it.
+The path to the real recorded run is resolved against the main repo root
+only here in tests; src code never hardcodes it.
 """
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 
-#: Main checkout (integrator-owned; tests read the gitignored run root only).
-MAIN_REPO_ROOT = Path("/Users/sushantgautam/Documents/verdi")
+#: Main checkout (tests only read the gitignored run directory from it).
+MAIN_REPO_ROOT = Path(__file__).resolve().parents[2]
 REAL_G5_RUN_ROOT = MAIN_REPO_ROOT / "runs" / "live" / "g5_pairs" / "20261010T162928Z"
 
 requires_real_run_root = pytest.mark.skipif(
     not REAL_G5_RUN_ROOT.is_dir(),
-    reason=f"real G5 run root {REAL_G5_RUN_ROOT} not present",
+    reason=f"real paired-arms run root {REAL_G5_RUN_ROOT} not present",
 )
 
 
@@ -99,10 +99,11 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
 
 
 def make_mini_run_root(root: Path) -> Path:
-    """2-pair synthetic G5 run root: 3 tape rows per pair (ticks 1, 2, 13).
+    """2-pair synthetic paired-arms run root: 3 tape rows per pair (ticks 1, 2, 13).
 
-    Clean by construction: B1..B4 all pass. Suffix row (tick 13) is
-    IDENTICAL across pairs (B4). Each pair also carries a
+    Clean by construction: all four audits (B1..B4) pass. Suffix row
+    (tick 13) is IDENTICAL across pairs (prompt-invariance audit, B4).
+    Each pair also carries a
     ``treatment/event_log.jsonl`` with one accepted action event per row
     so the engine outcome maps (decision "accepted").
     """

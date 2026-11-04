@@ -1,4 +1,4 @@
-"""t10 real-assembly driver: model-voted proposals and votes (Society V2 §1.2).
+"""Tests for the real assembly: model-written proposals and model votes.
 
 Uses a FAKE ModelCaller (canned JSON, no network) — the Assembly's job is to
 route model output through the deterministic engine, never to decide outcomes
@@ -11,8 +11,8 @@ import hashlib
 import json
 import re
 
-from verdi.governance.assembled import Assembly
-from verdi.schemas import AgentState, ValueProfile, WorldState
+from verdi_agents.governance.assembly import Assembly
+from verdi_agents.schemas import AgentState, ValueProfile, WorldState
 
 from .conftest import ELIGIBLE, make_engine
 
@@ -239,8 +239,8 @@ def test_parallel_batch_runner_matches_sequential_outcomes():
     proposals, votes, quarantine records, abstentions and outcome as the
     default sequential runner for identical model outputs — only call
     wall-clock/telemetry order may differ."""
-    from verdi.governance.assembled import _run_sequential
-    from verdi.society.campaign import _run_bounded
+    from verdi_agents.governance.assembly import _run_sequential
+    from verdi_agents.society.campaign import _run_bounded
 
     def handler(phase, voter, proposal):
         if phase == "delib":
