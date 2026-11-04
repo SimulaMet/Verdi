@@ -27,10 +27,11 @@ import os
 import shutil
 import sys
 import time
+from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
-from verdi.agents.client import ModelClient
+from verdi.agents.client import _BACKOFF_CAP, _CONNECT_TIMEOUT, _POOL_TIMEOUT, ModelClient
 from verdi.analysis.scenario import load_scenario
 from verdi.audit.judge_live import _assert_no_key_material
 from verdi.config import ModelEndpointConfig, api_key_values, model_endpoint_from_env
@@ -79,7 +80,8 @@ def _progress_count(run_dir: Path) -> int:
     )
 
 
-async def _stall_watchdog(run_dir: Path, stall_timeout_seconds: float) -> None:
+async def _stall_watchdog(run_dir: Path, stall_timeout_seconds: float,
+                          extra_progress: Callable[[], int] | None = None) -> None:
     """Independent liveness task for a live run.
 
     A hung endpoint can hold a socket open without ever responding, which
@@ -92,12 +94,17 @@ async def _stall_watchdog(run_dir: Path, stall_timeout_seconds: float) -> None:
     partial run is preserved. It runs as a SEPARATE asyncio task so it
     survives a hung in-flight call.
     """
+    def progress() -> int:
+        # extra_progress: in-process completed-call counter, so a long batch
+        # whose file lines are written only at the end still counts as alive.
+        return _progress_count(run_dir) + (extra_progress() if extra_progress else 0)
+
     deadline = time.monotonic() + stall_timeout_seconds
-    last_count = _progress_count(run_dir)
+    last_count = progress()
     while True:
         await asyncio.sleep(_HEARTBEAT_INTERVAL_SECONDS)
         now = time.monotonic()
-        count = _progress_count(run_dir)
+        count = progress()
         _write_run_meta(run_dir, {
             "heartbeat_utc": datetime.now(timezone.utc).isoformat(),
             "events_logged": _file_line_count(run_dir / "events.jsonl"),
@@ -212,7 +219,9 @@ async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency
         # Never let a (possibly user-supplied) stall window trip while the
         # client is still legitimately retrying one dead call: floor it at
         # timeout_seconds x (max_retries+1) + one heartbeat interval.
-        retry_window = config.timeout_seconds * (config.max_retries + 1) + _HEARTBEAT_INTERVAL_SECONDS
+        # Per attempt: pool wait + connect + read timeout + max backoff.
+        per_attempt = config.timeout_seconds + _POOL_TIMEOUT + _CONNECT_TIMEOUT + _BACKOFF_CAP
+        retry_window = per_attempt * (config.max_retries + 1) + _HEARTBEAT_INTERVAL_SECONDS
         stall_timeout = stall_timeout_seconds if stall_timeout_seconds is not None \
             else DEFAULT_STALL_TIMEOUT_SECONDS
         if stall_timeout < retry_window:
@@ -221,7 +230,8 @@ async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency
                 f"(client retry window)", flush=True,
             )
             stall_timeout = retry_window
-        watchdog = asyncio.create_task(_stall_watchdog(run_dir, stall_timeout))
+        watchdog = asyncio.create_task(_stall_watchdog(
+            run_dir, stall_timeout, extra_progress=lambda: getattr(client, "completed_calls", 0)))
         try:
             result = await campaign.run()
         except Exception:
@@ -252,7 +262,11 @@ async def _run(scenario_path: Path, run_dir: Path, seed: int | None, concurrency
     print(f"  events             = {len(result.events)}")
     print(f"  probes             = {len(result.probes)}")
     print(f"  assembly           = {(result.assembly_outcome or {}).get('outcome')}")
-    print(f"  sanctions/appeals  = {len(result.sanction_events)}/{len(result.appeal_events)}")
+    n_sanctions = sum(1 for e in result.sanction_events
+                      if e.get("kind") == "sanction_imposed"
+                      and e.get("decision", "accepted") == "accepted")
+    n_appeals = sum(1 for e in result.appeal_events if e.get("phase") == "filed")
+    print(f"  sanctions/appeals  = {n_sanctions}/{n_appeals}")
     print(f"  replay_matches     = {result.replay_matches}")
     print(f"  replay_log_identical = {result.replay_log_identical}")
     print(f"  wall_seconds       = {result.wall_seconds:.1f}")

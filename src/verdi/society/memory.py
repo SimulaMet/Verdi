@@ -187,6 +187,10 @@ class AgentMemory:
         """Number of entries ever committed for this agent (0 if unseen)."""
         return self._total.get(agent_id, 0)
 
+    def consolidated_summary(self, agent_id: str) -> str:
+        """The LLM-produced early summary alone ("" when none yet)."""
+        return self._summary.get(agent_id, "")
+
     def render_history_summary(self, agent_id: str) -> str:
         """Deterministic prompt-facing text of this agent's memory.
 

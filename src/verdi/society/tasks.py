@@ -42,7 +42,7 @@ def is_adversary_persona(agent: AgentState) -> bool:
     return ADVERSARY_MARKER in (agent.persona_summary or "")
 
 
-def _call_rng(tape_seed: int, tick: int, rng: random.Random) -> random.Random:
+def _call_rng(tape_seed: int | str, tick: int, rng: random.Random) -> random.Random:
     """Fresh per-call RNG seeded from (tape_seed, tick).
 
     Deterministic across processes and interpreters; the external ``rng``
@@ -129,7 +129,7 @@ def generate_tick_tape(
     state: WorldState,
     rng: random.Random,
     *,
-    tape_seed: int,
+    tape_seed: int | str,
     task_kind_bias: str = "balanced",
 ) -> list[Task]:
     """Build this tick's task tape: ~1 mutating task per agent.
@@ -310,8 +310,19 @@ def _parse_orchestrator_response(content: str, state: WorldState, tick: int) -> 
         if kind not in MUTATING_KINDS:
             kind = "produce"
         resource = spec.get("resource") or "food"
-        amount = int(spec.get("amount", 1))
+        try:
+            amount = int(spec.get("amount", 1))
+        except (TypeError, ValueError):
+            # e.g. "amount": null / "two" -- one bad field must not discard
+            # the whole orchestrated tape.
+            amount = 1
         target = spec.get("to")
+        if kind == "transfer" and not (
+            isinstance(target, str) and target in state.agents and target != aid
+        ):
+            # A transfer the validator is certain to reject (no/self/unknown
+            # recipient) would only inflate rejection metrics.
+            kind = "produce"
 
         # Sanity-clamp: never exceed what the agent holds
         agent = state.agents[aid]
@@ -389,7 +400,9 @@ async def generate_llm_tape(
     Returns (tasks, used_llm, meta). ``meta`` contains telemetry for the
     orchestrator model call (duration_ms, prompt_tokens, completion_tokens,
     trace_id, ts_start, ts_end). If the LLM call fails or returns unparseable
-    output, falls back to the deterministic seeded tape and returns (tasks, False, {}).
+    output, falls back to the deterministic seeded tape and returns (tasks, False, meta),
+    where meta is {} if the call failed and carries ``parse_error`` if the
+    call succeeded but its output was unusable.
     """
     import time as _time
 
@@ -416,16 +429,24 @@ async def generate_llm_tape(
             "ts_end": ts_end,
             "response_chars": len(res.content),
         }
-        tasks = _parse_orchestrator_response(res.content, state, tick)
+    except Exception:  # noqa: BLE001 - any call failure falls back deterministically
+        meta = {}
+    else:
+        try:
+            tasks = _parse_orchestrator_response(res.content, state, tick)
+        except Exception as exc:  # noqa: BLE001 - malformed output falls back
+            tasks = None
+            meta["parse_error"] = type(exc).__name__
         if tasks is not None:
             return tasks, True, meta
-    except Exception:  # noqa: BLE001 - any failure falls back deterministically
-        pass
+        meta.setdefault("parse_error", "unusable_tape")
 
     # Deterministic fallback
     import random as _random
     tape = generate_tick_tape(tick, state, _random.Random(), tape_seed=fallback_seed)
-    return tape, False, {}
+    # meta is non-empty when the model was called but its output was unusable,
+    # so the caller can still account for the spent tokens.
+    return tape, False, meta
 
 
 __all__ = [

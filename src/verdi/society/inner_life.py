@@ -29,7 +29,7 @@ from typing import Any
 
 log = logging.getLogger(__name__)
 
-INNER_LIFE_PROMPT_VERSION = "verdi.inner-life/1"
+INNER_LIFE_PROMPT_VERSION = "verdi.inner-life/2"
 
 # --- Stable system prompt (identical across ticks for the same agent) -------
 _INNER_LIFE_SYSTEM_PROMPT = """\
@@ -164,8 +164,13 @@ def build_inner_life_prompt_messages(
     *,
     prompt_version: str = INNER_LIFE_PROMPT_VERSION,
     shock_info: str = "",
+    tick: int | None = None,
 ) -> list[dict[str, str]]:
-    """Build [system, user] messages with a stable system prefix for caching."""
+    """Build [system, user] messages with a stable system prefix for caching.
+
+    ``tick`` is the campaign's lifecycle tick; ``state.tick`` (the ledger
+    transition counter) is only a fallback for callers that do not pass it.
+    """
     agent = state.agents[agent_id]
     signals_text = "\n".join(f"- {s}" for s in agent.public_signals) or "(none)"
 
@@ -181,7 +186,7 @@ def build_inner_life_prompt_messages(
         prompt_version=prompt_version,
     )
     user = _build_inner_life_user(
-        tick=state.tick,
+        tick=state.tick if tick is None else tick,
         resources_json=json.dumps(agent.resources, sort_keys=True),
         voting=agent.rights.voting,
         speaking=agent.rights.speaking,

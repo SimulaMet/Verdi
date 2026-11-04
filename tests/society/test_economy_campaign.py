@@ -352,3 +352,15 @@ def test_legacy_scenario_without_economy_block_unchanged(tmp_path):
     assert not [s for s in res.tape if s.kind == "production_cost"]
     assert res.replay_matches is True
     assert res.replay_log_identical is True
+
+
+def test_production_cap_is_per_agent_not_society_wide(tmp_path):
+    """Audit F33: the cap is documented per agent per tick. Two producers each
+    producing exactly the cap (2.0) in the same tick must both be accepted;
+    the campaign used to sum production across agents, so the second
+    producer was rejected with law:production_limit."""
+    res = _run(tmp_path, "atcap", amend=False, produce_amount=2.0)
+    rejected = [e for e in res.events
+                if e.kind == "action_rejected" and e.payload.get("blocked_by") == "law:production_limit"]
+    assert rejected == []
+    assert res.replay_matches is True
